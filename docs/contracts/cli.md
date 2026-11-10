@@ -22,6 +22,8 @@ the JSON payloads below only gain fields, never lose or rename them.
 | `match <clip> [--prompt TEXT] [--bars N] [--key K] [--bpm N] -o project.praxis` | reference clip | `project, similarity, iterations[], originality` |
 | `export-midi <score\|project> -o out.mid` | score | `output, tracks` |
 | `packs list\|install <name>` | - | `packs[]` / `installed` |
+| `key set\|clear\|status` | key on stdin only (set) | `stored` / `cleared` / `available, source` |
+| `presets` | - | `presets[]` (name, kind, class, renderable here) |
 
 The command layer is the library `praxis_cli::ops` (one function per command, typed request in,
 payload JSON out); the MCP server and the desktop app call it directly. `edit` lands with WP-P2,
