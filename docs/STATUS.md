@@ -14,7 +14,7 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 | WP-A score-ops | **merged** (782c780 + follow-up 6e2a87b: indexed adds, set_seed, exact isolation) | wp/a2-score-ops | apply with exact inverse, scope/lock rules, 5 lints, project undo/redo/versions; 67 tests incl. proptests |
 | WP-B1 dsp-core | **merged** (671dfdb) | wp/b1-dsp-core | BLEP oscillators (8-sample latency), wavetable, FM, ADSR/DAHDSR, SVF/ladder, noise, smoothing, resampler; 0 allocations after construction |
 | WP-B2 dsp-effects | **merged** (505669e) | wp/b2-dsp-effects | all 11 effects, true-peak limiter, BS.1770 meter (0.0000 LU vs ebur128); trait gained set_tempo/set_impulse |
-| WP-C1 sampler | **merged** (4cff5ba); onset-alignment fix running | wp/c1b-onset-align | SFZ + SF2 parsers, sampler (48 voices, velocity crossfade, release samples, loops, seeded round robin), felt/upright presets, pack install with blake3; pitch within 0.47 cent of samples. Defect: audible attacks land 4-10 ms after note time -> acceptance-1 grid check fails |
+| WP-C1 sampler | **merged** (4cff5ba); onset-alignment fix running | wp/c1b-onset-align | SFZ + SF2 parsers, sampler (48 voices, velocity crossfade, release samples, loops, seeded round robin), felt/upright presets, pack install with blake3; pitch within 0.47 cent of samples. Onset fix merged (ed693c4): notes within 0.2-1.7 ms of note time (was +2.6 to +9.1 ms) |
 | WP-D1 analyze-verify | **merged** (c730c4f) | wp/d1-analyze-verify | verify_render: tempo, key, grid, loudness, true peak, clipping, seam, silence; synthetic tempo within 0.03 BPM, 10/10 keys |
 | WP-E audio-io | **merged** (fbdb8d1) | wp/e-audio-io | WAV/FLAC/OGG/MP3 native, M4A/MP4/MOV/WebM via ffmpeg (hardened), FLAC + stems export, MIDI export; 47 tests. Gaps: no ffmpeg timeout; resampler ~0.5 sample offset |
 | WP-F engine-core | **merged** (5075c5b) | wp/f-engine-core | offline render, stems, avoid-list, loop wrap, determinism; 88x real time; effects plumbing awaits WP-F2 |
@@ -36,6 +36,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- Merged WP-U1 front end and the WP-C1 onset fix. Acceptance test 1 now passes end to end with the real felt piano (kick pending WP-C2): tempo 127.99, A minor, 93% on grid (median 1.6 ms), -15.6 LUFS, seamless. earshot realness 0.46 (dry, no room) -> WP-F2 reverb must lift it. Preview in demos/phase-2/.
 
 - Merged WP-D1, WP-P, WP-C1, WP-A follow-up (all of wave 1). First end-to-end acceptance-1 run (offline brief -> felt piano render -> verify): structure all pass; tempo 128.00 and key A minor pass; grid FAILS (47.7% on grid, median 11.4 ms) because sampled attacks land late. Fix sent to WP-C1; `crates/praxis-cli/tests/acceptance1.rs` lands with it.
 
