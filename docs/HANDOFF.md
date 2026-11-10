@@ -136,7 +136,7 @@ start `praxis-app` from `.claude/launch.json` (Vite on 5174, or the next free po
    (earshot rated the dry render's realness 0.46 because there was no room sound).
 4. **Phase 2 exit**: render acceptance test 1 with felt piano + soft kick mixed, write
    `demos/phase-2/` with a README, ask the owner for listening sign-off (NEEDS_OWNER item 2).
-5. **WP-K CLI** (running) then **WP-X MCP server** (ADR-0010; rmcp 3.9 is already in the workspace deps;
+5. **WP-K CLI** (running), then **WP-U3 real adapter + Tauri shell** (`docs/briefs/WP-U3-real-adapter.md`, starts when WP-K merges) and **WP-X MCP server** (ADR-0010; rmcp 3.9 is already in the workspace deps;
    tools share the CLI's command layer; agent can write the plan; renders return verify reports).
 6. **WP-P2 edits + variations** (running) (Phase 4 exit: "change the last four bars" leaves bars 1-12
    sample-identical). Ask the owner for the API key when a live Claude smoke test is next.

@@ -143,6 +143,11 @@ Done: timeline (bars, sections, layers with mute/solo/lock), step sequencer and 
 patterns through patches, waveform + spectrogram, undo/redo, versions, export dialog; browser
 dev mode against a mock engine for UI tests plus Tauri build; screenshots in the report.
 
+### WP-U3 real adapter + Tauri shell
+Owns: `crates/praxis-app/**`, `app/src/engine/tauri/**`. Depends: WP-K (command layer), WP-U2.
+Brief: `docs/briefs/WP-U3-real-adapter.md`. Done: requests in the app make real, checked takes
+with real audio on Windows; agent takes appear live.
+
 ## Phase 4: Planner (exit: acceptance 1 from one prompt; "change the last four bars" leaves bars 1-12 sample-identical; prompt suite passes)
 
 ### WP-P2 edits + variations
