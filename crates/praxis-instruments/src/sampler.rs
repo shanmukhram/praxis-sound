@@ -15,8 +15,6 @@ use crate::registry::PresetEntry;
 pub mod engine;
 pub mod index;
 #[cfg(feature = "install")]
-mod inflate;
-#[cfg(feature = "install")]
 pub mod install;
 pub mod presets;
 pub mod program;

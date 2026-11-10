@@ -2760,6 +2760,7 @@ dependencies = [
  "bzip2",
  "cbc",
  "crc32fast",
+ "flate2",
  "getrandom 0.4.3",
  "js-sys",
  "lzma-rust2",

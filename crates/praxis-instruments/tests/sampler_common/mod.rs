@@ -89,6 +89,20 @@ pub fn onset_click(x: &[f32], at: usize) -> f32 {
     j / r.max(1e-12)
 }
 
+/// Envelope onset of a sound expected near sample `t`: the first sample from `t - 10 ms` where a
+/// centred 1 ms RMS envelope reaches -15 dB of its maximum over `[t - 10 ms, t + 80 ms]`.
+pub fn envelope_onset(x: &[f32], t: usize, sr: f32) -> usize {
+    let a = t.saturating_sub((0.01 * sr) as usize);
+    let b = (t + (0.08 * sr) as usize).min(x.len());
+    let w = (0.0005 * sr) as usize;
+    let env: Vec<f32> = (a..b)
+        .map(|j| rms(&x[j.saturating_sub(w)..(j + w).min(x.len())]))
+        .collect();
+    let peak = env.iter().fold(0f32, |m, v| m.max(*v));
+    let th = peak * 10f32.powf(-15.0 / 20.0);
+    a + env.iter().position(|v| *v >= th).unwrap_or(0)
+}
+
 /// Largest cubic-prediction residual |x[n] - (3x[n-1] - 3x[n-2] + x[n-3])| in `x[a..b]`. Smooth
 /// audio predicts well; a discontinuity (click) does not.
 pub fn max_residual(x: &[f32], a: usize, b: usize) -> f32 {

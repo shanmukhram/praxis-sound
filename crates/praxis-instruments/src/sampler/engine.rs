@@ -95,6 +95,9 @@ pub struct Voicing {
     pub sample_end_fade_s: f32,
     /// Fade-out of a stolen voice.
     pub steal_fade_s: f32,
+    /// Start playback at each sample's measured onset ([`super::sample::measure_onset`]) so the
+    /// audible attack lands on the note time; SFZ `offset` applies on top.
+    pub align_onsets: bool,
 }
 
 impl Default for Voicing {
@@ -113,6 +116,7 @@ impl Default for Voicing {
             gain_jitter_db: 0.0,
             sample_end_fade_s: 0.005,
             steal_fade_s: 0.005,
+            align_onsets: true,
         }
     }
 }
@@ -143,6 +147,8 @@ struct Prepared {
     veltrack: f32,
     env: super::region::AmpEnvelope,
     offset: f64,
+    /// `offset` plus the sample's measured pre-roll, clamped inside the sample.
+    aligned_offset: f64,
     /// Exclusive end position in frames.
     end: f64,
     mode: LoopMode,
@@ -636,6 +642,7 @@ impl SamplerInstrument {
                 veltrack: r.amp_veltrack / 100.0,
                 env: r.ampeg,
                 offset: offset as f64,
+                aligned_offset: (offset + s.onset() as u64).min(end_incl) as f64,
                 end: end_incl as f64 + 1.0,
                 mode,
                 loop_range,
@@ -931,8 +938,13 @@ impl SamplerInstrument {
             Some(c) => (true, [Biquad::new(c); 2]),
             None => (false, [idle_biquad(); 2]),
         };
+        let start = if vc.align_onsets {
+            p.aligned_offset
+        } else {
+            p.offset
+        };
         let (looping, ls, le) = match p.loop_range {
-            Some((a, b)) if p.offset < b => (true, a, b),
+            Some((a, b)) if start < b => (true, a, b),
             _ => (false, 0.0, 0.0),
         };
         let slot = self.alloc_voice();
@@ -941,7 +953,7 @@ impl SamplerInstrument {
             note_id,
             one_shot,
             sample: p.sample,
-            pos: p.offset,
+            pos: start,
             step,
             end: p.end,
             looping,

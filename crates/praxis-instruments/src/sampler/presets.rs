@@ -19,8 +19,9 @@
 //! - **Bright accents** (`NoteOn.brightness` = 1, TIN) open the low-pass by an octave, lift the
 //!   4.5 kHz shelf by 3 dB and push layer choice up by 0.25 so the hard layer blends in.
 //! - **Less hammer noise.** A static high shelf at 4.5 kHz, down `2.5 x felt` dB.
-//! - **Softened attack.** An attack ramp of `1.5 + 4 felt` ms plus up to `8 felt` ms more for soft
-//!   notes, which rounds the hammer transient without smearing the rhythm.
+//! - **On time.** The hammer is softened by the layers and the filter, not by a slow amplitude
+//!   attack: the attack ramp stays at the click-safe 1 ms, and playback starts at each sample's
+//!   measured onset (`sample::measure_onset`), so accents land on the grid.
 //! - **Gentler dynamics.** `amp_veltrack` scaled by `1 - 0.35 felt`, so soft notes stay present.
 //! - **Longer release.** `release_s` (default 1.2 s, the pack's own is 0.6 s): notes ring into the
 //!   next one, which is how overlapping sustain sounds connected.
@@ -94,8 +95,10 @@ pub fn felt_voicing(p: &[f32]) -> Voicing {
         bright_layer_boost: 0.25,
         auto_xfade: true,
         veltrack_scale: 1.0 - 0.35 * felt,
-        min_attack_s: 0.0015 + 0.004 * felt,
-        soft_attack_s: 0.008 * felt,
+        // Click-safe minimum only: a longer amplitude attack would make notes sound late. The
+        // softness comes from the soft layers and the felt filter.
+        min_attack_s: 0.001,
+        soft_attack_s: 0.0,
         release_s: Some(release),
         min_release_s: 0.02,
         tone: Tone {
@@ -113,6 +116,7 @@ pub fn felt_voicing(p: &[f32]) -> Voicing {
         gain_jitter_db: 0.25,
         sample_end_fade_s: 0.005,
         steal_fade_s: 0.005,
+        align_onsets: true,
     }
 }
 
