@@ -553,7 +553,20 @@ fn update_layer(
     u: &LayerUpdate,
 ) -> Result<Vec<PatchOp>, PatchError> {
     let li = layer_index(s, cx, id)?;
-    unlocked(s, li)?;
+    // A lock protects a layer's content. Muting and soloing are auditioning, not editing, so a
+    // user may change only `muted`/`solo` on a locked layer (contracts/patch.md rule 2).
+    let audition_only = cx.patch.origin == Origin::User
+        && u.name.is_none()
+        && u.class.is_none()
+        && u.instrument.is_none()
+        && u.gain_db.is_none()
+        && u.pan.is_none()
+        && u.effects.is_none()
+        && u.automation.is_none()
+        && u.seed_offset.is_none();
+    if !audition_only {
+        unlocked(s, li)?;
+    }
     cx.layer_scope(id)?;
     if let Some(b) = cx.scope().bars
         && changes_sound(&s.layers[li], u)
