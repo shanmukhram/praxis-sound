@@ -29,6 +29,7 @@ licences only (ADR-0008). Checked against crates.io on 2026-11-10.
 | keyring | 4.2.0 | MIT OR Apache-2.0 | 2026-08 | no (desktop only, `claude` feature) | planner |
 | blake3 | 1.8.7 | CC0-1.0 OR Apache-2.0 | 2026-08 | yes | testkit, analyze |
 | sevenz-rust2 | 0.25.0 | Apache-2.0 | 2026-11 | yes | pack install (7z archives) |
+| rmcp | 3.9.0 | Apache-2.0 | 2026-11 (official MCP Rust SDK) | n/a (desktop server) | mcp (ADR-0010) |
 | wasm-bindgen | 0.2.130 | MIT OR Apache-2.0 | 2026-10 | yes | wasm |
 | proptest (dev) | 1.12.0 | MIT OR Apache-2.0 | 2026-10 | n/a | tests |
 | jsonschema (dev) | 0.61.1 | MIT | 2026-11 | n/a | tests |

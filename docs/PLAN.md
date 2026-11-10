@@ -25,7 +25,7 @@ WP-0 foundations (done)
  ├─ WP-D1 analyze-verify ── WP-D2 sound-profile ── WP-M match ── Phase 6 exit
  ├─ WP-E audio-io ── WP-R realtime ── WP-U workstation UI ── Phase 3 exit
  └─ WP-P planner ─────── WP-P2 ── WP-P3 scoring depth ── Phase 7 exit
-WP-H sfx patches (after B1, B2)     WP-K cli (grows with each WP)
+WP-H sfx patches (after B1, B2)     WP-K cli (grows with each WP) ── WP-X MCP server + agent guide
 WP-W wasm + browser (after U)       WP-Z performance + release (last)
 ```
 
@@ -153,6 +153,17 @@ N variations with own seeds; render-level isolation test of "change the last fou
 ### WP-K cli
 FR-33. Owns: `crates/praxis-cli/**`. Depends: grows with P, D, E, M. Done: every command in
 contracts/cli.md, JSON payload tests (`assert_cmd`-style via std::process).
+
+### WP-X agent interface (MCP server + agent guide) - ADR-0010
+FR-33, FR-34 for agents. Owns: `crates/praxis-mcp/**` (new crate, added to the workspace by the
+orchestrator), `docs/agents/**`, a `praxis mcp` subcommand hook agreed with WP-K. Depends:
+WP-K (shared command layer), WP-P (`compose_plan`, `plan_schema`), WP-D1 (verify), WP-F2.
+Brief: `docs/briefs/WP-X-agent-interface.md`.
+Done: every tool in ADR-0010 implemented over stdio with JSON Schema inputs; an end-to-end test
+that spawns the server, lists tools, calls `praxis_plan_schema`, sends the acceptance-1 plan to
+`praxis_compose`, and gets a project, a WAV path and a passing check report; the agent guide with
+worked examples; a Claude Code `.mcp.json` example. Shared logic lives in one command layer used
+by both CLI and MCP (no duplicated behaviour).
 
 ## Phase 5: Reference analysis (exit: tempo +-2 BPM and correct key on >= 90% of a labelled set; profiles for music, effect, ambience)
 
