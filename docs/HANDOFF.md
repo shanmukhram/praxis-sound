@@ -1,4 +1,4 @@
-# Handoff: Praxis Sound build (kept current; last updated 2026-11-11 03:10 IST: paused, all sessions stopped)
+# Handoff: Praxis Sound build (kept current; last updated 2026-11-11: wave 2 being finished by sub-agents from the terminal)
 
 Paste the block below into a new Claude Code session opened in
 `C:\Users\admin\Desktop\praxis sound`. Everything else in this file is the detail it points to.
@@ -103,7 +103,15 @@ The soft kick layer is skipped until WP-C2 lands (the test says so and tightens 
 
 Test totals at handoff: 386 Rust tests pass in release; app: 140 unit tests on the WP-U2 branch.
 
-## 5. In flight (updated 2026-11-11 03:10 IST: all sessions stopped by the owner)
+## 5. In flight (updated 2026-11-11: resumed from the terminal)
+
+The orchestrator resumed in a terminal session and started four background sub-agents, one per
+worktree below, each finishing its package from the uncommitted work and committing to its
+branch. When they report: review and merge each (section 7). If the terminal session ends
+first, check each worktree's branch for commits and its `git status` for leftovers, and resume
+as described below.
+
+### Earlier state (all sessions stopped by the owner)
 
 The four wave-2 sessions were **stopped** at the owner's request, mid-work. None had committed:
 all their work is **uncommitted** in their worktrees (safe there; worktrees with changes are not
