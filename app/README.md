@@ -29,10 +29,11 @@ browser with `PW_CHANNEL=msedge` / `PW_CHANNEL=chrome`.
 | `src/score/theory.ts` | Keys, scales, grids, steps per bar, accents; ported from `theory.rs`/`timeline.rs`. |
 | `src/score/timeline.ts` | Bar/second mapping and `expandNotes` (port of `timeline::expand_notes`, keeps pattern phase). |
 | `src/score/patchBuilder.ts` | UI intent -> `ScorePatch` with exact scope: mute/solo/lock, tempo, clear bars, step and piano-roll edits in a bar range (`write_bars`, or `replace_pattern` when the range owns its pattern), restore-version patches. |
+| `src/score/ids.ts` | Derived pattern ids `<layer>_b<start>-<end>` (`_2`...), as in `apply/ids.rs`. |
 | `src/score/history.ts` | Local undo/redo/versions mirroring the project contract; operations are serialised. |
 | `src/engine/EngineAdapter.ts` | The adapter interface, `PatchError` (mirrors `patch.rs`), `RenderReport` (mirrors `api.rs`, plus `mock`). |
 | `src/engine/MockEngine.ts` | Mock adapter: patch rules, placeholder render to a WAV blob URL, WebAudio transport with loop, position and meter streams, export recording. |
-| `src/engine/mock/apply.ts` | Mock `apply`: atomic, locks, scope, copy-on-write splits with `pattern_offset_steps`, exact inverses, validation. |
+| `src/engine/mock/apply.ts` | Mock `apply`: atomic, locks (user mute/solo allowed on locked layers), scope, copy-on-write splits with `pattern_offset_steps`, `write_bars` id resolution, insert positions, exact inverses, validation. |
 | `src/engine/mock/validate.ts` | Subset of `validate.rs` (ranges, ids, grid, overlap, off-scale, avoid-list). |
 | `src/engine/mock/synth.ts` | **Mock preview** synthesis (sine tones, click/thump drums). Not Praxis instruments. |
 | `src/engine/wav.ts` | WAV 16/24/32f encode and decode. |
@@ -73,26 +74,29 @@ redo · M / S mute / solo the selected layer · R render · E export · 1 / 2 st
   playhead, waveform and spectrogram work. It is labelled "mock" in the UI and the render report.
   Its loudness is an unweighted RMS estimate and its peak is sample peak, not LUFS/dBTP.
 - **Export** only records the request and lists the files it would write.
-- The mock implements `set_title`, `set_tempo`, `add_layer`, `remove_layer`, `update_layer`,
+- The mock implements `set_title`, `set_tempo`, `set_seed`, `add_layer`, `remove_layer`, `update_layer`,
   `set_lock`, `add_pattern`, `replace_pattern`, `remove_pattern`, `write_bars`, `clear_bars`,
   `place_clip`, `set_clips`; other ops are rejected with a plain message.
 - No Tauri shell (`crates/praxis-app`) and no wasm adapter yet; FR-30's loudness-matched A/B
   against a reference clip is not built (needs reference analysis).
 
-## Contract notes (for the orchestrator)
+## Contract rules the mock follows (patch.md, build/integration e524a62)
 
-1. **Mute/solo on a locked layer.** `muted`/`solo` are Score layer fields, so by rule 2 a patch
-   that mutes a locked layer fails with `LockedLayer` (the acceptance-1 piano is locked). FR-28
-   expects mute and solo on every layer. Proposal: exempt monitoring fields in rule 2 of
-   `docs/contracts/patch.md`: "...except a user `set_lock` unlock, and a user `update_layer`
-   whose update sets only `muted` and/or `solo`." The UI already sends exactly that patch.
-2. **`add_layer` / `add_pattern` have no position**, so the inverse of removing a layer or pattern
-   that is not last cannot restore order and rule 5 (structural equality) fails. Proposal in
-   `patch.rs`: `AddLayer { layer, #[serde(default, skip_serializing_if = "Option::is_none")] index: Option<u32> }`
-   and the same for `AddPattern` (insert position, default append). The mock appends today and a
-   unit test documents the gap.
-3. **`write_bars` with an existing pattern id** is not specified in `patch.md`; the mock returns
-   `DuplicateId` (that variant exists). The UI never sends one.
+1. **Auditioning a locked layer.** An `origin: user` `update_layer` that changes only `muted`
+   and/or `solo` is allowed on a locked layer; any other field, or a model/system origin, fails
+   with `LockedLayer` (rule 2). With `scope.bars` set, `update_layer` may only rename.
+2. **Insert positions.** `add_layer` and `add_pattern` take an optional `index` (None appends);
+   removals invert to an add at the old index, and a layer added locked is unlocked by the
+   inverse before it is removed (rule 7). `set_seed` is a global op. The mock does not implement
+   `add_section` / `add_marker`.
+3. **`write_bars` pattern ids.** The given id is used if it is valid and free; an existing
+   identical pattern is reused (no add, no remove in the inverse); otherwise the pattern is stored
+   under `<layer>_b<start>-<end>` (`_2`, `_3`... on collision, reusing a derived id that holds
+   identical content). It never fails with `DuplicateId` (rule 4). The UI proposes ids in the same
+   form, so the id it sends is the id kept.
+
+The mock does not canonicalise clip lists after a split the way WP-A's `apply` does, so clip
+lists can differ in shape from the real engine's while expanding to the same notes.
 
 ## Dependencies (all dev-only; nothing is bundled into the app)
 

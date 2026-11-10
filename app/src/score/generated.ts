@@ -286,9 +286,16 @@ export type PatchOp = {
   master: Master;
   op: "set_master";
 } | {
+  op: "set_seed";
+  seed: number;
+} | {
   chords: ChordSpan[];
   op: "set_chords";
 } | {
+  /**
+   * Insert position; None appends.
+   */
+  index?: number | null;
   op: "add_section";
   section: Section;
 } | {
@@ -298,12 +305,20 @@ export type PatchOp = {
   id: string;
   op: "remove_section";
 } | {
+  /**
+   * Insert position; None appends.
+   */
+  index?: number | null;
   marker: Marker;
   op: "add_marker";
 } | {
   id: string;
   op: "remove_marker";
 } | {
+  /**
+   * Insert position; None appends.
+   */
+  index?: number | null;
   op: "add_pattern";
   pattern: Pattern;
 } | {
@@ -313,6 +328,10 @@ export type PatchOp = {
   id: string;
   op: "remove_pattern";
 } | {
+  /**
+   * Insert position; None appends.
+   */
+  index?: number | null;
   layer: Layer;
   op: "add_layer";
 } | {

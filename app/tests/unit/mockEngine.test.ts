@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { applyPatch, splitOut } from '../../src/engine/mock/apply';
+import { applyPatch, resolveWritePattern, splitOut } from '../../src/engine/mock/apply';
 import { MockEngine } from '../../src/engine/MockEngine';
 import { History } from '../../src/score/history';
 import { derivePattern, editPatternInRange, muteLayer, toggleNote } from '../../src/score/patchBuilder';
-import type { NScore, PatchOp, ScorePatch } from '../../src/score/types';
+import type { NScore, Note, PatchOp, ScorePatch } from '../../src/score/types';
 import { eventKey, layerEvents } from '../../src/score/timeline';
 import { validate } from '../../src/engine/mock/validate';
 import { decodeWav } from '../../src/engine/wav';
@@ -61,8 +61,24 @@ describe('locks (contract rule 2)', () => {
       'locked_layer',
     );
   });
-  it('rejects mute on a locked layer (mute is a layer field in Score v1)', () => {
-    expectError(s, muteLayer(s, 'piano', true), 'locked_layer');
+  it('lets a user mute and solo a locked layer (a lock protects content, not auditioning)', () => {
+    const r = applyPatch(s, muteLayer(s, 'piano', true));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.score.layers[0].muted).toBe(true);
+    expect(r.score.layers[0].locked).toBe(true);
+    const solo = applyPatch(s, scoped([{ op: 'update_layer', id: 'piano', update: { muted: true, solo: true } }], undefined, ['piano']));
+    expect(solo.ok).toBe(true);
+    const back = applyPatch(r.score, r.inverse);
+    expect(back.ok && back.score).toEqual(s);
+  });
+  it('still refuses audition changes from a model or system origin', () => {
+    expectError(s, { ...muteLayer(s, 'piano', true), origin: 'model' }, 'locked_layer');
+    expectError(s, { ...muteLayer(s, 'piano', true), origin: 'system' }, 'locked_layer');
+  });
+  it('still refuses any other field on a locked layer, even alongside mute', () => {
+    expectError(s, scoped([{ op: 'update_layer', id: 'piano', update: { muted: true, gain_db: -3 } }]), 'locked_layer');
+    expectError(s, scoped([{ op: 'update_layer', id: 'piano', update: { name: 'Piano' } }]), 'locked_layer');
   });
   it('only a user may unlock', () => {
     expectError(s, scoped([{ op: 'set_lock', id: 'piano', locked: false }], undefined, [], 'model'), 'unlock_not_allowed');
@@ -99,13 +115,12 @@ describe('scope (contract rule 3)', () => {
     const r = applyPatch(s, scoped([{ op: 'set_clips', layer: 'kick', clips }], { start: 13, end: 16 }, ['kick']));
     expect(r.ok).toBe(true);
   });
-  it('rejects unknown layers and duplicate pattern ids', () => {
+  it('rejects unknown layers', () => {
     expectError(s, scoped([{ op: 'clear_bars', layer: 'bass', bars: { start: 1, end: 1 } }]), 'unknown_id');
-    expectError(
-      s,
-      scoped([{ op: 'write_bars', layer: 'kick', bars: { start: 13, end: 16 }, pattern: kickPattern('kick_soft') }]),
-      'duplicate_id',
-    );
+  });
+  it('rejects a sound-changing update_layer when scope.bars is set (renames are fine)', () => {
+    expectError(s, scoped([{ op: 'update_layer', id: 'kick', update: { gain_db: -6 } }], { start: 13, end: 16 }, ['kick']), 'out_of_scope');
+    expect(applyPatch(s, scoped([{ op: 'update_layer', id: 'kick', update: { name: 'Kick' } }], { start: 13, end: 16 }, ['kick'])).ok).toBe(true);
   });
 });
 
@@ -138,6 +153,57 @@ describe('atomic and valid (contract rule 1)', () => {
   it('rejects ops the mock does not implement, plainly', () => {
     const r = expectError(fixture(), scoped([{ op: 'set_bars', bars: 8 }]), 'invalid');
     if (!r.ok && r.error.kind === 'invalid') expect(r.error.message).toContain('does not implement');
+  });
+});
+
+describe('write_bars pattern ids (rule 4): never DuplicateId', () => {
+  const range = { start: 13, end: 16 };
+  const write = (id: string, notes: Note[] = kickPattern(id).notes) =>
+    scoped([{ op: 'write_bars', layer: 'kick', bars: range, pattern: { ...kickPattern(id), notes } }], range, ['kick']);
+  const kickAt13 = (x: NScore) => x.layers[1].clips.find((c) => c.bars.start === 13)!.pattern;
+
+  it('uses the given id when it is free', () => {
+    const r = applyPatch(fixture(), write('my_fill'));
+    expect(r.ok && kickAt13(r.score)).toBe('my_fill');
+    if (r.ok) expect(r.inverse.ops.map((o) => o.op)).toEqual(['set_clips', 'remove_pattern']);
+  });
+
+  it('reuses an existing identical pattern under the given id, without adding or removing it', () => {
+    const s0 = fixture();
+    s0.patterns.push(kickPattern('my_fill'));
+    const r = applyPatch(s0, write('my_fill'));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(kickAt13(r.score)).toBe('my_fill');
+    expect(r.score.patterns.length).toBe(s0.patterns.length);
+    expect(r.inverse.ops.map((o) => o.op)).toEqual(['set_clips']);
+    expect(applyPatch(r.score, r.inverse)).toMatchObject({ ok: true, score: s0 });
+  });
+
+  it('stores a different pattern with a taken id under the derived id, leaving the original untouched', () => {
+    const s0 = fixture();
+    const r = applyPatch(s0, write('kick_soft', [{ step: 2, pitch: 36, velocity: 0.5, accent: 'soft', length: 1 }]));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(kickAt13(r.score)).toBe('kick_b13-16');
+    expect(r.score.patterns.find((p) => p.id === 'kick_soft')).toEqual(s0.patterns.find((p) => p.id === 'kick_soft'));
+    expectInverseRestores(s0, write('kick_soft', [{ step: 2, pitch: 36, velocity: 0.5, accent: 'soft', length: 1 }]));
+  });
+
+  it('suffixes the derived id on collision and reuses a derived id holding identical content', () => {
+    const s0 = fixture();
+    s0.patterns.push({ ...kickPattern('kick_b13-16'), notes: [] });
+    const different = [{ step: 3, pitch: 36, velocity: 0.5, accent: 'normal' as const, length: 1 }];
+    expect(resolveWritePattern(s0, 'kick', range, { ...kickPattern('kick_soft'), notes: different })).toEqual({ id: 'kick_b13-16_2', add: true });
+    expect(resolveWritePattern(s0, 'kick', range, { ...kickPattern('kick_soft'), notes: [] })).toEqual({ id: 'kick_b13-16', add: false });
+  });
+
+  it('derives an id when the given id is invalid, and keeps derived ids within 64 chars', () => {
+    expect(resolveWritePattern(fixture(), 'kick', range, kickPattern('Bad Id!'))).toEqual({ id: 'kick_b13-16', add: true });
+    const long = 'k'.repeat(64);
+    const { id } = resolveWritePattern(fixture(), long, range, kickPattern('kick_soft_x'.repeat(10)));
+    expect(id.length).toBe(64);
+    expect(id.endsWith('_b13-16')).toBe(true);
   });
 });
 
@@ -206,6 +272,7 @@ describe('exact inverse (rule 5)', () => {
     ['update_layer', scoped([{ op: 'update_layer', id: 'kick', update: { muted: true, gain_db: -9, name: 'Kick' } }])],
     ['set_lock', scoped([{ op: 'set_lock', id: 'kick', locked: true }])],
     ['set_tempo', scoped([{ op: 'set_tempo', bpm: 100 }])],
+    ['set_seed', scoped([{ op: 'set_seed', seed: 99 }])],
     ['add_layer', scoped([{ op: 'add_layer', layer: { id: 'hat', class: 'percussion', instrument: { kind: 'drum', preset: 'hat' } } }])],
     ['remove_layer (last)', scoped([{ op: 'remove_layer', id: 'kick' }])],
     ['add_pattern', scoped([{ op: 'add_pattern', pattern: kickPattern('extra') }])],
@@ -224,15 +291,37 @@ describe('exact inverse (rule 5)', () => {
     });
   }
 
-  it('remove_layer of a middle layer cannot restore order (contract gap: add_layer has no index)', () => {
+  it('removing a middle layer or pattern re-inserts it at its old index (rule 7)', () => {
     const three = unlocked();
     three.layers.push({ ...structuredClone(three.layers[1]), id: 'kick2', name: 'Kick 2' });
-    const r = applyPatch(three, scoped([{ op: 'remove_layer', id: 'kick' }]));
+    three.patterns.splice(1, 0, kickPattern('spare'));
+    const r = applyPatch(three, scoped([{ op: 'remove_layer', id: 'kick' }, { op: 'remove_pattern', id: 'spare' }]));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
+    expect(r.inverse.ops).toEqual([
+      { op: 'add_pattern', pattern: kickPattern('spare'), index: 1 },
+      { op: 'add_layer', layer: three.layers[1], index: 1 },
+    ]);
     const back = applyPatch(r.score, r.inverse);
-    expect(back.ok).toBe(true);
-    if (back.ok) expect(back.score.layers.map((l) => l.id)).toEqual(['piano', 'kick2', 'kick']);
+    expect(back.ok && back.score).toEqual(three);
+  });
+
+  it('add_layer and add_pattern insert at index; past the end is invalid', () => {
+    const s0 = unlocked();
+    const hat = { id: 'hat', class: 'percussion' as const, instrument: { kind: 'drum' as const, preset: 'hat' } };
+    const r = applyPatch(s0, scoped([{ op: 'add_layer', layer: hat, index: 0 }, { op: 'add_pattern', pattern: kickPattern('first'), index: 0 }]));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.score.layers.map((l) => l.id)).toEqual(['hat', 'piano', 'kick']);
+    expect(r.score.patterns[0].id).toBe('first');
+    expect(applyPatch(r.score, r.inverse).ok && applyPatch(r.score, r.inverse)).toMatchObject({ score: s0 });
+    expectError(s0, scoped([{ op: 'add_layer', layer: hat, index: 3 }]), 'invalid');
+  });
+
+  it('a layer added locked is unlocked by the inverse before it is removed', () => {
+    const s0 = unlocked();
+    const hat = { id: 'hat', class: 'percussion' as const, instrument: { kind: 'drum' as const, preset: 'hat' }, locked: true };
+    expectInverseRestores(s0, scoped([{ op: 'add_layer', layer: hat }]));
   });
 });
 
@@ -324,9 +413,9 @@ describe('history mirrors the project contract', () => {
 
   it('a rejected patch is not recorded', async () => {
     const e = new MockEngine();
-    const { score } = await e.load(fixture());
+    await e.load(fixture());
     const h = new History(e);
-    const r = await h.commit(muteLayer(score, 'piano', true));
+    const r = await h.commit(scoped([{ op: 'update_layer', id: 'piano', update: { gain_db: -3 } }]));
     expect(r.ok).toBe(false);
     expect(h.undo).toHaveLength(0);
   });

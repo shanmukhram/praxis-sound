@@ -351,14 +351,20 @@ export class App implements Controller {
     layerSel.addEventListener('change', () => this.select({ layerId: layerSel.value }));
     const from = h('input', { type: 'number', min: 1, max: s.bars, value: sel.bars.start, 'aria-label': 'First bar', 'data-testid': 'scope-from' });
     const to = h('input', { type: 'number', min: 1, max: s.bars, value: sel.bars.end, 'aria-label': 'Last bar', 'data-testid': 'scope-to' });
-    const apply = () => {
-      const a = Math.round(Number(from.value));
-      const b = Math.round(Number(to.value));
+    // The field just edited wins: a first bar past the last moves the last bar along (and the
+    // reverse), instead of swapping the two.
+    const apply = (edited: 'from' | 'to') => {
+      let a = Math.round(Number(from.value));
+      let b = Math.round(Number(to.value));
       if (!Number.isFinite(a) || !Number.isFinite(b)) return;
-      this.select({ bars: { start: Math.min(a, b), end: Math.max(a, b) } });
+      if (a > b) {
+        if (edited === 'from') b = a;
+        else a = b;
+      }
+      this.select({ bars: { start: a, end: b } });
     };
-    from.addEventListener('change', apply);
-    to.addEventListener('change', apply);
+    from.addEventListener('change', () => apply('from'));
+    to.addEventListener('change', () => apply('to'));
     const sections = h(
       'select',
       { 'aria-label': 'Use a section as the range' },

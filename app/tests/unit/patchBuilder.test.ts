@@ -123,6 +123,20 @@ describe('step edits in a bar range', () => {
     s.patterns.push({ id: 'kick_b13-16', grid: 'eighth', length_steps: 8, notes: [] });
     expect(freshPatternId(s, 'kick', { start: 13, end: 16 })).toBe('kick_b13-16_2');
   });
+
+  it('the id the UI proposes is the id the engine keeps', () => {
+    const s = fixture();
+    const range = { start: 13, end: 16 };
+    s.patterns.push({ id: 'kick_b13-16', grid: 'eighth', length_steps: 8, notes: [] });
+    const d = derivePattern(s, 'kick', range)!;
+    const p = editPatternInRange(s, 'kick', range, toggleNote(d.pattern.notes, 6, 36, D), 'Edit')!;
+    const r = applyPatch(s, p);
+    expect(r.ok).toBe(true);
+    if (r.ok && p.ops[0].op === 'write_bars') {
+      expect(p.ops[0].pattern.id).toBe('kick_b13-16_2');
+      expect(r.score.layers[1].clips.at(-1)!.pattern).toBe('kick_b13-16_2');
+    }
+  });
 });
 
 describe('note list helpers', () => {
@@ -139,6 +153,22 @@ describe('note list helpers', () => {
 });
 
 describe('restore version patch', () => {
+  it('re-inserts a removed layer at its old position and restores the seed', () => {
+    const saved = unlocked();
+    saved.layers.push({ ...structuredClone(saved.layers[1]), id: 'kick2', name: 'Kick 2' });
+    const r = applyPatch(saved, {
+      origin: 'user',
+      scope: { layers: [] },
+      ops: [{ op: 'remove_layer', id: 'kick' }, { op: 'set_seed', seed: 7 }],
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const p = restorePatch(r.score, saved, 'v1');
+    expectValidPatch(p);
+    const back = applyPatch(r.score, p);
+    expect(back.ok && back.score).toEqual(saved);
+  });
+
   it('turns the current score back into the saved one', () => {
     const saved = unlocked();
     const r = applyPatch(saved, clearBars(saved, 'kick', { start: 13, end: 16 }));

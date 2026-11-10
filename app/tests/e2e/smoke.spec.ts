@@ -38,12 +38,24 @@ test('acceptance 1: timeline, mute/solo/lock, scoped step edit, undo', async ({ 
   await expect(page.getByTestId('mute-kick')).toHaveAttribute('aria-pressed', 'false');
   await expect(page.getByTestId('solo-kick')).toHaveAttribute('aria-pressed', 'false');
 
-  // The piano is locked: muting it is rejected by the engine's lock rule.
+  // The piano is locked. A lock protects content, not auditioning: a user may mute and solo it.
   await expect(page.getByTestId('lock-piano')).toHaveAttribute('aria-pressed', 'true');
   await page.getByTestId('mute-piano').click();
+  await expect(page.getByTestId('mute-piano')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('patch-status')).toContainText('applied');
+  await expect(page.getByTestId('patch-scope')).toHaveText('all bars · layers piano');
+  await page.getByTestId('solo-piano').click();
+  await expect(page.getByTestId('solo-piano')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('solo-piano').click();
+  await page.getByTestId('mute-piano').click();
+  await expect(page.getByTestId('mute-piano')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('solo-piano')).toHaveAttribute('aria-pressed', 'false');
+  // Editing its notes is still refused by the lock rule.
+  await setRange(page, 'piano', 1, 2);
+  await page.getByTestId('step-57-1').click();
   await expect(page.getByTestId('patch-status')).toContainText('rejected');
   await expect(page.getByTestId('status')).toContainText('layer `piano` is locked');
-  await expect(page.getByTestId('mute-piano')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('step-57-1')).toHaveAttribute('aria-pressed', 'false');
   // Unlock (a user may), then lock again.
   await page.getByTestId('lock-piano').click();
   await expect(page.getByTestId('lock-piano')).toHaveAttribute('aria-pressed', 'false');

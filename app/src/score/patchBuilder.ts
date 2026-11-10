@@ -16,6 +16,7 @@ import type {
 } from './types';
 import { clone, deepEqual, formatRange, rangeContains, rangesOverlap } from './types';
 import { accentVelocity, stepsPerBar } from './theory';
+import { composeId } from './ids';
 import { barSeconds, layerEvents, stepSeconds } from './timeline';
 
 // ---------------------------------------------------------------- layer properties
@@ -174,13 +175,16 @@ export function derivePattern(score: NScore, layerId: string, bars: BarRange): D
   };
 }
 
-/** Deterministic id for a pattern written into bars of a layer (contract rule 7 style). */
+/**
+ * A free id for a pattern written into bars of a layer, in the same `<layer>_b<start>-<end>`
+ * (`_2`, `_3`...) form `write_bars` derives itself (patch.md rule 4), so the id the UI proposes is
+ * the id the engine keeps.
+ */
 export function freshPatternId(score: NScore, layerId: string, bars: BarRange): string {
-  const base = `${layerId}_b${bars.start}-${bars.end}`.slice(0, 58);
   const taken = new Set(score.patterns.map((p) => p.id));
-  if (!taken.has(base)) return base;
-  for (let i = 2; ; i++) {
-    const id = `${base}_${i}`;
+  const tail = `_b${bars.start}-${bars.end}`;
+  for (let n = 1; ; n++) {
+    const id = composeId(layerId, tail, n);
     if (!taken.has(id)) return id;
   }
 }
@@ -284,6 +288,7 @@ export function restorePatch(current: NScore, target: NScore, name: string): Sco
   const ops: PatchOp[] = [];
   const g = <K extends keyof NScore>(k: K) => !deepEqual(current[k], target[k]);
   if (g('title')) ops.push({ op: 'set_title', title: target.title });
+  if (g('seed')) ops.push({ op: 'set_seed', seed: target.seed });
   if (g('meta')) ops.push({ op: 'set_meta', meta: clone(target.meta) });
   if (current.tempo.bpm !== target.tempo.bpm) ops.push({ op: 'set_tempo', bpm: target.tempo.bpm });
   if (g('key')) ops.push({ op: 'set_key', key: clone(target.key), transpose_notes: false });
@@ -300,9 +305,17 @@ export function restorePatch(current: NScore, target: NScore, name: string): Sco
   const tgtP = new Map(target.patterns.map((p) => [p.id, p]));
 
   for (const [id, l] of cur) if (tgt.has(id) && l.locked && !tgt.get(id)!.locked) ops.push({ op: 'set_lock', id, locked: false });
-  for (const [id, p] of tgtP) if (!curP.has(id)) ops.push({ op: 'add_pattern', pattern: clone(p) });
+  // Removals come last, so inserting at the target position (clamped to the list length at that
+  // point) restores order whenever the kept items are already in target order.
+  let plen = current.patterns.length;
+  target.patterns.forEach((p, i) => {
+    if (!curP.has(p.id)) ops.push({ op: 'add_pattern', pattern: clone(p), index: Math.min(i, plen++) });
+  });
   for (const [id, p] of tgtP) if (curP.has(id) && !deepEqual(curP.get(id), p)) ops.push({ op: 'replace_pattern', pattern: clone(p) });
-  for (const [id, l] of tgt) if (!cur.has(id)) ops.push({ op: 'add_layer', layer: clone(l) });
+  let llen = current.layers.length;
+  target.layers.forEach((l, i) => {
+    if (!cur.has(l.id)) ops.push({ op: 'add_layer', layer: clone(l), index: Math.min(i, llen++) });
+  });
   for (const [id, t] of tgt) {
     const c = cur.get(id);
     if (!c) continue;
