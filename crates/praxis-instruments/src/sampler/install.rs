@@ -300,10 +300,34 @@ fn entry_path(dest: &Path, name: &str, strip_prefix: &str) -> Result<Option<Path
     Ok(any.then_some(out))
 }
 
-const METHOD_COPY: &[u8] = &[0x00];
-const METHOD_DEFLATE: &[u8] = &[0x04, 0x01, 0x08];
+/// CRC-32 (IEEE 802.3, reflected), as stored in 7z headers.
+pub fn crc32(data: &[u8]) -> u32 {
+    static TABLE: std::sync::OnceLock<[u32; 256]> = std::sync::OnceLock::new();
+    let t = TABLE.get_or_init(|| {
+        let mut t = [0u32; 256];
+        for (i, e) in t.iter_mut().enumerate() {
+            let mut c = i as u32;
+            for _ in 0..8 {
+                c = if c & 1 != 0 {
+                    0xEDB8_8320 ^ (c >> 1)
+                } else {
+                    c >> 1
+                };
+            }
+            *e = c;
+        }
+        t
+    });
+    let mut c = 0xFFFF_FFFFu32;
+    for &b in data {
+        c = t[((c ^ b as u32) & 0xff) as usize] ^ (c >> 8);
+    }
+    c ^ 0xFFFF_FFFF
+}
 
-/// Unpacks every entry of `archive` under `dest`. Returns (files written, bytes written).
+/// Unpacks every entry of `archive` under `dest` with `sevenz-rust2` (LZMA, LZMA2, BZIP2,
+/// PPMD, DEFLATE, COPY). Each file must have exactly its declared size and, when the archive
+/// stores one, its CRC-32. Returns (files written, bytes written).
 fn unpack(archive: &Path, strip_prefix: &str, dest: &Path) -> Result<(usize, u64), InstallError> {
     let arch_err = |msg: String| InstallError::Archive {
         path: archive.display().to_string(),
@@ -313,183 +337,64 @@ fn unpack(archive: &Path, strip_prefix: &str, dest: &Path) -> Result<(usize, u64
     if (0..meta.files.len()).any(|i| meta.is_file_encrypted(i)) {
         return Err(arch_err("encrypted archives are not supported".into()));
     }
-    let own_decoder = !meta.blocks.is_empty()
-        && meta.blocks.iter().all(|b| {
-            b.coders.len() == 1
-                && matches!(
-                    b.coders[0].encoder_method_id(),
-                    METHOD_COPY | METHOD_DEFLATE
-                )
-        });
-    if own_decoder {
-        unpack_deflate(archive, &meta, strip_prefix, dest)
-    } else {
-        unpack_sevenz(archive, strip_prefix, dest)
+    // Check every entry path before anything is written.
+    for e in &meta.files {
+        entry_path(dest, e.name(), strip_prefix).map_err(arch_err)?;
     }
-}
-
-/// Writes one regular file, enforcing the unpacked-size bound.
-fn write_file(path: &Path, bytes: &[u8]) -> Result<(), InstallError> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| io_err(parent, e))?;
+    let declared: u64 = meta.files.iter().map(|e| e.size()).sum();
+    if declared > MAX_UNPACKED_BYTES {
+        return Err(arch_err(format!(
+            "unpacked size exceeds {MAX_UNPACKED_BYTES} bytes"
+        )));
     }
-    std::fs::write(path, bytes).map_err(|e| io_err(path, e))
-}
-
-/// Unpacks archives whose blocks are single-coder DEFLATE or COPY: `sevenz-rust2` supplies the
-/// archive structure (files, block layout, sizes, CRCs) and [`super::inflate`] decodes the data.
-fn unpack_deflate(
-    archive: &Path,
-    meta: &sevenz_rust2::Archive,
-    strip_prefix: &str,
-    dest: &Path,
-) -> Result<(usize, u64), InstallError> {
-    use std::io::Seek;
-    let arch_err = |msg: String| InstallError::Archive {
-        path: archive.display().to_string(),
-        msg,
-    };
-    let mut files = 0usize;
-    let mut total = 0u64;
-    for e in meta.files.iter().filter(|e| !e.has_stream()) {
-        let Some(path) = entry_path(dest, e.name(), strip_prefix).map_err(arch_err)? else {
-            continue;
-        };
-        if e.is_directory() {
-            std::fs::create_dir_all(&path).map_err(|err| io_err(&path, err))?;
-        } else if !e.is_anti_item() {
-            write_file(&path, &[])?;
-            files += 1;
-        }
-    }
-    let file_len = std::fs::metadata(archive)
-        .map_err(|e| io_err(archive, e))?
-        .len();
-    let mut f = std::fs::File::open(archive).map_err(|e| io_err(archive, e))?;
-    let stream_map = &meta.stream_map;
-    for (bi, block) in meta.blocks.iter().enumerate() {
-        let ps = *stream_map
-            .block_first_pack_stream_index()
-            .get(bi)
-            .ok_or_else(|| arch_err(format!("block {bi} has no pack stream")))?;
-        let packed = *meta
-            .pack_sizes()
-            .get(ps)
-            .ok_or_else(|| arch_err(format!("pack stream {ps} missing")))?;
-        let offset = sevenz_rust2::SIGNATURE_HEADER_SIZE
-            + meta.pack_pos()
-            + stream_map
-                .pack_stream_offsets()
-                .get(ps)
-                .copied()
-                .unwrap_or(0);
-        if offset.checked_add(packed).is_none_or(|end| end > file_len) {
-            return Err(arch_err(format!("block {bi} lies outside the archive")));
-        }
-        let unpacked = block.get_unpack_size();
-        if total + unpacked > MAX_UNPACKED_BYTES {
-            return Err(arch_err(format!(
-                "unpacked size exceeds {MAX_UNPACKED_BYTES} bytes"
-            )));
-        }
-        let mut buf = vec![0u8; packed as usize];
-        f.seek(std::io::SeekFrom::Start(offset))
-            .map_err(|e| io_err(archive, e))?;
-        f.read_exact(&mut buf).map_err(|e| io_err(archive, e))?;
-        let data = if block.coders[0].encoder_method_id() == METHOD_DEFLATE {
-            super::inflate::inflate(&buf, unpacked as usize)
-                .map_err(|m| arch_err(format!("block {bi}: {m}")))?
-        } else {
-            buf
-        };
-        if data.len() as u64 != unpacked {
-            return Err(arch_err(format!("block {bi}: size mismatch")));
-        }
-        if block.has_crc && super::inflate::crc32(&data) as u64 != block.crc {
-            return Err(arch_err(format!("block {bi}: CRC mismatch")));
-        }
-        let mut cursor = 0usize;
-        for (fi, e) in meta.files.iter().enumerate() {
-            if stream_map.file_block_index.get(fi).copied().flatten() != Some(bi) {
-                continue;
-            }
-            let n = e.size() as usize;
-            let bytes = data
-                .get(cursor..cursor + n)
-                .ok_or_else(|| arch_err(format!("`{}` runs past its block", e.name())))?;
-            cursor += n;
-            if e.has_crc && super::inflate::crc32(bytes) as u64 != e.crc {
-                return Err(arch_err(format!("`{}`: CRC mismatch", e.name())));
-            }
-            let Some(path) = entry_path(dest, e.name(), strip_prefix).map_err(arch_err)? else {
-                continue;
-            };
-            write_file(&path, bytes)?;
-            files += 1;
-            total += n as u64;
-        }
-        if cursor != data.len() {
-            return Err(arch_err(format!("block {bi}: trailing data")));
-        }
-    }
-    Ok((files, total))
-}
-
-/// Unpacks archives using `sevenz-rust2`'s own decoders (LZMA, LZMA2, BZIP2, PPMD, COPY).
-fn unpack_sevenz(
-    archive: &Path,
-    strip_prefix: &str,
-    dest: &Path,
-) -> Result<(usize, u64), InstallError> {
-    let arch_err = |msg: String| InstallError::Archive {
-        path: archive.display().to_string(),
-        msg,
-    };
     let mut reader = sevenz_rust2::ArchiveReader::open(archive, sevenz_rust2::Password::empty())
         .map_err(|e| arch_err(e.to_string()))?;
     let mut files = 0usize;
     let mut total = 0u64;
     let mut failure: Option<InstallError> = None;
     let res = reader.for_each_entries(|e, data| {
+        let mut fail = |err: InstallError| {
+            failure = Some(err);
+            Ok(false)
+        };
         let path = match entry_path(dest, e.name(), strip_prefix) {
             Ok(Some(p)) => p,
             Ok(None) => return Ok(true),
-            Err(msg) => {
-                failure = Some(arch_err(msg));
-                return Ok(false);
-            }
+            Err(msg) => return fail(arch_err(msg)),
         };
         if e.is_directory() {
             if let Err(err) = std::fs::create_dir_all(&path) {
-                failure = Some(io_err(&path, err));
-                return Ok(false);
+                return fail(io_err(&path, err));
             }
             return Ok(true);
         }
-        total += e.size();
-        if total > MAX_UNPACKED_BYTES {
-            failure = Some(arch_err(format!(
-                "unpacked size exceeds {MAX_UNPACKED_BYTES} bytes"
-            )));
-            return Ok(false);
+        if e.is_anti_item() {
+            return Ok(true);
         }
+        // Read one byte more than declared to detect overruns.
+        let mut bytes = Vec::with_capacity(e.size() as usize);
+        if let Err(err) = data.take(e.size() + 1).read_to_end(&mut bytes) {
+            return fail(arch_err(format!("`{}`: {err}", e.name())));
+        }
+        if bytes.len() as u64 != e.size() {
+            return fail(arch_err(format!(
+                "`{}`: {} bytes, header says {}",
+                e.name(),
+                bytes.len(),
+                e.size()
+            )));
+        }
+        if e.has_crc && crc32(&bytes) as u64 != e.crc {
+            return fail(arch_err(format!("`{}`: CRC mismatch", e.name())));
+        }
+        total += bytes.len() as u64;
         if let Some(parent) = path.parent()
             && let Err(err) = std::fs::create_dir_all(parent)
         {
-            failure = Some(io_err(parent, err));
-            return Ok(false);
+            return fail(io_err(parent, err));
         }
-        let mut f = match std::fs::File::create(&path) {
-            Ok(f) => f,
-            Err(err) => {
-                failure = Some(io_err(&path, err));
-                return Ok(false);
-            }
-        };
-        let mut limited = data.take(e.size());
-        if let Err(err) = std::io::copy(&mut limited, &mut f) {
-            failure = Some(io_err(&path, err));
-            return Ok(false);
+        if let Err(err) = std::fs::write(&path, &bytes) {
+            return fail(io_err(&path, err));
         }
         files += 1;
         Ok(true)
@@ -517,6 +422,7 @@ mod tests {
         assert!(entry_path(d, "Pack/../evil", "Pack").is_err());
         assert!(entry_path(d, "../evil", "").is_err());
         assert!(entry_path(d, "/abs", "").is_err());
+        assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
         assert!(entry_path(d, "Pack\\..\\evil", "Pack").is_err());
     }
 }

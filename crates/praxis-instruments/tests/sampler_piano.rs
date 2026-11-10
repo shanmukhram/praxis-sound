@@ -316,6 +316,86 @@ fn motif() -> Vec<Note> {
     out
 }
 
+/// Onset error (ms, positive = late) of every note of an eighth-note motif at 128 BPM with
+/// overlapping sustain. Each note is isolated from the motif render by subtraction (the motif
+/// minus the motif without that note; voices sum linearly and none are stolen), then its onset
+/// is found with a simple envelope detector: the first time a centred 1 ms RMS envelope reaches
+/// -15 dB of the note's peak in its first 80 ms (the relative threshold at which listeners place
+/// the onset of a tone, Vos & Rasch 1981).
+fn motif_onset_errors(reg: &Registry, preset: &str) -> Vec<(u8, f32, f32)> {
+    let step = (60.0 / 128.0 / 2.0 * SR) as usize;
+    let pre = 4800;
+    // Two passes over the keyboard's middle and the motif register, soft to accented.
+    let pitches = [
+        45u8, 57, 60, 64, 69, 64, 60, 62, 48, 52, 55, 59, 67, 72, 76, 81, 50, 53, 58, 63, 66, 70,
+        74, 84,
+    ];
+    let vels = [0.95f32, 0.45, 0.6, 0.45, 0.85, 0.45, 0.6, 0.5];
+    let notes: Vec<Note> = pitches
+        .iter()
+        .enumerate()
+        .map(|(k, &p)| {
+            let mut n = note(k as u64 + 1, pre + k * step, p, vels[k % 8], step * 3 / 2);
+            n.on.brightness = if k % 8 == 4 { 1.0 } else { 0.0 };
+            n
+        })
+        .collect();
+    let total = pre + notes.len() * step + (2.5 * SR) as usize;
+    let full = {
+        let mut inst = create(reg, preset, &[]);
+        let (l, r) = render(inst.as_mut(), &notes, total);
+        mono(&l, &r)
+    };
+    let mut out = Vec::new();
+    for k in 0..notes.len() {
+        let others: Vec<Note> = notes
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| *j != k)
+            .map(|(_, n)| *n)
+            .collect();
+        let mut inst = create(reg, preset, &[]);
+        let (l, r) = render(inst.as_mut(), &others, total);
+        let rest = mono(&l, &r);
+        let alone: Vec<f32> = full.iter().zip(&rest).map(|(a, b)| a - b).collect();
+        let t = notes[k].at;
+        let onset = envelope_onset(&alone, t, SR);
+        out.push((
+            notes[k].on.pitch,
+            notes[k].on.velocity,
+            (onset as f32 - t as f32) / SR * 1000.0,
+        ));
+    }
+    out
+}
+
+#[test]
+fn notes_sound_on_their_note_times() {
+    let Some(packs) = installed_piano("notes_sound_on_their_note_times") else {
+        return;
+    };
+    let reg = Registry::new(packs);
+    let mut results = Vec::new();
+    for preset in ["felt_piano", "upright_piano"] {
+        let errs = motif_onset_errors(&reg, preset);
+        let mut abs: Vec<f32> = errs.iter().map(|e| e.2.abs()).collect();
+        abs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median = abs[abs.len() / 2];
+        let worst = *abs.last().unwrap();
+        let line: Vec<String> = errs
+            .iter()
+            .map(|(p, _, e)| format!("{p}:{e:+.1}"))
+            .collect();
+        println!("{preset} onset error ms (note:error): {}", line.join(" "));
+        println!("{preset}: median |error| {median:.2} ms, worst {worst:.2} ms");
+        results.push((preset, median, worst));
+    }
+    for (preset, median, worst) in results {
+        assert!(median < 3.0, "{preset}: median onset error {median:.2} ms");
+        assert!(worst < 6.0, "{preset}: worst onset error {worst:.2} ms");
+    }
+}
+
 #[test]
 fn renders_are_deterministic() {
     let Some(packs) = installed_piano("renders_are_deterministic") else {
@@ -460,5 +540,49 @@ fn measure_kw_tuning() {
             SampleRef::Sf2(_) => String::new(),
         };
         println!("    (\"{name}\", {:.1}),", cents(f, et));
+    }
+}
+
+/// Prints the attack of every Upright Piano KW sample (centred 1 ms RMS envelope against the
+/// peak of the first 150 ms): times to -40, -20, -6 and -1 dB, in ms, and the measured onset
+/// skip the sampler applies.
+#[test]
+#[ignore]
+fn measure_kw_attacks() {
+    let Some(packs) = installed_piano("measure_kw_attacks") else {
+        return;
+    };
+    let prog = load_pack_preset(&packs, PIANO_PACK, "upright_piano").unwrap();
+    for (i, r) in prog.regions.iter().enumerate() {
+        let s = &prog.samples[prog.sample_of[i]];
+        let sr = s.sample_rate;
+        let n = ((0.15 * sr) as usize).min(s.frames());
+        let x: Vec<f32> = (0..n)
+            .map(|j| {
+                let (l, rr) = s.frame(j);
+                0.5 * (l + rr)
+            })
+            .collect();
+        let w = (0.0005 * sr) as usize;
+        let env: Vec<f32> = (0..n)
+            .map(|j| rms(&x[j.saturating_sub(w)..(j + w).min(n)]))
+            .collect();
+        let peak = env.iter().fold(0f32, |m, v| m.max(*v));
+        let t = |db: f32| {
+            let th = peak * 10f32.powf(db / 20.0);
+            env.iter().position(|v| *v >= th).unwrap_or(n) as f32 / sr * 1000.0
+        };
+        let name = match &r.sample {
+            SampleRef::File(f) => f.rsplit('/').next().unwrap_or("").to_string(),
+            SampleRef::Sf2(_) => String::new(),
+        };
+        println!(
+            "{name:12} -40 {:5.1}  -20 {:5.1}  -6 {:5.1}  -1 {:5.1} ms; playback starts at {:5.1} ms",
+            t(-40.0),
+            t(-20.0),
+            t(-6.0),
+            t(-1.0),
+            s.onset() as f32 / sr * 1000.0
+        );
     }
 }

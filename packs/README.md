@@ -56,6 +56,5 @@ and pass when it is not installed.
   Decoded to f32 it takes about 115 MB, shared by every instrument that uses it.
 - Presets: `felt_piano` (soft voicing, see `crates/praxis-instruments/src/sampler/presets.rs`)
   and `upright_piano` (as recorded), both from `UprightPianoKW-20220221.sfz`.
-- The archive's blocks are DEFLATE-compressed; the installer decodes them with its own small
-  inflater (`sampler/inflate.rs`) because the workspace builds `sevenz-rust2` without its
-  `deflate` feature.
+- The archive's blocks are DEFLATE-compressed; `sevenz-rust2` (built with its `deflate`
+  feature) decodes them, and the installer checks each file's size and CRC-32.

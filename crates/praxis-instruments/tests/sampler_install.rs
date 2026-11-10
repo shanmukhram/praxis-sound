@@ -182,9 +182,7 @@ fn installs_lzma2_archive_via_sevenz_decoders() {
 }
 
 #[test]
-fn installs_copy_archive_via_own_block_reader() {
-    // COPY blocks take the same path as DEFLATE blocks (block layout and CRCs from sevenz-rust2,
-    // data read by our code).
+fn installs_copy_archive() {
     install_and_play(EncoderMethod::COPY, "copy");
 }
 

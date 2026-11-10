@@ -14,6 +14,66 @@ pub struct SampleData {
     left: Vec<f32>,
     /// `None` for mono samples.
     right: Option<Vec<f32>>,
+    /// Frames of pre-roll before the audible attack, measured at load (see [`measure_onset`]).
+    onset: usize,
+}
+
+/// Window of the onset envelope (centred RMS), seconds.
+pub const ONSET_WINDOW_S: f32 = 0.001;
+/// The attack point is where the envelope first reaches this level below the early peak
+/// (half amplitude).
+pub const ONSET_THRESHOLD_DB: f32 = -6.0;
+/// Span after the sample start that defines the early peak, seconds.
+pub const ONSET_PEAK_SPAN_S: f32 = 0.08;
+/// Playback starts this long before the attack point: the last part of the rise plus the 1 ms
+/// click-safe ramp.
+pub const ONSET_BACKOFF_S: f32 = 0.002;
+
+/// Where playback of a sample should start so its attack lands on the note time: the attack
+/// point minus [`ONSET_BACKOFF_S`], in frames from the sample start.
+///
+/// Deterministic: a centred 1 ms RMS envelope of the mid signal over the first
+/// [`ONSET_PEAK_SPAN_S`]; the attack point is the first frame where it reaches
+/// [`ONSET_THRESHOLD_DB`] below the envelope's maximum in that span.
+///
+/// Why half amplitude and not the first audible sound: in Upright Piano KW the envelope takes
+/// 0..10 ms to reach -20 dB and then up to 15 ms more to reach -6 dB. Aligning the -20 dB point
+/// still left notes 2..20 ms late (and late by a different amount per sample) to an onset
+/// detector, which, like a listener, places the onset of a slow rise near its steep middle.
+/// Starting 2 ms before the -6 dB point puts every attack within a few ms of the note time.
+/// Measured per sample by the ignored test `sampler_piano::measure_kw_attacks`.
+pub fn measure_onset(sample_rate: f32, left: &[f32], right: Option<&[f32]>) -> usize {
+    let frames = left.len();
+    let w = ((ONSET_WINDOW_S * 0.5 * sample_rate).round() as usize).max(1);
+    let span = ((ONSET_PEAK_SPAN_S * sample_rate) as usize).min(frames);
+    let n = (span + w).min(frames);
+    if span == 0 {
+        return 0;
+    }
+    // Prefix sums of the squared mid signal.
+    let mut prefix = Vec::with_capacity(n + 1);
+    prefix.push(0f64);
+    let mut acc = 0f64;
+    for i in 0..n {
+        let m = match right {
+            Some(r) => 0.5 * (left[i] as f64 + r[i] as f64),
+            None => left[i] as f64,
+        };
+        acc += m * m;
+        prefix.push(acc);
+    }
+    let env = |j: usize| {
+        let a = j.saturating_sub(w);
+        let b = (j + w).min(n);
+        ((prefix[b] - prefix[a]) / (b - a).max(1) as f64).sqrt()
+    };
+    let peak = (0..span).map(env).fold(0f64, f64::max);
+    if peak <= 0.0 {
+        return 0;
+    }
+    let th = peak * 10f64.powf(ONSET_THRESHOLD_DB as f64 / 20.0);
+    let onset = (0..span).find(|&j| env(j) >= th).unwrap_or(0);
+    onset.saturating_sub((ONSET_BACKOFF_S * sample_rate).round() as usize)
 }
 
 fn padded(mut v: Vec<f32>) -> Vec<f32> {
@@ -30,14 +90,21 @@ impl SampleData {
         let frames = left.len();
         let right = right.map(|mut r| {
             r.resize(frames, 0.0);
-            padded(r)
+            r
         });
+        let onset = measure_onset(sample_rate, &left, right.as_deref());
         SampleData {
             sample_rate,
             frames,
             left: padded(left),
-            right,
+            right: right.map(padded),
+            onset,
         }
+    }
+
+    /// Pre-roll frames before the audible attack (measured at load).
+    pub fn onset(&self) -> usize {
+        self.onset
     }
 
     pub fn frames(&self) -> usize {
