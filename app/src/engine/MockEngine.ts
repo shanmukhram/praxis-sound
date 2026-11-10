@@ -1,10 +1,20 @@
 // MockEngine: the EngineAdapter used in browser dev mode and tests until the Tauri (desktop) and
 // wasm (browser) adapters exist. Patch rules follow docs/contracts/patch.md (see mock/apply.ts);
-// audio is a clearly labelled placeholder preview (see mock/synth.ts).
+// requests go through a keyword mock planner (mock/planner.ts); audio is a clearly labelled
+// placeholder preview (mock/synth.ts) and checks are partly measured on it (mock/verify.ts).
 
 import type {
+  AgentInfo,
   ApplyResult,
+  AskRequest,
+  AskResult,
   EngineAdapter,
+  OpenViewEvent,
+  Take,
+  TakeScope,
+  TakeState,
+  ViewName,
+  Who,
   ExportRequest,
   ExportResult,
   LoadResult,
@@ -14,13 +24,37 @@ import type {
   TransportPosition,
   Unsubscribe,
 } from './EngineAdapter';
-import type { BarRange, NScore, Score, ScorePatch } from '../score/types';
-import { clone, normalizeScore } from '../score/types';
-import { barPosToSeconds, scoreSeconds, secondsToBarPos } from '../score/timeline';
+import type { BarRange, NScore, Origin, Score, ScorePatch } from '../score/types';
+import { clone, formatRange, normalizeScore } from '../score/types';
+import { restorePatch } from '../score/patchBuilder';
+import { isUnpitchedClass } from '../score/theory';
+import { barPosToSeconds, expandNotes, scoreSeconds, secondsToBarPos } from '../score/timeline';
 import { applyPatch } from './mock/apply';
+import { planEdit, planFresh } from './mock/planner';
 import { synthesize } from './mock/synth';
 import { validate } from './mock/validate';
+import { verifyMock } from './mock/verify';
+import { changedFromPatch, layerLabel, untouchedText } from './takes';
+import { patchErrorMessage } from './EngineAdapter';
 import { encodeWav } from './wav';
+
+/** One undoable step of the session: a take, a go-back, or a plain edit (mute, solo, lock). */
+interface Entry {
+  kind: 'take' | 'restore' | 'edit';
+  patch: ScorePatch;
+  inverse: ScorePatch;
+  /** Current take before and after the step. */
+  before: number;
+  after: number;
+}
+
+/** Sample rate of take renders (kept modest: every take is rendered and checked). */
+const TAKE_RATE = 22050;
+
+export const MOCK_AGENTS: AgentInfo[] = [
+  { name: 'cut-assistant', connected: true, about: 'fits sound to the edit' },
+  { name: 'trailer-bot', connected: true, about: 'drafts trailer cues' },
+];
 
 const SILENT: Meters = { peakL: -Infinity, peakR: -Infinity, rmsL: -Infinity, rmsR: -Infinity };
 
@@ -32,6 +66,17 @@ export class MockEngine implements EngineAdapter {
   readonly exports: ExportRequest[] = [];
 
   private score: NScore | null = null;
+  private takeList: Take[] = [];
+  private currentN = 0;
+  private frozenGainDb: number | null = null;
+  private takeAudio = new Map<number, Float32Array[]>();
+  private undoStack: Entry[] = [];
+  private redoStack: Entry[] = [];
+  private urls: string[] = [];
+  private chain: Promise<unknown> = Promise.resolve();
+  private takeSubs = new Set<(t: Take) => void>();
+  private stateSubs = new Set<(s: TakeState) => void>();
+  private viewSubs = new Set<(e: OpenViewEvent) => void>();
   private posSubs = new Set<(p: TransportPosition) => void>();
   private meterSubs = new Set<(m: Meters) => void>();
   private playing = false;
@@ -39,41 +84,328 @@ export class MockEngine implements EngineAdapter {
   private startedAt = 0;
   private loop: BarRange | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
-  private lastUrl: string | null = null;
 
   private ctx: AudioContext | null = null;
   private source: AudioBufferSourceNode | null = null;
   private analysers: [AnalyserNode, AnalyserNode] | null = null;
   private ctxStartTime = 0;
 
+  /** Loads a score as the live score of a new, empty session (no takes yet). */
   async load(input: Score): Promise<LoadResult> {
     await this.stop();
     const score = normalizeScore(input);
+    this.resetSession();
     this.score = score;
     this.offsetS = 0;
     this.loop = null;
     const report = validate(score);
     this.emitPosition();
+    this.emitState();
     return { score: clone(score), errors: report.errors, warnings: report.warnings };
   }
 
-  /** Current score (a copy), or null before load. */
+  /** Current live score (a copy), or null before load. */
   current(): NScore | null {
     return this.score ? clone(this.score) : null;
   }
 
   async applyPatch(patch: ScorePatch): Promise<ApplyResult> {
-    if (!this.score) return { ok: false, error: { kind: 'invalid', message: 'no score loaded' } };
-    const r = applyPatch(this.score, patch);
-    if (!r.ok) return r;
+    return this.exclusive(async () => {
+      if (!this.score) return { ok: false, error: { kind: 'invalid', message: 'no score loaded' } } as ApplyResult;
+      const r = applyPatch(this.score, patch);
+      if (!r.ok) return r;
+      this.score = r.score;
+      this.undoStack.push({ kind: 'edit', patch: clone(patch), inverse: r.inverse, before: this.currentN, after: this.currentN });
+      this.redoStack = [];
+      if (this.playing) this.restartAudio(this.positionSeconds());
+      this.emitState();
+      return { ok: true, score: clone(r.score), inverse: r.inverse } as ApplyResult;
+    });
+  }
+
+  // ------------------------------------------------------------ takes
+
+  /** Starts a sound from a score: take 1 (a new sound). Mock and test entry point. */
+  async startSound(input: Score, meta: { ask: string; title: string; say: string; who?: Who }): Promise<Take> {
+    return this.exclusive(async () => {
+      await this.stop();
+      this.resetSession();
+      this.score = normalizeScore(input);
+      return this.makeTake(this.score, null, { who: meta.who ?? 'You', ask: meta.ask, title: meta.title, say: meta.say });
+    });
+  }
+
+  /**
+   * The acceptance-1 demo conversation: take 1 the piano alone, take 2 adds the kick from bar 9,
+   * take 3 an agent's lift in bars 13-16. The piano is unlocked so pointed edits on it work.
+   */
+  async seedDemo(acceptance1: Score): Promise<void> {
+    const full = normalizeScore(acceptance1);
+    const kick = full.layers.find((l) => l.id === 'kick');
+    const kickPattern = full.patterns.find((p) => p.id === 'kick_soft');
+    const pianoOnly: NScore = {
+      ...clone(full),
+      layers: full.layers.filter((l) => l.id !== 'kick').map((l) => ({ ...l, locked: false })),
+      patterns: full.patterns.filter((p) => p.id !== 'kick_soft'),
+    };
+    await this.startSound(pianoOnly, {
+      ask: 'A calm 30-second felt piano loop in A minor. Rhythmic, notes ringing into each other. No risers or pads.',
+      title: 'Felt piano loop',
+      say: 'One felt piano playing a two-bar motif on an eighth-note grid, strong on the first beat and bright on beat 3, each note ringing into the next. 16 bars at 128 BPM, so it loops at exactly 30 seconds.',
+    });
+    if (kick && kickPattern) {
+      await this.edit(
+        {
+          description: 'Add a soft kick from bar 9',
+          origin: 'model',
+          scope: { layers: ['kick'] },
+          ops: [
+            { op: 'add_pattern', pattern: kickPattern },
+            { op: 'add_layer', layer: kick },
+          ],
+        },
+        'Add a soft kick from bar 9.',
+        undefined,
+        { title: 'Felt piano + soft kick', say: 'Kept the piano exactly as it was and added a soft, muted kick on beats 1 and 3 under bars 9 to 16. No new melody, no fills.' },
+      );
+    }
+    await this.agentAsk('cut-assistant', 'Give the last four bars a gentle lift so the loop can end on the cut at 0:30.', { layer: 'piano', bars: { start: 13, end: 16 } }, {
+      title: 'Lift in bars 13–16',
+      askText: 'Give the last four bars a gentle lift so the loop can end on the cut at 0:30.',
+    });
+  }
+
+  async ask(request: AskRequest): Promise<AskResult> {
+    return this.askAs('You', request);
+  }
+
+  /** Mock only: a connected agent makes a request (stands in for the MCP server, WP-X). */
+  async agentAsk(name: string, text: string, scope?: TakeScope, opts: { title?: string; askText?: string } = {}): Promise<AskResult> {
+    return this.askAs(`Agent · ${name}`, { text, scope }, opts);
+  }
+
+  private askAs(who: Who, request: AskRequest, opts: { title?: string; askText?: string } = {}): Promise<AskResult> {
+    return this.exclusive(async () => {
+      const text = request.text.trim();
+      const askText = opts.askText ?? (request.scope ? `${text} (${scopeLabel(this.score, request.scope)})` : text);
+      if (request.clipFile) {
+        return {
+          ok: false,
+          message: `Got "${request.clipFile.name}". Reading a clip needs the analyzer (WP-D), which the mock engine does not have yet; Praxis keeps a clip's character, never its melody.`,
+        } as AskResult;
+      }
+      if (!this.score || this.takeList.length === 0) {
+        if (!text) return { ok: false, message: 'Describe a sound to start from.' } as AskResult;
+        const fresh = planFresh(text);
+        this.resetSession();
+        this.score = fresh.score;
+        const take = await this.makeTake(fresh.score, null, { who, ask: askText, title: fresh.title, say: fresh.say });
+        return { ok: true, take } as AskResult;
+      }
+      const origin: Origin = 'model';
+      const plan = planEdit(this.score, text, request.scope, origin);
+      if (!plan.ok) return { ok: false, message: plan.message } as AskResult;
+      return this.commitTake(plan.patch, { who, ask: askText, title: opts.title ?? plan.title, say: plan.say, opens: plan.opens, scope: request.scope });
+    });
+  }
+
+  async edit(patch: ScorePatch, ask: string, scope?: TakeScope, words?: { title?: string; say?: string }): Promise<AskResult> {
+    return this.exclusive(async () => {
+      if (!this.score || this.takeList.length === 0) return { ok: false, message: 'Make a sound first.' } as AskResult;
+      const title = words?.title ?? (scope ? `Hand edit, ${formatRange(scope.bars)}` : 'Hand edit');
+      return this.commitTake(patch, {
+        who: 'You',
+        ask,
+        title,
+        say: words?.say ?? `Changed by hand: ${patch.description || 'an edit'}.`,
+        scope,
+      });
+    });
+  }
+
+  async takes(): Promise<Take[]> {
+    return [...this.takeList];
+  }
+
+  state(): TakeState {
+    return {
+      takes: [...this.takeList],
+      current: this.currentN,
+      score: this.score ? clone(this.score) : null,
+      canUndo: this.undoStack.length > 0,
+      canRedo: this.redoStack.length > 0,
+    };
+  }
+
+  async restore(n: number): Promise<AskResult> {
+    return this.exclusive(async () => {
+      const take = this.takeList.find((t) => t.n === n);
+      if (!take || !this.score) return { ok: false, message: `There is no take ${n}.` } as AskResult;
+      const patch = { ...restorePatch(this.score, take.score, `take ${n}`), description: `Go back to take ${n}` };
+      const r = applyPatch(this.score, patch);
+      if (!r.ok) return { ok: false, message: `Could not go back to take ${n}: ${patchErrorMessage(r.error)}`, error: r.error } as AskResult;
+      this.undoStack.push({ kind: 'restore', patch, inverse: r.inverse, before: this.currentN, after: n });
+      this.redoStack = [];
+      this.score = r.score;
+      this.currentN = n;
+      this.emitState();
+      return { ok: true, take } as AskResult;
+    });
+  }
+
+  async undo(): Promise<boolean> {
+    return this.exclusive(async () => {
+      const e = this.undoStack.at(-1);
+      if (!e || !this.score) return false;
+      const r = applyPatch(this.score, e.inverse);
+      if (!r.ok) return false;
+      this.undoStack.pop();
+      this.redoStack.push(e);
+      this.score = r.score;
+      this.currentN = e.before;
+      this.emitState();
+      return true;
+    });
+  }
+
+  async redo(): Promise<boolean> {
+    return this.exclusive(async () => {
+      const e = this.redoStack.at(-1);
+      if (!e || !this.score) return false;
+      const r = applyPatch(this.score, e.patch);
+      if (!r.ok) return false;
+      this.redoStack.pop();
+      this.undoStack.push({ ...e, inverse: r.inverse });
+      this.score = r.score;
+      this.currentN = e.after;
+      this.emitState();
+      return true;
+    });
+  }
+
+  async suggestions(): Promise<string[]> {
+    const s = this.score;
+    if (!s || this.takeList.length === 0) {
+      return ['A calm 30-second felt piano loop in A minor', 'A warm logo sting in D major, 4 seconds', 'A tense 20-second loop in E minor'];
+    }
+    const out: string[] = [];
+    if (s.layers.some((l) => !isUnpitchedClass(l.class))) out.push('Make it a little darker');
+    if (s.bars >= 8) out.push('Change the last four bars');
+    if (s.layers.some((l) => isUnpitchedClass(l.class))) out.push('Make the kick quieter');
+    if (!s.layers.some((l) => l.id === 'melody') && s.bars >= 9) out.push('Add a quiet glass melody from bar 9');
+    return out.slice(0, 4);
+  }
+
+  async agents(): Promise<AgentInfo[]> {
+    return MOCK_AGENTS.map((a) => ({ ...a }));
+  }
+
+  onTake(cb: (take: Take) => void): Unsubscribe {
+    this.takeSubs.add(cb);
+    return () => this.takeSubs.delete(cb);
+  }
+
+  onState(cb: (state: TakeState) => void): Unsubscribe {
+    this.stateSubs.add(cb);
+    cb(this.state());
+    return () => this.stateSubs.delete(cb);
+  }
+
+  onOpenView(cb: (e: OpenViewEvent) => void): Unsubscribe {
+    this.viewSubs.add(cb);
+    return () => this.viewSubs.delete(cb);
+  }
+
+  openView(view: ViewName, by = 'Praxis'): void {
+    this.viewSubs.forEach((cb) => cb({ view, by }));
+  }
+
+  // ------------------------------------------------------------ take internals
+
+  private exclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.chain.then(fn, fn);
+    this.chain = run.catch(() => undefined);
+    return run;
+  }
+
+  private resetSession(): void {
+    this.takeList = [];
+    this.currentN = 0;
+    this.frozenGainDb = null;
+    this.takeAudio.clear();
+    this.undoStack = [];
+    this.redoStack = [];
+  }
+
+  private async commitTake(
+    patch: ScorePatch,
+    words: { who: Who; ask: string; title: string; say: string; opens?: ViewName; scope?: TakeScope },
+  ): Promise<AskResult> {
+    const before = this.score!;
+    const r = applyPatch(before, patch);
+    if (!r.ok) return { ok: false, message: `Could not make that take: ${patchErrorMessage(r.error)}.`, error: r.error };
+    const prevN = this.currentN;
+    this.undoStack.push({ kind: 'take', patch: clone(patch), inverse: r.inverse, before: prevN, after: this.takeList.length + 1 });
+    this.redoStack = [];
     this.score = r.score;
-    if (this.playing) this.restartAudio(this.positionSeconds());
-    return { ok: true, score: clone(r.score), inverse: r.inverse };
+    const take = await this.makeTake(r.score, patch, words, before, prevN);
+    return { ok: true, take };
+  }
+
+  /** Renders and checks `score` as the next take, makes it current and announces it. */
+  private async makeTake(
+    score: NScore,
+    patch: ScorePatch | null,
+    words: { who: Who; ask: string; title: string; say: string; opens?: ViewName; scope?: TakeScope },
+    before?: NScore,
+    prevN?: number,
+  ): Promise<Take> {
+    // Bar-scoped edits hold the master gain (like `master.frozen_gain_db`) so untouched bars stay
+    // sample-identical; a new sound or a layer-wide change re-normalises to the loudness target.
+    const hold = !!patch?.scope?.bars && this.frozenGainDb !== null;
+    const out = synthesize(score, { sampleRate: TAKE_RATE, gainDb: hold ? this.frozenGainDb! : undefined });
+    if (!hold) this.frozenGainDb = out.report.applied_gain_db;
+    const n = this.takeList.length + 1;
+    const changed = patch && before ? changedFromPatch(before, score, patch) : {};
+    let untouched = '';
+    if (patch && before && prevN) {
+      const prevAudio = this.takeAudio.get(prevN);
+      const same = prevAudio ? identicalOutside(prevAudio, out.channels, out.sampleRate, score, changed) : false;
+      untouched = untouchedText(before, score, changed, prevN, same);
+    }
+    const wav = encodeWav(out.channels, out.sampleRate, 'wav16');
+    const take: Take = {
+      n,
+      who: words.who,
+      ask: words.ask,
+      title: words.title,
+      say: words.say,
+      score: clone(score),
+      patch: patch ? clone(patch) : null,
+      changed,
+      untouched,
+      render: { audioUrl: this.makeUrl(wav), report: out.report },
+      checks: verifyMock(score, out.channels, out.sampleRate, out.report),
+      opens: words.opens,
+      scope: words.scope,
+    };
+    this.takeAudio.set(n, out.channels);
+    this.takeList.push(take);
+    this.currentN = n;
+    this.takeSubs.forEach((cb) => cb(take));
+    this.emitState();
+    if (take.opens) this.openView(take.opens, take.who === 'You' ? 'Praxis' : take.who.replace('Agent · ', ''));
+    return take;
+  }
+
+  private emitState(): void {
+    const st = this.state();
+    this.stateSubs.forEach((cb) => cb(st));
   }
 
   async render(options: RenderOptions = {}): Promise<RenderResult> {
     if (!this.score) throw new Error('no score loaded');
-    const out = synthesize(this.score, { sampleRate: options.sampleRate ?? 44100, layers: options.layers });
+    const out = synthesize(this.score, { sampleRate: options.sampleRate ?? 44100, layers: options.layers, gainDb: this.frozenGainDb ?? undefined });
     const wav = encodeWav(out.channels, out.sampleRate, options.format ?? 'wav16');
     return { audioUrl: this.makeUrl(wav), report: out.report };
   }
@@ -148,7 +480,8 @@ export class MockEngine implements EngineAdapter {
 
   dispose(): void {
     void this.stop();
-    if (this.lastUrl && typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(this.lastUrl);
+    if (typeof URL.revokeObjectURL === 'function') this.urls.forEach((u) => URL.revokeObjectURL(u));
+    this.urls = [];
     void this.ctx?.close();
     this.ctx = null;
   }
@@ -275,9 +608,10 @@ export class MockEngine implements EngineAdapter {
 
   private makeUrl(wav: ArrayBuffer): string {
     if (typeof Blob !== 'undefined' && typeof URL.createObjectURL === 'function') {
-      if (this.lastUrl) URL.revokeObjectURL(this.lastUrl);
-      this.lastUrl = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));
-      return this.lastUrl;
+      // Every take keeps its own URL (all are playable), released on dispose.
+      const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));
+      this.urls.push(url);
+      return url;
     }
     // Non-browser (tests): a data URL.
     const bytes = new Uint8Array(wav);
@@ -289,4 +623,38 @@ export class MockEngine implements EngineAdapter {
 
 function now(): number {
   return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+/** "Bars 13–16 · Felt piano". */
+export function scopeLabel(score: NScore | null, scope: TakeScope): string {
+  const { start, end } = scope.bars;
+  return `${start === end ? `Bar ${start}` : `Bars ${start}–${end}`} · ${score ? layerLabel(score, scope.layer) : scope.layer}`;
+}
+
+/**
+ * True when two renders are sample-identical outside the changed bars plus the changed layers'
+ * tails (wrapping on loops): the contract's audio-level isolation window.
+ */
+export function identicalOutside(a: Float32Array[], b: Float32Array[], sr: number, score: NScore, changed: Record<string, [number, number]>): boolean {
+  if (a.length !== b.length || a[0].length !== b[0].length) return false;
+  const ids = Object.keys(changed);
+  const n = a[0].length;
+  const keep = new Uint8Array(n).fill(1);
+  if (ids.length) {
+    const barS = scoreSeconds(score) / score.bars;
+    const from = Math.min(...ids.map((l) => changed[l][0]));
+    const to = Math.max(...ids.map((l) => changed[l][1]));
+    const tail = Math.max(0.35, ...expandNotes(score).filter((e) => ids.includes(e.layer)).map((e) => e.lengthS + 0.35));
+    const s0 = Math.floor((from - 1) * barS * sr);
+    const s1 = Math.ceil((to * barS + tail) * sr);
+    const loop = score.playback.mode === 'loop';
+    for (let i = s0; i < s1; i++) {
+      if (i < n) keep[i] = 0;
+      else if (loop) keep[i % n] = 0;
+    }
+  }
+  for (let c = 0; c < a.length; c++) {
+    for (let i = 0; i < n; i++) if (keep[i] && a[c][i] !== b[c][i]) return false;
+  }
+  return true;
 }

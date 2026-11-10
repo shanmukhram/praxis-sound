@@ -1,102 +1,98 @@
 # Praxis Sound workstation front end (`app/`)
 
-The workstation UI (FR-28 to FR-32) as a TypeScript + Vite web app with canvas components and no
-framework (ADR-0002). In this package it runs in a browser against a **mock engine adapter**; the
-Tauri IPC adapter (desktop) and the wasm adapter (browser build) replace the mock later behind the
-same `EngineAdapter` interface.
+The conversation-first workstation (ADR-0011, FR-28 to FR-32) as a TypeScript + Vite web app with
+no framework (ADR-0002). It follows the approved concept, `docs/design/workstation-concept.html`:
+a sounds list, a conversation about one sound in which every request makes a playable **take**,
+and a Sound panel whose change map shows what each take changed. In this package it runs in a
+browser against a **mock engine adapter**; the Tauri IPC adapter (desktop) and the wasm adapter
+(browser build) replace the mock later behind the same `EngineAdapter` interface.
 
 ```bash
 npm install
-npm run dev          # http://localhost:5173 (loads fixtures/acceptance1.score.json)
+npm run dev          # http://localhost:5173 (opens the acceptance-1 sound on take 3)
 npm test             # Vitest unit tests
-npm run test:e2e     # Playwright smoke tests (starts the dev server itself)
+npm run test:e2e     # Playwright tests at 1440 and 390 (starts the dev server itself)
 npm run typecheck
 npm run build        # dist/
 npm run gen:types    # regenerate src/score/generated.ts from ../schema/*.schema.json
 ```
 
-`?fixture=acceptance1_bell` (or `empty`) picks another fixture; `?theme=light|dark` forces a theme.
-Playwright uses its bundled Chromium (`npx playwright install chromium` once), or an installed
-browser with `PW_CHANNEL=msedge` / `PW_CHANNEL=chrome`.
+`?sound=bell` or `?sound=new` opens another sound. Playwright uses its bundled Chromium
+(`npx playwright install chromium` once), or an installed browser with `PW_CHANNEL=msedge` /
+`PW_CHANNEL=chrome`. Screenshots from the e2e run land in `screenshots/` (desktop 1440, phone 390,
+phone with the Sound sheet open).
 
-## What is here
+## What you see
+
+- **Sounds list** (left, 248 px): your sounds, New sound, and the connected agents.
+- **Conversation** (middle): each request and its take. The current take is the largest block:
+  its reply, waveform (the changed bars in amber), key / tempo / bars / length, the measured
+  checks in plain words, what changed and what stayed identical, Try 3 variations and Export.
+  Earlier takes fold into one-line rows with Go back. The composer takes words, a scope chip
+  ("Bars 13–16 · Felt piano", set by dragging on the change map) and a dropped clip; suggestion
+  chips above it come from the current sound. Undo / Redo sit in the header (Ctrl+Z,
+  Ctrl+Shift+Z); Space plays the current take.
+- **Sound panel** (right, 456 px): "Where each layer plays", always at the top, then Overview
+  (layers with Mute / Solo / Lock in words; Mood, Brightness, Space, Energy), Rhythm (the step
+  grid in DON / din / don / TIN), Notes (piano roll, moved notes in amber, What moved), Mix
+  (loudness and peak against targets, spectrogram, layer levels) and Export. When the assistant or
+  an agent opens a view, it says "Notes opened by cut-assistant".
+- **Phone** (under 760 px): the conversation full width with a sticky composer; the Sound panel
+  is a bottom sheet opened from the top bar.
+- Scrollbars are themed everywhere: a slim grey thumb on a transparent track, `color-scheme: dark`.
+
+## Code
 
 | Path | What it does |
 | --- | --- |
-| `scripts/gen-types.mjs` | Dependency-free generator: `schema/score.schema.json` + `schema/patch.schema.json` -> `src/score/generated.ts`. A unit test fails if the file is stale. |
-| `src/score/generated.ts` | Generated Score, ScorePatch, PatchOp, ... types (do not edit). |
-| `src/score/types.ts` | Normalised types (schema defaults filled), `HistoryEntry`/`Version`/`Project` mirrors of `project.rs`, helpers. |
-| `src/score/theory.ts` | Keys, scales, grids, steps per bar, accents; ported from `theory.rs`/`timeline.rs`. |
-| `src/score/timeline.ts` | Bar/second mapping and `expandNotes` (port of `timeline::expand_notes`, keeps pattern phase). |
-| `src/score/patchBuilder.ts` | UI intent -> `ScorePatch` with exact scope: mute/solo/lock, tempo, clear bars, step and piano-roll edits in a bar range (`write_bars`, or `replace_pattern` when the range owns its pattern), restore-version patches. |
-| `src/score/ids.ts` | Derived pattern ids `<layer>_b<start>-<end>` (`_2`...), as in `apply/ids.rs`. |
-| `src/score/history.ts` | Local undo/redo/versions mirroring the project contract; operations are serialised. |
-| `src/engine/EngineAdapter.ts` | The adapter interface, `PatchError` (mirrors `patch.rs`), `RenderReport` (mirrors `api.rs`, plus `mock`). |
-| `src/engine/MockEngine.ts` | Mock adapter: patch rules, placeholder render to a WAV blob URL, WebAudio transport with loop, position and meter streams, export recording. |
-| `src/engine/mock/apply.ts` | Mock `apply`: atomic, locks (user mute/solo allowed on locked layers), scope, copy-on-write splits with `pattern_offset_steps`, `write_bars` id resolution, insert positions, exact inverses, validation. |
-| `src/engine/mock/validate.ts` | Subset of `validate.rs` (ranges, ids, grid, overlap, off-scale, avoid-list). |
-| `src/engine/mock/synth.ts` | **Mock preview** synthesis (sine tones, click/thump drums). Not Praxis instruments. |
+| `src/engine/EngineAdapter.ts` | The adapter interface: score, patches, render, transport, export, and the take model (`ask`, `edit`, `takes`, `state`, `restore`, `undo`/`redo`, `suggestions`, `agents`, `onTake`, `onState`, `onOpenView`, `openView`). `Take` and `VerifyReport` mirror the Rust `VerifyReport` and the CLI payloads, so a real adapter fills them from `praxis generate | edit | check`. |
+| `src/engine/takes.ts` | Pure take helpers any adapter can use: `changedFromPatch` (bars each layer changed), `changedText`, `untouchedText`. |
+| `src/engine/MockEngine.ts` | Mock adapter: a take session with undo history (going back is an undoable patch), the acceptance-1 demo conversation, mock agents, view events, a WebAudio transport and export recording. `identicalOutside` proves "sample-identical" by comparing renders outside the changed bars and their tails. |
+| `src/engine/mock/planner.ts` | **Mock planner**: keyword rules (scoped lift / soften / accent, last four bars, darker / brighter, room, energy, kick level, glass melody, variations, a new sound from words) that build patches through the patch builder. |
+| `src/engine/mock/verify.ts` | Mock checks shaped like `verify_render`: loudness, peak, clipping, loop seam and silence measured on the render; tempo, key and grid from the score (labelled as such). |
+| `src/engine/mock/apply.ts`, `validate.ts`, `synth.ts` | Patch rules (locks, scope, copy-on-write, exact inverses, insert positions, write_bars ids), a validator subset, and the placeholder synth (seeded note phases, per-layer low-pass, loudness-target or held master gain). |
 | `src/engine/wav.ts` | WAV 16/24/32f encode and decode. |
-| `src/ui/app.ts` | Shell, controller, layout, keyboard shortcuts. |
-| `src/ui/timeline.ts` | Canvas timeline: ruler, sections, layer lanes, clips with note ticks, edit-range selection, playhead; DOM layer headers with M/S/L. |
-| `src/ui/stepSequencer.ts` | Step grid per pitch lane, velocity row, accent row (DON/din/don/TIN), note inspector with length % (overlap above 100% shown). |
-| `src/ui/pianoRoll.ts` | Canvas piano roll: key rows highlighted, tonic marked, off-scale notes flagged; add, select, resize, delete. |
-| `src/ui/analysis.ts` | Waveform and log-frequency spectrogram (own FFT) of the adapter's render, render report. |
-| `src/ui/sidePanel.ts` | History list, Undo/Redo, named versions, last patch JSON with scope. |
-| `src/ui/exportDialog.ts` | WAV 16/24/32f, FLAC, stems, MIDI, project; calls `adapter.export`. |
-| `tests/unit/*` | Grid maths, patch building and scope, mock engine rules and inverses, history, schemas. |
-| `tests/e2e/smoke.spec.ts` | Playwright: acceptance 1 loads (16 bars, 2 layers, sections), M/S/L, scoped step edit in bars 13-16, undo/redo, versions, piano roll, export, transport. |
-| `screenshots/` | Screenshots written by the e2e run. |
+| `src/score/*` | Generated types, theory, timeline, patch builder, derived pattern ids (unchanged in spirit from WP-U1). |
+| `src/ui/shell.ts` | The three-column shell: sounds list and agents, thread (take cards, compact takes, replies, making indicator), composer with scope and clip chips, suggestion chips, Sound panel with tabs, phone sheet, playback of each take's render. |
+| `src/ui/changeMapModel.ts`, `src/ui/checks.ts` | Pure models: change-map cells from `take.changed`, the checks summary from the report. |
+| `src/ui/views/*` | Panel views: change map (drag to scope), Overview, Rhythm, Notes, Mix and Export. |
+| `src/ui/waveform.ts`, `src/ui/spectrogram.ts` | Waveform peaks from a take's render, highlighted from `changed`; FFT spectrogram. |
+| `tests/unit/*` | Grid maths, patch building, mock rules and inverses, schemas, takes (demo, change map, scoped asks, refusals, restore and undo, checks summary). |
+| `tests/e2e/workstation.spec.ts` | The brief's Playwright tests at 1440 and 390. |
 
-## How edits work
+## How a request becomes a take
 
-Every edit is a `ScorePatch`; nothing mutates the Score directly. Views call
-`Controller.edit(score => patch)`, which waits for earlier edits to land, builds the patch from the
-current score, and sends it through `History.commit` -> `EngineAdapter.applyPatch`. The adapter
-returns the new score and the exact inverse (stored for undo) or a `PatchError`, shown in the
-status bar and the patch panel. The scope bar shows the next edit's scope (layer + bars) and the
-last patch's scope.
-
-Step and piano-roll edits target the selected layer and bar range. If one clip covers the range and
-the range is a whole number of pattern repeats, the editors show that pattern (an edit applies to
-every repeat in the range); otherwise they show the range note for note. The first edit writes a
-new pattern `<layer>_b<start>-<end>` with `write_bars`; later edits of the same range use
-`replace_pattern` on it, so no orphan patterns pile up.
-
-## Keyboard
-
-Space play/stop · Home to start · L loop the selected bars · Ctrl+Z undo · Ctrl+Shift+Z or Ctrl+Y
-redo · M / S mute / solo the selected layer · R render · E export · 1 / 2 step sequencer / piano roll.
+The composer (or a chip, a Feel macro, an agent) calls `adapter.ask({text, scope?, clipFile?})`.
+The planner turns it into a `ScorePatch`; when the person dragged bars, the patch scope is exactly
+those bars and that layer. The engine applies it under the lock and scope rules, renders, checks
+and returns a `Take`. A hand edit in Rhythm or Notes goes through `adapter.edit(patch, ...)` the
+same way. Mute, solo and lock are patches on the live score (undoable, no take). A refused request
+(for example, a change on a locked layer) gets a short reply in the thread and no take.
 
 ## Mocked or not yet real
 
-- **Audio is a placeholder.** The mock synthesises sine tones and simple drum clicks so transport,
-  playhead, waveform and spectrogram work. It is labelled "mock" in the UI and the render report.
-  Its loudness is an unweighted RMS estimate and its peak is sample peak, not LUFS/dBTP.
-- **Export** only records the request and lists the files it would write.
-- The mock implements `set_title`, `set_tempo`, `set_seed`, `add_layer`, `remove_layer`, `update_layer`,
-  `set_lock`, `add_pattern`, `replace_pattern`, `remove_pattern`, `write_bars`, `clear_bars`,
-  `place_clip`, `set_clips`; other ops are rejected with a plain message.
-- No Tauri shell (`crates/praxis-app`) and no wasm adapter yet; FR-30's loudness-matched A/B
-  against a reference clip is not built (needs reference analysis).
+- **The planner is a keyword mock.** It understands the requests listed above and says so for
+  anything else; the real planner (WP-P/P2) understands plain language.
+- **Audio is a placeholder.** Sine tones and simple drum clicks so playback, waveforms and the
+  spectrogram work. Loudness is an unweighted RMS estimate and peak is sample peak, labelled in
+  the Mix view. Reverb is not rendered.
+- **Checks** measure the mock render for loudness, peak, clipping, loop seam and silence; tempo,
+  key and grid come from the score.
+- **Clips** are accepted and named, but analysis (WP-D) is not in the mock: the reply says so.
+- **Export** records the request and lists the files it would write.
+- **Agents** are two mock entries; `praxis.engine.agentAsk(name, text)` in the console stands in
+  for the MCP server (WP-X). Switching sounds restarts that sound's conversation.
+- The demo sound unlocks the felt piano so pointed edits on it work; lock it in Overview and such
+  requests are refused, as the contract requires.
 
-## Contract rules the mock follows (patch.md, build/integration e524a62)
+## Contract notes (for the orchestrator)
 
-1. **Auditioning a locked layer.** An `origin: user` `update_layer` that changes only `muted`
-   and/or `solo` is allowed on a locked layer; any other field, or a model/system origin, fails
-   with `LockedLayer` (rule 2). With `scope.bars` set, `update_layer` may only rename.
-2. **Insert positions.** `add_layer` and `add_pattern` take an optional `index` (None appends);
-   removals invert to an add at the old index, and a layer added locked is unlocked by the
-   inverse before it is removed (rule 7). `set_seed` is a global op. The mock does not implement
-   `add_section` / `add_marker`.
-3. **`write_bars` pattern ids.** The given id is used if it is valid and free; an existing
-   identical pattern is reused (no add, no remove in the inverse); otherwise the pattern is stored
-   under `<layer>_b<start>-<end>` (`_2`, `_3`... on collision, reusing a derived id that holds
-   identical content). It never fails with `DuplicateId` (rule 4). The UI proposes ids in the same
-   form, so the id it sends is the id kept.
-
-The mock does not canonicalise clip lists after a split the way WP-A's `apply` does, so clip
-lists can differ in shape from the real engine's while expanding to the same notes.
+1. The UI needs an `edit(patch, ask, scope?)` call for hand edits from the Rhythm and Notes views
+   (a take from an explicit patch); the brief lists only `ask`. It is in `EngineAdapter`.
+2. `ask` returns `AskResult = {ok: true, take} | {ok: false, message, error?}` rather than a bare
+   `Take`, so a refusal (lock rule, unplannable request) reaches the thread in words.
+3. Undo/redo of takes lives in the adapter (`undo()`, `redo()`), next to `restore(n)`, because
+   agents make takes too; the MCP `praxis_takes` stream should carry the same history.
 
 ## Dependencies (all dev-only; nothing is bundled into the app)
 
