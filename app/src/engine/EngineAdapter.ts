@@ -116,14 +116,134 @@ export interface ExportResult {
 
 export type Unsubscribe = () => void;
 
+// ---------------------------------------------------------------- takes (ADR-0011)
+
+/** One measured check. Mirrors `Check` in crates/praxis-analyze/src/verify.rs. */
+export interface VerifyCheck {
+  /** "tempo", "key", "grid", "loudness", "true_peak", "loop_seam", "clipping", "silence". */
+  name: string;
+  passed: boolean;
+  measured: string;
+  expected: string;
+}
+
+/**
+ * Mirrors `VerifyReport` (contracts/sound-profile.md, verify.rs) and the `praxis check --json`
+ * payload, so a real adapter can fill it from the CLI unchanged.
+ */
+export interface VerifyReport {
+  checks: VerifyCheck[];
+  tempo_bpm: number | null;
+  key: string | null;
+  grid_deviation_ms: number | null;
+  onsets_on_grid: number | null;
+  integrated_lufs: number | null;
+  true_peak_dbtp: number | null;
+  seam_jump_ratio: number | null;
+  seam_excess_db: number | null;
+  passed: boolean;
+}
+
+export type ViewName = 'overview' | 'rhythm' | 'notes' | 'mix' | 'export';
+
+/** Who made a take: the person, or a connected agent by name. */
+export type Who = 'You' | `Agent · ${string}`;
+
+/** A bar range on one layer: the scope of a pointed-at request. */
+export interface TakeScope {
+  layer: string;
+  bars: BarRange;
+}
+
+/** One playable result of a request (a project version, FR-31). */
+export interface Take {
+  /** 1-based take number within the sound. */
+  n: number;
+  who: Who;
+  /** The request as asked (with the scope appended when there was one). */
+  ask: string;
+  title: string;
+  /** Short plain-language reply (the planner's `PlanOutcome` summary). */
+  say: string;
+  score: NScore;
+  /** The patch that made this take from the previous one; null for a new sound. */
+  patch: ScorePatch | null;
+  /** Bars each changed layer was changed in: `{layer: [from, to]}`. Empty for a new sound. */
+  changed: Record<string, [number, number]>;
+  /** What stayed identical, in words (e.g. "Bars 1-12 sample-identical to take 2."). */
+  untouched: string;
+  render: RenderResult;
+  checks: VerifyReport;
+  /** A panel view the maker opened to show what it did. */
+  opens?: ViewName;
+  scope?: TakeScope;
+}
+
+export interface AskRequest {
+  text: string;
+  scope?: TakeScope;
+  /** A dropped reference clip (FR-11). */
+  clipFile?: File | { name: string };
+}
+
+/** A take, or why no take was made (a refused patch, or a request the planner cannot do). */
+export type AskResult = { ok: true; take: Take } | { ok: false; message: string; error?: PatchError };
+
+export interface TakeState {
+  takes: Take[];
+  /** Number of the take that is playing now. */
+  current: number;
+  /** The live score: the current take plus mute/solo/lock changes made since. */
+  score: NScore | null;
+  canUndo: boolean;
+  canRedo: boolean;
+}
+
+export interface OpenViewEvent {
+  view: ViewName;
+  /** "Praxis" (the assistant) or an agent's name. */
+  by: string;
+}
+
+export interface AgentInfo {
+  name: string;
+  connected: boolean;
+  /** What it is for, in a few words. */
+  about: string;
+}
+
 export interface EngineAdapter {
   /** Which implementation this is; the UI labels mock output plainly. */
   readonly kind: 'mock' | 'tauri' | 'wasm';
   readonly label: string;
 
   load(score: Score): Promise<LoadResult>;
-  /** Applies a patch atomically: the new score and its exact inverse, or why it was rejected. */
+  /**
+   * Applies a patch atomically: the new score and its exact inverse, or why it was rejected.
+   * Recorded in the session's undo history without making a take (mute, solo, lock).
+   */
   applyPatch(patch: ScorePatch): Promise<ApplyResult>;
+
+  // Takes (ADR-0011). `praxis generate|edit|check` and the MCP `praxis_takes` stream fill these.
+  /** A request in words (optionally scoped to bars of one layer) -> a rendered, checked take. */
+  ask(request: AskRequest): Promise<AskResult>;
+  /** A hand edit from a panel view (Rhythm, Notes) as an explicit patch -> a take. */
+  edit(patch: ScorePatch, ask: string, scope?: TakeScope): Promise<AskResult>;
+  takes(): Promise<Take[]>;
+  state(): TakeState;
+  /** Goes back to take n through a patch, so it can be undone. */
+  restore(n: number): Promise<AskResult>;
+  undo(): Promise<boolean>;
+  redo(): Promise<boolean>;
+  /** Suggestion chips generated from the current sound. */
+  suggestions(): Promise<string[]>;
+  agents(): Promise<AgentInfo[]>;
+  onTake(cb: (take: Take) => void): Unsubscribe;
+  /** Any change to takes, the current take, the live score or undo state. */
+  onState(cb: (state: TakeState) => void): Unsubscribe;
+  onOpenView(cb: (e: OpenViewEvent) => void): Unsubscribe;
+  /** Opens a panel view on behalf of the assistant or an agent (MCP `praxis_open_view`). */
+  openView(view: ViewName, by?: string): void;
   render(options?: RenderOptions): Promise<RenderResult>;
 
   play(): Promise<void>;

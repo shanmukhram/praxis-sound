@@ -338,7 +338,8 @@ describe('MockEngine adapter', () => {
     expect(out.report.is_loop).toBe(true);
     expect(out.report.length_samples).toBe(8000 * 30);
     expect(out.report.notes_rendered).toBe(144); // piano only: 8 repeats of 18 notes
-    expect(out.report.true_peak_dbtp).toBeCloseTo(-1, 6);
+    expect(out.report.loudness_lufs).toBeCloseTo(-16, 6); // normalised to the score's target
+    expect(out.report.true_peak_dbtp).toBeLessThanOrEqual(-1);
     const wav = decodeWav(await (await fetch(out.audioUrl)).arrayBuffer());
     expect(wav.channels[0].length).toBe(8000 * 30);
     const res = await e.export({ kinds: ['wav24', 'stems', 'midi'], destination: 'out', baseName: 'loop' });
