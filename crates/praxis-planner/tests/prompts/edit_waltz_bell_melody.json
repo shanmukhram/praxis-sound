@@ -1,0 +1,47 @@
+{
+  "brief": "A tender waltz on felt piano in F major, 16 bars at 90 bpm",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "F",
+      "mode": "major"
+    },
+    "time_signature": [
+      3,
+      4
+    ],
+    "bars": 16,
+    "emotion": "tender",
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          16
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  },
+  "edit": {
+    "instruction": "add a soft bell melody in the last 4 bars",
+    "expect": {
+      "intent": "add_melody",
+      "bars": [
+        13,
+        16
+      ],
+      "new_layers": 1,
+      "new_preset": "bell"
+    },
+    "seed": 5
+  }
+}

@@ -111,8 +111,8 @@ fn layer_list(score: &Score) -> String {
         .join(", ")
 }
 
-/// Resolves the bar scope. Returns the range, whether it is the whole score, and remarks.
-fn resolve_bars(
+/// Resolves the bar scope: the range, whether it is the whole score, and remarks.
+pub fn resolve_bars(
     plan: &EditPlan,
     score: &Score,
 ) -> Result<(BarRange, bool, Vec<String>), EditIssue> {

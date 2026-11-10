@@ -207,12 +207,59 @@ pub fn edit_repair_prompt(issues: &[EditIssue]) -> String {
     )
 }
 
-/// Bars and layers a repaired plan must stay within.
-#[derive(Clone, Debug, PartialEq)]
+/// Bars and layers a repaired plan must stay within: the bars of the first plan whose scope
+/// resolved, and the target layers of the first plan that resolved completely.
+#[derive(Clone, Debug, PartialEq, Default)]
 struct Bound {
-    bars: BarRange,
-    whole: bool,
-    targets: Vec<String>,
+    bars: Option<(BarRange, bool)>,
+    targets: Option<Vec<String>>,
+}
+
+impl Bound {
+    /// Issues when `bars`/`targets` reach outside the bound; records them when it is unset.
+    fn check_bars(&mut self, bars: BarRange, whole: bool) -> Option<EditIssue> {
+        let Some((b, b_whole)) = self.bars else {
+            self.bars = Some((bars, whole));
+            return None;
+        };
+        if (whole && !b_whole) || bars.start < b.start || bars.end > b.end {
+            return Some(EditIssue::new(
+                EditIssueCode::Widened,
+                "/scope",
+                format!(
+                    "the edit was scoped to {}; the corrected plan reaches {}. Stay inside {}",
+                    bars_text(b),
+                    bars_text(bars),
+                    bars_text(b)
+                ),
+            ));
+        }
+        None
+    }
+
+    fn check_targets(&mut self, targets: &[String]) -> Option<EditIssue> {
+        let Some(b) = &self.targets else {
+            self.targets = Some(targets.to_vec());
+            return None;
+        };
+        let extra: Vec<String> = targets
+            .iter()
+            .filter(|t| !b.contains(t))
+            .map(|s| format!("`{s}`"))
+            .collect();
+        if extra.is_empty() {
+            return None;
+        }
+        Some(EditIssue::new(
+            EditIssueCode::Widened,
+            "/layers",
+            format!(
+                "the edit was limited to layers [{}]; do not add {}",
+                b.join(", "),
+                extra.join(", ")
+            ),
+        ))
+    }
 }
 
 /// One attempt: parse, resolve, bound check, build, apply.
@@ -221,66 +268,26 @@ fn try_edit(
     score: &Score,
     catalogue: &Catalogue,
     seed: u64,
-    bound: &mut Option<Bound>,
+    bound: &mut Bound,
 ) -> Result<(EditOutcome, Vec<Repair>), Vec<EditIssue>> {
     let plan: EditPlan = serde_json::from_value(value.clone()).map_err(|e| {
         vec![EditIssue::new(
             EditIssueCode::Schema,
             "",
             format!(
-                "{e}; the input must match the `{EDIT_TOOL_NAME}` schema (intent is one of \
-                 add_layer, add_melody, rewrite_motif, change_instrument, change_dynamics, \
-                 remove_layer, thin_out)"
+                "{e}; the input must match the `{EDIT_TOOL_NAME}` schema (intent is one of                  add_layer, add_melody, rewrite_motif, change_instrument, change_dynamics,                  remove_layer, thin_out)"
             ),
         )]
     })?;
+    // The scope is bound as soon as it resolves, even if the rest of the plan has problems.
+    if let Ok((bars, whole, _)) = resolve::resolve_bars(&plan, score)
+        && let Some(issue) = bound.check_bars(bars, whole)
+    {
+        return Err(vec![issue]);
+    }
     let r = resolve::resolve(&plan, score, catalogue)?;
-    match bound {
-        None => {
-            *bound = Some(Bound {
-                bars: r.bars,
-                whole: r.whole,
-                targets: r.targets.clone(),
-            })
-        }
-        Some(b) => {
-            let mut issues = Vec::new();
-            if (r.whole && !b.whole) || r.bars.start < b.bars.start || r.bars.end > b.bars.end {
-                issues.push(EditIssue::new(
-                    EditIssueCode::Widened,
-                    "/scope",
-                    format!(
-                        "the edit was scoped to {}; the corrected plan reaches {}. Stay inside {}",
-                        bars_text(b.bars),
-                        bars_text(r.bars),
-                        bars_text(b.bars)
-                    ),
-                ));
-            }
-            let extra: Vec<&String> = r
-                .targets
-                .iter()
-                .filter(|t| !b.targets.contains(t))
-                .collect();
-            if !extra.is_empty() {
-                issues.push(EditIssue::new(
-                    EditIssueCode::Widened,
-                    "/layers",
-                    format!(
-                        "the edit was limited to layers [{}]; do not add {}",
-                        b.targets.join(", "),
-                        extra
-                            .iter()
-                            .map(|s| format!("`{s}`"))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ),
-                ));
-            }
-            if !issues.is_empty() {
-                return Err(issues);
-            }
-        }
+    if let Some(issue) = bound.check_targets(&r.targets) {
+        return Err(vec![issue]);
     }
     let built = build::build_patch(&r, score, catalogue, seed)?;
     let applied = praxis_score::apply::apply(score, &built.patch).map_err(|e| {
@@ -412,7 +419,7 @@ pub fn plan_edit(
     };
     let mut req = edit_request(instruction, score, catalogue, seed);
     let mut rounds: Vec<Vec<EditIssue>> = Vec::new();
-    let mut bound: Option<Bound> = None;
+    let mut bound = Bound::default();
     let mut last_value: Option<serde_json::Value> = None;
     let mut attempts = 0u32;
     loop {
@@ -457,7 +464,7 @@ pub fn compose_edit(
     catalogue: &Catalogue,
     seed: u64,
 ) -> Result<EditOutcome, EditError> {
-    let mut bound = None;
+    let mut bound = Bound::default();
     match try_edit(edit_plan_json, score, catalogue, seed, &mut bound) {
         Ok((mut out, repairs)) => {
             out.repairs = repairs;

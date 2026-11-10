@@ -1,0 +1,57 @@
+{
+  "brief": "12 bars in G major at 100 BPM. Bars 1-4: felt piano. Bars 5-8: add a warm bass. Bars 9-12: add soft hats.",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "G",
+      "mode": "major"
+    },
+    "bpm": 100,
+    "bars": 12,
+    "layer_count": 3,
+    "sections": 3,
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          12
+        ]
+      },
+      {
+        "preset": "warm_bass",
+        "bars": [
+          5,
+          12
+        ]
+      },
+      {
+        "preset": "hat_closed",
+        "bars": [
+          9,
+          12
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  },
+  "edit": {
+    "instruction": "remove the hats",
+    "expect": {
+      "intent": "remove_layer",
+      "whole": true,
+      "removed_layers": [
+        "hats"
+      ]
+    },
+    "seed": 5
+  }
+}
