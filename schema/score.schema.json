@@ -1,0 +1,903 @@
+{
+  "$defs": {
+    "Accent": {
+      "description": "Accent vocabulary from spoken rhythm: DON = strong, din = soft, don = normal, TIN = bright.",
+      "enum": [
+        "normal",
+        "strong",
+        "soft",
+        "bright"
+      ],
+      "type": "string"
+    },
+    "AutoPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "bar": {
+          "description": "Position in bars, 1-based and fractional: 1.0 is the start of bar 1, 2.5 the middle of bar 2.",
+          "format": "double",
+          "type": "number"
+        },
+        "value": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "bar",
+        "value"
+      ],
+      "type": "object"
+    },
+    "Automation": {
+      "additionalProperties": false,
+      "properties": {
+        "curve": {
+          "$ref": "#/$defs/Curve"
+        },
+        "points": {
+          "description": "Sorted by position, at least one point.",
+          "items": {
+            "$ref": "#/$defs/AutoPoint"
+          },
+          "type": "array"
+        },
+        "target": {
+          "description": "Parameter path: \"gain_db\", \"pan\", \"instrument.<param>\" or \"effects.<effect id>.<param>\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "curve",
+        "points"
+      ],
+      "type": "object"
+    },
+    "BarRange": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "description": "Last bar, inclusive.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "description": "First bar, 1-based, inclusive.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
+    "ChordSpan": {
+      "additionalProperties": false,
+      "properties": {
+        "bars": {
+          "$ref": "#/$defs/BarRange"
+        },
+        "beat": {
+          "default": 0.0,
+          "description": "Beat within the first bar where the chord starts, 0-based. Default 0.",
+          "format": "float",
+          "type": "number"
+        },
+        "symbol": {
+          "description": "Chord symbol: root, optional quality and bass, e.g. \"Am\", \"Fmaj7\", \"C/E\", \"G7\", \"Dsus4\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bars",
+        "symbol"
+      ],
+      "type": "object"
+    },
+    "Clip": {
+      "additionalProperties": false,
+      "properties": {
+        "bars": {
+          "$ref": "#/$defs/BarRange"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "transpose": {
+          "default": 0,
+          "description": "Semitones added to every note.",
+          "format": "int8",
+          "maximum": 127,
+          "minimum": -128,
+          "type": "integer"
+        },
+        "velocity_scale": {
+          "default": 1.0,
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "bars",
+        "pattern"
+      ],
+      "type": "object"
+    },
+    "Constraints": {
+      "additionalProperties": false,
+      "properties": {
+        "avoid": {
+          "default": [],
+          "description": "Generator classes that must not appear (FR-3). Enforced by the validator AND the engine.",
+          "items": {
+            "$ref": "#/$defs/GeneratorClass"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "type": "object"
+    },
+    "Curve": {
+      "oneOf": [
+        {
+          "enum": [
+            "linear",
+            "step"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "smooth",
+          "description": "Cosine ease between points.",
+          "type": "string"
+        }
+      ]
+    },
+    "Effect": {
+      "additionalProperties": false,
+      "properties": {
+        "bypass": {
+          "default": false,
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "impulse": {
+          "description": "Impulse response name for `convolution_reverb`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/EffectKind"
+        },
+        "params": {
+          "additionalProperties": {
+            "format": "double",
+            "type": "number"
+          },
+          "default": {},
+          "description": "Parameters by name; names and ranges are listed in `crate::params::effect_params`.",
+          "type": "object"
+        },
+        "sidechain": {
+          "description": "Layer id whose pre-effects signal keys this effect (compressor sidechain).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "EffectKind": {
+      "enum": [
+        "eq",
+        "filter",
+        "compressor",
+        "saturation",
+        "delay",
+        "reverb",
+        "convolution_reverb",
+        "chorus",
+        "width",
+        "limiter",
+        "gain"
+      ],
+      "type": "string"
+    },
+    "GeneratorClass": {
+      "description": "What a layer is, musically. Every layer and every preset declares one; the avoid-list keys on it.",
+      "enum": [
+        "melody",
+        "motif",
+        "harmony",
+        "chords",
+        "arp",
+        "bass",
+        "drums",
+        "percussion",
+        "pad",
+        "drone",
+        "texture",
+        "ambience",
+        "riser",
+        "sweep",
+        "impact",
+        "boom",
+        "whoosh",
+        "glitch",
+        "tick",
+        "fill",
+        "sfx"
+      ],
+      "type": "string"
+    },
+    "Grid": {
+      "enum": [
+        "quarter",
+        "eighth",
+        "sixteenth",
+        "eighth_triplet",
+        "sixteenth_triplet"
+      ],
+      "type": "string"
+    },
+    "InstrumentKind": {
+      "oneOf": [
+        {
+          "const": "sampler",
+          "description": "Sample playback (SFZ / SoundFont packs).",
+          "type": "string"
+        },
+        {
+          "const": "synth",
+          "description": "Synthesis (subtractive, FM, wavetable, physical models, granular, noise).",
+          "type": "string"
+        },
+        {
+          "const": "drum",
+          "description": "Drum and percussion voices (synthesised or sampled kits).",
+          "type": "string"
+        },
+        {
+          "const": "sfx",
+          "description": "Procedural sound-effect patch families with macro knobs (FR-16).",
+          "type": "string"
+        }
+      ]
+    },
+    "InstrumentRef": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/InstrumentKind"
+        },
+        "params": {
+          "additionalProperties": {
+            "format": "double",
+            "type": "number"
+          },
+          "default": {},
+          "description": "Preset parameters by name; ranges come from the preset's declared parameter specs.",
+          "type": "object"
+        },
+        "preset": {
+          "description": "Preset name from the instrument registry, e.g. \"felt_piano\", \"soft_kick\", \"bell\".",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "preset"
+      ],
+      "type": "object"
+    },
+    "Key": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/Mode"
+        },
+        "tonic": {
+          "$ref": "#/$defs/PitchClass"
+        }
+      },
+      "required": [
+        "tonic",
+        "mode"
+      ],
+      "type": "object"
+    },
+    "Layer": {
+      "additionalProperties": false,
+      "properties": {
+        "automation": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Automation"
+          },
+          "type": "array"
+        },
+        "class": {
+          "$ref": "#/$defs/GeneratorClass"
+        },
+        "clips": {
+          "default": [],
+          "description": "Clips on one layer must not overlap.",
+          "items": {
+            "$ref": "#/$defs/Clip"
+          },
+          "type": "array"
+        },
+        "effects": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Effect"
+          },
+          "type": "array"
+        },
+        "gain_db": {
+          "default": 0.0,
+          "format": "float",
+          "type": "number"
+        },
+        "id": {
+          "type": "string"
+        },
+        "instrument": {
+          "$ref": "#/$defs/InstrumentRef"
+        },
+        "locked": {
+          "default": false,
+          "description": "A locked layer cannot be changed by any patch except an explicit user unlock (FR-6).",
+          "type": "boolean"
+        },
+        "muted": {
+          "default": false,
+          "type": "boolean"
+        },
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "pan": {
+          "default": 0.0,
+          "description": "-1 (left) ..= 1 (right).",
+          "format": "float",
+          "type": "number"
+        },
+        "seed_offset": {
+          "default": 0,
+          "description": "Added to the score seed for this layer's random draws; variations change it (FR-8).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "solo": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "class",
+        "instrument"
+      ],
+      "type": "object"
+    },
+    "Loudness": {
+      "additionalProperties": false,
+      "properties": {
+        "normalize": {
+          "default": true,
+          "description": "Normalise to the target. Off means only the true-peak limiter applies.",
+          "type": "boolean"
+        },
+        "target_lufs": {
+          "default": -16.0,
+          "description": "Integrated loudness target in LUFS (BS.1770). Default -16.",
+          "format": "double",
+          "type": "number"
+        },
+        "true_peak_dbtp": {
+          "default": -1.0,
+          "description": "True-peak ceiling in dBTP. Default -1.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "Marker": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/MarkerKind"
+        },
+        "label": {
+          "default": "",
+          "type": "string"
+        },
+        "time_s": {
+          "description": "Seconds from the start of bar 1.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "time_s",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "MarkerKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "cut",
+            "reveal",
+            "note"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "hit",
+          "description": "The arrangement must land an accent or section change on this time.",
+          "type": "string"
+        }
+      ]
+    },
+    "Master": {
+      "additionalProperties": false,
+      "properties": {
+        "effects": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Effect"
+          },
+          "type": "array"
+        },
+        "frozen_gain_db": {
+          "description": "Frozen make-up gain from the last normalisation. When set, renders apply it instead of\nre-measuring, so a scoped edit cannot change the level of untouched bars.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "loudness": {
+          "$ref": "#/$defs/Loudness",
+          "default": {
+            "normalize": true,
+            "target_lufs": -16.0,
+            "true_peak_dbtp": -1.0
+          }
+        }
+      },
+      "type": "object"
+    },
+    "Meta": {
+      "additionalProperties": false,
+      "properties": {
+        "brief": {
+          "description": "The brief this score was planned from, verbatim.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "emotion": {
+          "description": "One emotion word, e.g. \"melancholy\". Restraint rule: one emotion per score.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "intensity": {
+          "description": "Overall intensity 0..1.",
+          "format": "float",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "provenance": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Free-form provenance, e.g. planner provider and model id.",
+          "type": "object"
+        },
+        "reference_profiles": {
+          "default": [],
+          "description": "Names of Sound Profiles this score was derived from (FR-14, FR-19).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Mode": {
+      "oneOf": [
+        {
+          "enum": [
+            "major",
+            "minor",
+            "harmonic_minor",
+            "melodic_minor",
+            "dorian",
+            "phrygian",
+            "lydian",
+            "mixolydian",
+            "locrian",
+            "major_pentatonic",
+            "minor_pentatonic"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "chromatic",
+          "description": "Atonal material (sound design). Disables the in-key check.",
+          "type": "string"
+        }
+      ]
+    },
+    "Note": {
+      "additionalProperties": false,
+      "properties": {
+        "accent": {
+          "$ref": "#/$defs/Accent",
+          "default": "normal"
+        },
+        "length": {
+          "description": "Length in steps, > 0. Values above 1.0 overlap the next step. Max 64.",
+          "format": "float",
+          "type": "number"
+        },
+        "offset": {
+          "description": "Micro-timing offset as a fraction of one step, -0.5..=0.5 (swing, push, lay back).",
+          "format": "float",
+          "type": "number"
+        },
+        "pitch": {
+          "description": "MIDI note number 0..=127.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "step": {
+          "description": "0-based step index within the pattern.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "velocity": {
+          "description": "0 < velocity <= 1.",
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "step",
+        "pitch",
+        "velocity",
+        "length"
+      ],
+      "type": "object"
+    },
+    "Pattern": {
+      "additionalProperties": false,
+      "description": "A rhythm-first motif on a step grid (FR-4). Patterns repeat when a clip is longer than them.",
+      "properties": {
+        "grid": {
+          "$ref": "#/$defs/Grid"
+        },
+        "id": {
+          "type": "string"
+        },
+        "length_steps": {
+          "description": "Pattern length in steps. Must be a whole number of bars.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "notes": {
+          "items": {
+            "$ref": "#/$defs/Note"
+          },
+          "type": "array"
+        },
+        "spoken": {
+          "description": "Spoken-rhythm source this pattern was built from, e.g. \"DON din DON don TIN\" (FR-5).",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "grid",
+        "length_steps",
+        "notes"
+      ],
+      "type": "object"
+    },
+    "PitchClass": {
+      "enum": [
+        "C",
+        "C#",
+        "D",
+        "Eb",
+        "E",
+        "F",
+        "F#",
+        "G",
+        "Ab",
+        "A",
+        "Bb",
+        "B"
+      ],
+      "type": "string"
+    },
+    "Playback": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Seamless loop: tails wrap from the end into the start (FR-26).",
+          "properties": {
+            "mode": {
+              "const": "loop",
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "One-shot: rendered once, followed by `tail_seconds` of release/effect tail.",
+          "properties": {
+            "mode": {
+              "const": "one_shot",
+              "type": "string"
+            },
+            "tail_seconds": {
+              "default": 4.0,
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Section": {
+      "additionalProperties": false,
+      "properties": {
+        "bars": {
+          "$ref": "#/$defs/BarRange"
+        },
+        "id": {
+          "type": "string"
+        },
+        "intensity": {
+          "default": 0.5,
+          "description": "0..1 intensity for tension curves (FR-9).",
+          "format": "float",
+          "type": "number"
+        },
+        "name": {
+          "default": "",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/SectionRole"
+        }
+      },
+      "required": [
+        "id",
+        "bars",
+        "role"
+      ],
+      "type": "object"
+    },
+    "SectionRole": {
+      "enum": [
+        "intro",
+        "main",
+        "verse",
+        "build",
+        "peak",
+        "breakdown",
+        "release",
+        "transition",
+        "outro"
+      ],
+      "type": "string"
+    },
+    "Tempo": {
+      "additionalProperties": false,
+      "properties": {
+        "bpm": {
+          "description": "Constant tempo in quarter-note beats per minute, 20..=400. Tempo maps are reserved for v2.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "bpm"
+      ],
+      "type": "object"
+    },
+    "TimeSignature": {
+      "additionalProperties": false,
+      "properties": {
+        "denominator": {
+          "description": "2, 4, 8 or 16.",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "numerator": {
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "bars": {
+      "description": "Total bar count. Must be >= 1.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "chords": {
+      "default": [],
+      "description": "Harmonic map (FR-9). Informational for validators and generators; the engine ignores it.",
+      "items": {
+        "$ref": "#/$defs/ChordSpan"
+      },
+      "type": "array"
+    },
+    "constraints": {
+      "$ref": "#/$defs/Constraints",
+      "default": {
+        "avoid": []
+      }
+    },
+    "key": {
+      "$ref": "#/$defs/Key"
+    },
+    "layers": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Layer"
+      },
+      "type": "array"
+    },
+    "markers": {
+      "default": [],
+      "description": "Hit points and other timed markers (FR-10).",
+      "items": {
+        "$ref": "#/$defs/Marker"
+      },
+      "type": "array"
+    },
+    "master": {
+      "$ref": "#/$defs/Master",
+      "default": {
+        "effects": [],
+        "loudness": {
+          "normalize": true,
+          "target_lufs": -16.0,
+          "true_peak_dbtp": -1.0
+        }
+      }
+    },
+    "meta": {
+      "$ref": "#/$defs/Meta",
+      "default": {
+        "provenance": {},
+        "reference_profiles": [],
+        "tags": []
+      }
+    },
+    "patterns": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Pattern"
+      },
+      "type": "array"
+    },
+    "playback": {
+      "$ref": "#/$defs/Playback",
+      "default": {
+        "mode": "one_shot",
+        "tail_seconds": 4.0
+      }
+    },
+    "schema_version": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "sections": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Section"
+      },
+      "type": "array"
+    },
+    "seed": {
+      "default": 0,
+      "description": "Root seed. Every random draw in rendering derives from this (see contracts/engine.md).",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "tempo": {
+      "$ref": "#/$defs/Tempo"
+    },
+    "time_signature": {
+      "$ref": "#/$defs/TimeSignature"
+    },
+    "title": {
+      "default": "",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "tempo",
+    "time_signature",
+    "key",
+    "bars"
+  ],
+  "title": "Score",
+  "type": "object"
+}

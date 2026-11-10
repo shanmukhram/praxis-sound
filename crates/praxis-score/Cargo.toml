@@ -1,0 +1,21 @@
+[package]
+name = "praxis-score"
+description = "Score types, JSON schema, validation, music theory, patches"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+jsonschema.workspace = true
+
+[lints]
+workspace = true

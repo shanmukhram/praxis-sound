@@ -1,0 +1,305 @@
+{
+  "schema_version": 1,
+  "title": "Acceptance test 1",
+  "seed": 1,
+  "meta": {
+    "brief": "16 bars, 4/4, A minor, 30 seconds, seamless loop. Bars 1-8: one soft felt piano playing a repeating rhythmic motif on an eighth-note grid with accents and overlapping sustain. Bars 9-16: the identical piano part plus a soft muted kick underneath. No new melody, no fills, no risers, sweeps, impacts or pads.",
+    "emotion": "calm",
+    "intensity": 0.3,
+    "tags": [
+      "acceptance-1"
+    ],
+    "reference_profiles": [],
+    "provenance": {
+      "source": "hand-written fixture"
+    }
+  },
+  "tempo": {
+    "bpm": 128.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "bars": 16,
+  "playback": {
+    "mode": "loop"
+  },
+  "constraints": {
+    "avoid": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  },
+  "sections": [
+    {
+      "id": "a",
+      "name": "Piano alone",
+      "bars": {
+        "start": 1,
+        "end": 8
+      },
+      "role": "intro",
+      "intensity": 0.3
+    },
+    {
+      "id": "b",
+      "name": "Piano and kick",
+      "bars": {
+        "start": 9,
+        "end": 16
+      },
+      "role": "main",
+      "intensity": 0.4
+    }
+  ],
+  "patterns": [
+    {
+      "id": "piano_motif",
+      "grid": "eighth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 57,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 1,
+          "pitch": 64,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 2,
+          "pitch": 69,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 3,
+          "pitch": 64,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 4,
+          "pitch": 72,
+          "velocity": 0.7,
+          "accent": "bright",
+          "length": 1.6
+        },
+        {
+          "step": 5,
+          "pitch": 64,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 6,
+          "pitch": 69,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 7,
+          "pitch": 64,
+          "velocity": 0.52,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 8,
+          "pitch": 53,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 9,
+          "pitch": 60,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 10,
+          "pitch": 65,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 11,
+          "pitch": 60,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 12,
+          "pitch": 69,
+          "velocity": 0.7,
+          "accent": "bright",
+          "length": 1.6
+        },
+        {
+          "step": 13,
+          "pitch": 60,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 14,
+          "pitch": 67,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 15,
+          "pitch": 64,
+          "velocity": 0.52,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 0,
+          "pitch": 45,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 8.0
+        },
+        {
+          "step": 8,
+          "pitch": 41,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 8.0
+        }
+      ],
+      "spoken": "DON din don din TIN din don din"
+    },
+    {
+      "id": "kick_soft",
+      "grid": "eighth",
+      "length_steps": 8,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 36,
+          "velocity": 0.7,
+          "accent": "strong",
+          "length": 1.0
+        },
+        {
+          "step": 4,
+          "pitch": 36,
+          "velocity": 0.55,
+          "accent": "normal",
+          "length": 1.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "piano",
+      "name": "Felt piano",
+      "class": "motif",
+      "instrument": {
+        "kind": "sampler",
+        "preset": "felt_piano",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 16
+          },
+          "pattern": "piano_motif"
+        }
+      ],
+      "locked": true,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "room",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 2.4,
+            "mix": 0.2
+          }
+        }
+      ]
+    },
+    {
+      "id": "kick",
+      "name": "Soft kick",
+      "class": "drums",
+      "instrument": {
+        "kind": "drum",
+        "preset": "soft_kick",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 9,
+            "end": 16
+          },
+          "pattern": "kick_soft"
+        }
+      ],
+      "gain_db": -4.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "tone",
+          "kind": "eq",
+          "params": {
+            "lp_hz": 2500.0
+          }
+        }
+      ]
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -16.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": [
+    {
+      "bars": {
+        "start": 1,
+        "end": 16
+      },
+      "beat": 0,
+      "symbol": "Am"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "title": "Empty",
+  "tempo": {
+    "bpm": 120.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "C",
+    "mode": "major"
+  },
+  "bars": 4
+}

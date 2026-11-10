@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux audio headers (cpal)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets
+      - name: Test (debug)
+        run: cargo test --workspace
+      - name: Test (release)
+        run: cargo test --workspace --release
+      - name: Schemas are current
+        run: |
+          cargo run -q -p praxis-cli -- schema --write
+          git diff --exit-code schema/
+      - name: Phase 0 exit - empty score renders to a silent WAV
+        shell: bash
+        run: |
+          cargo run -q --release -p praxis-cli -- --json render fixtures/empty.score.json -o empty.wav
+          test -s empty.wav
+
+  wasm:
+    name: wasm32 build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p praxis-wasm --target wasm32-unknown-unknown --release

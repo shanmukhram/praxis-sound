@@ -1,0 +1,15 @@
+[package]
+name = "praxis-dsp"
+description = "DSP primitives and effects; no I/O, WebAssembly-safe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+proptest.workspace = true
+[lints]
+workspace = true

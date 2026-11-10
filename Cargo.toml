@@ -1,0 +1,102 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/praxis-score",
+    "crates/praxis-dsp",
+    "crates/praxis-engine",
+    "crates/praxis-instruments",
+    "crates/praxis-audio-io",
+    "crates/praxis-analyze",
+    "crates/praxis-match",
+    "crates/praxis-planner",
+    "crates/praxis-cli",
+    "crates/praxis-wasm",
+    "crates/praxis-testkit",
+]
+default-members = [
+    "crates/praxis-score",
+    "crates/praxis-dsp",
+    "crates/praxis-engine",
+    "crates/praxis-instruments",
+    "crates/praxis-audio-io",
+    "crates/praxis-analyze",
+    "crates/praxis-match",
+    "crates/praxis-planner",
+    "crates/praxis-cli",
+    "crates/praxis-testkit",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "LicenseRef-Proprietary-Pending"
+publish = false
+
+[workspace.dependencies]
+# internal
+praxis-score = { path = "crates/praxis-score" }
+praxis-dsp = { path = "crates/praxis-dsp" }
+praxis-engine = { path = "crates/praxis-engine" }
+praxis-instruments = { path = "crates/praxis-instruments" }
+praxis-audio-io = { path = "crates/praxis-audio-io" }
+praxis-analyze = { path = "crates/praxis-analyze" }
+praxis-match = { path = "crates/praxis-match" }
+praxis-planner = { path = "crates/praxis-planner" }
+praxis-testkit = { path = "crates/praxis-testkit" }
+
+# third party: every entry is audited in THIRD_PARTY.md before use
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+schemars = "1.2.3"
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+hound = "3.5.1"
+claxon = "0.4.3"
+lewton = "0.10.2"
+nanomp3 = "0.2.0"
+flacenc = "0.5.1"
+midly = "0.5.3"
+rustfft = "6.4.1"
+realfft = "3.5.1"
+rubato = "5.0.1"
+ebur128 = "0.1.11"
+cpal = "0.18.2"
+rtrb = "0.4.1"
+ureq = { version = "3.5.1", features = ["json"] }
+keyring = "4.2.0"
+blake3 = { version = "1.8.7", default-features = false, features = ["std"] }
+sevenz-rust2 = "0.25.0"
+wasm-bindgen = "0.2.130"
+# dev
+proptest = "1.12.0"
+jsonschema = { version = "0.61.1", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "allow"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+needless_range_loop = "allow"
+too_many_arguments = "allow"
+
+[profile.dev]
+debug = "line-tables-only"
+# DSP is unusable unoptimised; keep tests fast.
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+[profile.test]
+opt-level = 2
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = "line-tables-only"
+panic = "unwind"

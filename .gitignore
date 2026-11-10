@@ -1,0 +1,11 @@
+/target
+**/*.rs.bk
+*.wav
+!demos/**/*.wav
+!tests/clips/**/*.wav
+/packs/*/samples/
+/packs/_downloads/
+node_modules/
+dist/
+.DS_Store
+/out/

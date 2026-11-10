@@ -1,0 +1,32 @@
+[package]
+name = "praxis-cli"
+description = "Headless generate, analyse and render commands with JSON in and out"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "praxis"
+path = "src/main.rs"
+
+[dependencies]
+praxis-score.workspace = true
+praxis-dsp.workspace = true
+praxis-engine.workspace = true
+praxis-instruments.workspace = true
+praxis-audio-io = { workspace = true, default-features = false }
+praxis-analyze.workspace = true
+praxis-match.workspace = true
+praxis-planner.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+praxis-testkit.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,30 @@
+[package]
+name = "praxis-audio-io"
+description = "Device output, decoding and encoding (WAV, FLAC, OGG, MP3, ffmpeg fallback), MIDI export"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["device"]
+device = ["dep:cpal"]
+
+[dependencies]
+praxis-score.workspace = true
+praxis-dsp.workspace = true
+thiserror.workspace = true
+hound.workspace = true
+claxon.workspace = true
+lewton.workspace = true
+nanomp3.workspace = true
+flacenc.workspace = true
+midly.workspace = true
+rubato.workspace = true
+cpal = { workspace = true, optional = true }
+rtrb.workspace = true
+[dev-dependencies]
+
+[lints]
+workspace = true
