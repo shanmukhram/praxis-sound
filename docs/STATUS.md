@@ -37,6 +37,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 
 ## Log
 
+- WP-U2 conversation UI: engine side committed (27cd5be on wp/u2-conversation-ui); visible screen uncommitted in worktree funny-elion-3d4d1d; session paused on the account usage limit. Handoff written: docs/HANDOFF.md.
+
 - Merged WP-U1 front end and the WP-C1 onset fix. Acceptance test 1 now passes end to end with the real felt piano (kick pending WP-C2): tempo 127.99, A minor, 93% on grid (median 1.6 ms), -15.6 LUFS, seamless. earshot realness 0.46 (dry, no room) -> WP-F2 reverb must lift it. Preview in demos/phase-2/.
 
 - Merged WP-D1, WP-P, WP-C1, WP-A follow-up (all of wave 1). First end-to-end acceptance-1 run (offline brief -> felt piano render -> verify): structure all pass; tempo 128.00 and key A minor pass; grid FAILS (47.7% on grid, median 11.4 ms) because sampled attacks land late. Fix sent to WP-C1; `crates/praxis-cli/tests/acceptance1.rs` lands with it.
