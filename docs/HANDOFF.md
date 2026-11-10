@@ -1,4 +1,4 @@
-# Handoff: Praxis Sound build (kept current; last updated 2026-11-11 after the WP-U2 merge)
+# Handoff: Praxis Sound build (kept current; last updated 2026-11-11 03:00 IST, paused for the terminal)
 
 Paste the block below into a new Claude Code session opened in
 `C:\Users\admin\Desktop\praxis sound`. Everything else in this file is the detail it points to.
@@ -103,27 +103,51 @@ The soft kick layer is skipped until WP-C2 lands (the test says so and tightens 
 
 Test totals at handoff: 386 Rust tests pass in release; app: 140 unit tests on the WP-U2 branch.
 
-## 5. In flight (updated 2026-11-11, after the WP-U2 merge)
+## 5. In flight (updated 2026-11-11 03:00 IST, paused to continue in the terminal)
 
-Four wave-2 sessions are running, each in its own worktree cut from `build/integration`
-(`8dd89bc` or later). They own disjoint files and report back when done; then review and merge
-each one (section 7).
+Four wave-2 sessions were started from the Claude desktop app and are **still running there**
+(they keep going after this session moves to the terminal). Each works in its own worktree cut
+from `build/integration` and commits to its own `wp/...` branch. Notifications from them only
+reach the desktop app, so from the terminal check them with git:
 
-| Session | Package | Brief | Branch it commits to |
-| --- | --- | --- | --- |
-| `local_88556cd4-0270-499a-b444-4c1fc9d711da` | WP-C2 synth presets + drums (`bell`, `soft_kick`, kit, ...) | `docs/briefs/WP-C2-synth-drums.md` | `wp/c2-synth-drums` |
-| `local_2cf5992e-16b3-4e4a-a236-095886095a12` | WP-F2 engine mix bus + loudness + limiter | `docs/briefs/WP-F2-mix-bus.md` | `wp/f2-mix-bus` |
-| `local_3900e1de-15d0-4166-8489-aa53b502c0e9` | WP-K CLI (generate, check, analyze, export, packs, key) + shared command layer | `docs/briefs/WP-K-cli.md` | `wp/k-cli` |
-| `local_ebed52bd-b685-42a4-b0b3-99f60f5f8c91` | WP-P2 planner edits + variations | `docs/briefs/WP-P2-edits-variations.md` | `wp/p2-edits` |
+| Session (desktop app) | Package | Brief | Worktree (`.claude/worktrees/...`) | Branch it commits to |
+| --- | --- | --- | --- | --- |
+| `local_88556cd4-0270-499a-b444-4c1fc9d711da` | WP-C2 synth presets + drums (`bell`, `soft_kick`, kit) | `docs/briefs/WP-C2-synth-drums.md` | `agitated-haibt-f5dfb9` | `wp/c2-synth-drums` |
+| `local_2cf5992e-16b3-4e4a-a236-095886095a12` | WP-F2 engine mix bus + loudness + limiter | `docs/briefs/WP-F2-mix-bus.md` | `clever-cori-d1bc75` | `wp/f2-mix-bus` |
+| `local_3900e1de-15d0-4166-8489-aa53b502c0e9` | WP-K CLI + shared command layer | `docs/briefs/WP-K-cli.md` | `mystifying-taussig-49d229` | `wp/k-cli` |
+| `local_ebed52bd-b685-42a4-b0b3-99f60f5f8c91` | WP-P2 planner edits + variations | `docs/briefs/WP-P2-edits-variations.md` | `charming-shirley-e77b69` | `wp/p2-edits` |
 
-If any of them stops (for example on the account's 5-hour usage limit), check its worktree with
-`git worktree list` and `git -C <worktree> status`: committed work is on its branch;
-uncommitted work stays in the worktree. Resume it with a message ("continue your work package")
-or start a new session on the same brief.
+How to check them from a terminal:
 
-Done and merged since the first handoff: WP-U2 conversation UI (`12c9e8e`). Run the app:
-start `praxis-app` from `.claude/launch.json` (Vite on 5174, or the next free port) or
-`npm --prefix app run dev`; it uses the mock engine until a real adapter exists.
+```
+git branch --list "wp/*"                                   # their branches appear as they commit
+git log --oneline build/integration..wp/c2-synth-drums     # what a package has committed
+git worktree list                                          # every worktree and its branch
+git -C ".claude/worktrees/<name>" status --short           # uncommitted work in progress
+```
+
+A package is ready to review when its branch has its final commit and its worktree is clean
+(the session's last message in the desktop app is its report). If a session stopped (usage
+limit), resume it in the desktop app or start a new session on the same brief and worktree.
+
+Done since the first handoff: WP-U2 conversation UI merged (`12c9e8e`). Run the app with
+`npm --prefix app run dev -- --port 5174` (or `praxis-app` in `.claude/launch.json`); it uses the
+mock engine until WP-U3 lands. The front-end session (`local_4192c21f-...`) is finished and idle.
+
+## Continuing this orchestration in the terminal
+
+Resume this orchestrating session in a terminal opened in the project folder:
+
+```
+cd "C:\Users\admin\Desktop\praxis sound"
+claude --resume 1d1ce050-83ea-4eb7-af85-1081b75553dc
+```
+
+(or `claude --continue` for the most recent session in this folder, or `claude --resume` to pick
+from a list). If it cannot be resumed, start `claude` in the folder and paste the prompt at the
+top of this file. In the terminal, desktop-only tools (session cards, the browser pane, session
+messaging) are not available: review branches with git, start new work as sub-agents or ask the
+owner to open sessions, and take screenshots with headless Edge (section 8).
 
 ## 6. What to do next (in order)
 
