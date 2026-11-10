@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "packs": [
+    {
+      "name": "upright-piano-kw",
+      "title": "Upright Piano KW (FreePats), SFZ+FLAC",
+      "version": "2022-02-21",
+      "license": "CC0-1.0",
+      "license_file": "cc0.txt",
+      "source_page": "https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html",
+      "url": "https://freepats.zenvoid.org/Piano/UprightPianoKW/UprightPianoKW-SFZ+FLAC-20220221.7z",
+      "archive": "UprightPianoKW-SFZ+FLAC-20220221.7z",
+      "size": 33294287,
+      "blake3": "1ae0bd73dc5618682bc7d06c9c9d4dfc72458a76d504657e7125b5365a5cc3d1",
+      "strip_prefix": "UprightPianoKW-SFZ+FLAC-20220221",
+      "entry": "UprightPianoKW-20220221.sfz",
+      "attribution": "Upright Piano KW by FreePats (freepats.zenvoid.org), released under CC0-1.0",
+      "presets": {
+        "felt_piano": "UprightPianoKW-20220221.sfz",
+        "upright_piano": "UprightPianoKW-20220221.sfz"
+      }
+    }
+  ]
+}
