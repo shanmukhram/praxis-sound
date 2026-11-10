@@ -28,9 +28,9 @@ fn second_diff(c: &[f32], j: usize) -> f64 {
     (c[j + 1] as f64 - 2.0 * c[j] as f64 + c[j - 1] as f64).abs()
 }
 
-/// The acceptance score without layer effects: the fixture's reverb modulates slowly and is not
-/// periodic with the loop, and it decorrelates the channels, so the bit-exact steady-state and
-/// mono checks below run dry. `mix_master.rs` checks the seam with reverb and the limiter on.
+/// The acceptance score without layer effects: the fixture's reverb recirculates float rounding
+/// differences (about -140 dBFS) that keep cycles from being bit-identical, and it decorrelates
+/// the channels, so the bit-exact steady-state and mono checks below run dry. `mix_master.rs` checks the seam with reverb and the limiter on.
 fn dry_bell_score() -> Score {
     let mut s = bell_score();
     for l in &mut s.layers {

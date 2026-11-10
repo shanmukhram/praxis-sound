@@ -3,17 +3,27 @@
 //! Parameters: 0 decay_s (RT60, s), 1 predelay_ms (ms), 2 size (0..1), 3 damp_hz (Hz),
 //! 4 width (stereo width of the wet signal), 5 mix (wet fraction).
 //!
-//! Signal flow: stereo predelay -> four allpass diffusers per channel -> 8 delay lines mixed by
-//! a normalised Hadamard matrix. Each line has a gain `10^(-3 d / (RT60 fs))` for its delay `d`,
-//! so low frequencies decay at exactly RT60, and a one-pole absorption filter (unity at DC)
-//! designed per line so that the decay time at `damp_hz` is half the RT60 and shorter above it,
-//! independent of size and sample rate.
+//! Signal flow: stereo predelay -> four allpass diffusers per channel -> early reflections and
+//! 8 delay lines mixed by a normalised Hadamard matrix. Each line has a gain
+//! `10^(-3 d / (RT60 fs))` for its delay `d`, so low frequencies decay at exactly RT60, and a
+//! one-pole absorption filter (unity at DC) designed per line so that the decay time at
+//! `damp_hz` is half the RT60 and shorter above it, independent of size and sample rate.
 //!
-//! Line lengths are mutually incommensurate and scale with `size`; each line's read position
-//! is swept by a slow sine (about 1.5 cents) to break up modal ringing. Fractional reads use a
-//! first-order allpass, so interpolation never low-passes the loop. The modulation rates and
-//! phases come from a fixed seed and restart on `reset`, so renders are deterministic. RT60 is
-//! the mid-band (500 Hz / 1 kHz) decay time; highs decay faster by design.
+//! Early reflections: the network's first arrivals come only after its shortest line (16..53 ms
+//! with `size`), so on its own the wet signal of a click would be silent for that long and then
+//! arrive all at once, heard as a ghost attack. A tapped delay of the diffused input fills the
+//! gap: [`ER_TAPS`] jittered taps per channel from the predelay to the longest line, starting at
+//! [`ER_START`] of full level and rising smoothly, decaying at the RT60 and cross-fading out while
+//! the network's arrivals come in. The wet envelope of a click therefore starts right after the
+//! predelay and builds up without gaps or steps (tested in `fx_time.rs`).
+//!
+//! Line lengths are mutually incommensurate and scale with `size`. The read positions are not
+//! modulated ([`MOD_MS`] is 0): even a 0.2 ms sweep (1.5 cents) makes the tail time-varying, which
+//! log-spectral-flux onset detectors read as extra onsets inside the tail (the felt-piano
+//! acceptance render lost its grid check that way), and a time-invariant reverb is exactly
+//! periodic in loops. Fractional reads use a first-order allpass, so interpolation never
+//! low-passes the loop. Deterministic. RT60 is the mid-band (500 Hz / 1 kHz) decay time; highs
+//! decay faster by design.
 
 use super::ramp::{OnePole, RAMP_SECONDS, Ramp, ramp_len, read_frac};
 use crate::delayline::DelayLine;
@@ -28,12 +38,21 @@ const BASE_MS: [f32; LINES] = [53.13, 59.71, 67.33, 73.97, 81.43, 89.29, 97.61, 
 /// Allpass diffuser lengths in ms, per channel.
 const DIFF_MS: [[f32; 4]; 2] = [[4.771, 3.595, 2.733, 1.793], [4.931, 3.713, 2.609, 1.871]];
 const DIFF_G: f32 = 0.62;
-const MOD_MS: f32 = 0.22;
+/// Read-position modulation depth (ms). Off: see the module docs.
+const MOD_MS: f32 = 0.0;
 const MAX_PREDELAY_MS: f32 = 200.0;
 const CHUNK: usize = 32;
 const SEED: u64 = 0x5EED_FD4E_2E7E_2B01;
 const SIZE_GLIDE_SECONDS: f32 = 0.2;
 const MAX_TAIL_SECONDS: f64 = 30.0;
+/// Early-reflection taps per channel.
+const ER_TAPS: usize = 24;
+/// Overall early-reflection level relative to the late field (calibrated so the wet envelope
+/// of a click is continuous where the network's first arrivals take over).
+const ER_LEVEL: f32 = 0.35;
+/// Early-reflection level right after the predelay, relative to its full level (the build-up
+/// starts here and rises smoothly).
+const ER_START: f32 = 0.6;
 
 fn size_scale(size: f32) -> f32 {
     0.3 + 0.7 * size.clamp(0.0, 1.0)
@@ -77,6 +96,13 @@ pub struct FdnReverb {
     mod_inc: [f32; LINES],
     mod_phase0: [f32; LINES],
     mod_depth: f32,
+    /// Early reflections: a tapped delay of the diffused input per channel.
+    er: [DelayLine; 2],
+    /// Tap positions as a fraction of the longest line (fixed, from the seed).
+    er_u: [[f32; ER_TAPS]; 2],
+    er_sign: [[f32; ER_TAPS]; 2],
+    er_pos: [[f32; ER_TAPS]; 2],
+    er_gain: [[f32; ER_TAPS]; 2],
 }
 
 fn hadamard8(v: &mut [f32; LINES]) {
@@ -129,6 +155,11 @@ impl FdnReverb {
             mod_inc: [0.0; LINES],
             mod_phase0: [0.0; LINES],
             mod_depth: 0.0,
+            er: [DelayLine::new(4), DelayLine::new(4)],
+            er_u: [[0.0; ER_TAPS]; 2],
+            er_sign: [[1.0; ER_TAPS]; 2],
+            er_pos: [[1.0; ER_TAPS]; 2],
+            er_gain: [[0.0; ER_TAPS]; 2],
         };
         r.prepare(sample_rate, max_block);
         r
@@ -156,6 +187,31 @@ impl FdnReverb {
                 ((b - (b * b - a * a).max(0.0).sqrt()) / a) as f32
             };
         }
+        // Early reflections span from the predelay to the longest line, where the network's
+        // first arrivals have all come in. Their level rises from ER_START to full over the
+        // first half of the shortest line, decays at the RT60 and fades out (raised cosine)
+        // between the shortest and the longest line as the network takes over.
+        let lmin = self.len[0];
+        let lmax = self.len[LINES - 1];
+        let k = ER_LEVEL / (ER_TAPS as f32).sqrt();
+        for c in 0..2 {
+            for j in 0..ER_TAPS {
+                let t = (self.er_u[c][j] * lmax).max(1.0);
+                let rise = {
+                    let x = (t / (0.5 * lmin)).min(1.0);
+                    ER_START + (1.0 - ER_START) * x * x * (3.0 - 2.0 * x)
+                };
+                let fade = if t <= lmin {
+                    1.0
+                } else {
+                    let x = ((t - lmin) / (lmax - lmin).max(1.0)).min(1.0);
+                    0.5 + 0.5 * (std::f32::consts::PI * x).cos()
+                };
+                let decay = 10f32.powf(-3.0 * t / (rt60 * self.sr));
+                self.er_pos[c][j] = t;
+                self.er_gain[c][j] = k * rise * fade * decay * self.er_sign[c][j];
+            }
+        }
     }
 
     fn reset_state(&mut self) {
@@ -168,6 +224,9 @@ impl FdnReverb {
             }
         }
         for l in self.lines.iter_mut() {
+            l.reset();
+        }
+        for l in self.er.iter_mut() {
             l.reset();
         }
         self.lp = [OnePole::default(); LINES];
@@ -208,6 +267,16 @@ impl Processor for FdnReverb {
             self.mod_inc[i] = rate / sample_rate;
             self.mod_phase0[i] = rng.next_f32();
         }
+        let er_cap = (BASE_MS[LINES - 1] * ms).ceil() as usize + 8;
+        self.er = [DelayLine::new(er_cap), DelayLine::new(er_cap)];
+        for c in 0..2 {
+            for j in 0..ER_TAPS {
+                // Evenly spread with jitter, decorrelated between the channels.
+                let jit = rng.next_f32() - 0.5;
+                self.er_u[c][j] = (j as f32 + 0.5 + 0.8 * jit) / ER_TAPS as f32;
+                self.er_sign[c][j] = if rng.next_f32() < 0.5 { -1.0 } else { 1.0 };
+            }
+        }
         self.update();
         self.reset_state();
     }
@@ -239,6 +308,8 @@ impl Processor for FdnReverb {
                 for a in self.diff[1].iter_mut() {
                     ir = a.tick(ir);
                 }
+                self.er[0].push(il);
+                self.er[1].push(ir);
                 // read the lines
                 let mut v = [0.0f32; LINES];
                 for k in 0..LINES {
@@ -278,6 +349,10 @@ impl Processor for FdnReverb {
                 }
                 wl *= 0.5;
                 wr *= 0.5;
+                for j in 0..ER_TAPS {
+                    wl += read_frac(&self.er[0], self.er_pos[0][j]) * self.er_gain[0][j];
+                    wr += read_frac(&self.er[1], self.er_pos[1][j]) * self.er_gain[1][j];
+                }
                 let m = 0.5 * (wl + wr);
                 let s = 0.5 * (wl - wr) * width;
                 let (wl, wr) = (m + s, m - s);

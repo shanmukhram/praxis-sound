@@ -441,8 +441,8 @@ fn loops_stay_seamless_with_reverb_and_the_limiter_on() {
         "limiter steady state"
     );
 
-    // With reverbs the fine structure of the wet signal is not periodic (slow modulation), so
-    // more warm-up gives the same bus loudness, not the same samples. (The 0.9-feedback delay is
+    // With reverbs on the layer and the bus, more warm-up gives the same bus loudness (time-varying
+    // effects such as a chorus would change the samples, not the level). (The 0.9-feedback delay is
     // left out here: its tail is capped at 30 s for warm-up, so its echoes are not settled.)
     let mut verb = score.clone();
     verb.master.effects.truncate(1);

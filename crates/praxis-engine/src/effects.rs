@@ -210,7 +210,7 @@ pub fn seam_stitch_samples(loop_len: u64, sample_rate: u32) -> u64 {
 ///
 /// `audio` holds the captured cycle `[0, len)` followed by the first samples of the next cycle
 /// of the continuous render. In steady state the two are bit-identical and nothing changes.
-/// Time-varying effects (the reverb's delay modulation, chorus) are not periodic with the loop,
+/// Time-varying effects (the chorus's LFO, any modulated processor) are not periodic with the loop,
 /// so the next cycle's start differs slightly from the captured start and a looping player would
 /// hear a small discontinuity at the seam. The start of the cycle is therefore cross-faded from
 /// the next cycle's samples (the exact continuation of sample `len - 1`) into the captured ones
