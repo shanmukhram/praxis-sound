@@ -131,3 +131,108 @@ whooshes or fills unless the user asked for one, and then list it in `requested`
 repairs what it can deterministically and lists each change in `repairs`; if it returns
 `PlanError::Invalid`, each issue's `path` points into your plan and its message lists the allowed
 values, so fix those fields and call again.
+
+## Edits (WP-P2)
+
+Code: `crates/praxis-planner/src/edit.rs` (entry points, repair loop, summary),
+`edit/plan.rs` (`EditPlan`, `edit_schema()`, issue codes), `edit/scope.rs` (bar phrases),
+`edit/resolve.rs` (plan -> exact bars and layers), `edit/build.rs` (resolved plan ->
+`ScorePatch`), `edit/material.rs` (new material through the arranger), `edit/rules.rs`
+(offline reader), `variations.rs`. The tool is named `edit_score`; its input schema is
+`praxis_planner::edit_schema()` (schemars).
+
+Entry points:
+- `plan_edit(score, instruction, provider, catalogue, seed) -> Result<EditOutcome, EditError>`;
+  `plan_project_edit(&mut project, ...)` does the same and commits the patch (undoable).
+- `compose_edit(edit_plan_json, score, catalogue, seed)`: an EditPlan written directly, no
+  provider, no repair rounds.
+- `variations(score, scope, n, seed) -> Result<Vec<Variation>, EditError>` (standard catalogue)
+  and `variations_with(..., catalogue)`.
+
+`EditOutcome {patch, inverse, score, scope, bars, summary, refused, new_layers, plan, attempts,
+rounds, repairs, provider_id}`; `changed()` is false when the patch has no ops.
+`Variation {index, seed, patch, inverse, score, summary}`.
+
+### EditPlan fields
+
+| Field | Meaning |
+| --- | --- |
+| `intent` | `add_layer`, `add_melody`, `rewrite_motif`, `change_instrument`, `change_dynamics`, `remove_layer`, `thin_out` |
+| `scope.bars` | Explicit `{start, end}` (1-based, inclusive); wins over `phrase` |
+| `scope.phrase` | Resolved against the Score: "last N bars", "first N bars", "first half", "second half" (the half is `bars / 2`, rounded down), "bars A-B", "bar N", "from bar N", "until bar N", "whole" |
+| `scope.keep` | Bars the instruction keeps, as a phrase. Alone, the scope is the bars outside it (one range); with a phrase that overlaps it, the scope is narrowed (never widened) and the summary says so |
+| `layers[]` | Existing layers by id, name, preset or a word of it, class, or role ("drums", "melody"). Empty for `add_*`; for `rewrite_motif`, `change_dynamics` and `thin_out` empty means every unlocked layer that plays in the bars |
+| `params` | `preset`, `class`, `name`, `register`, `dynamics`, `gain_db` (-60..=24), `change` (softer/louder), `amount_db` (0 < x <= 24; default 4 softer, 3 louder), `grid`, `spoken`, `degrees`, `length_bars` (1..=8) |
+| `notes[]` | Remarks |
+
+### Patch rules
+
+The patch has `origin: model`, `scope.bars` = the resolved bars (unset only when they are the
+whole score) and `scope.layers` = the target layers plus any new layer; it is applied with
+`praxis_score::apply::apply`, so locks, scope and isolation are enforced there too.
+- `add_layer` / `add_melody`: `add_pattern` + `add_layer` with one clip over the bars, phased
+  to the global bar grid. Material is a one-layer ScorePlan in the Score's key, metre, tempo and
+  chords run through `validate_plan`, `fix_plan` and the arranger, so it has accents, sustain
+  overlap and the arranger's effects. `add_melody` defaults: `upright_piano`, class melody, high
+  register, a two-bar spoken melody template following the chords; "subtle" means soft dynamics
+  and -6 dB.
+- `remove_layer`: whole score -> `remove_layer` (+ `remove_pattern` of patterns only it played);
+  bars -> `clear_bars`.
+- `change_dynamics`: whole score -> `update_layer {gain_db}`; bars -> `place_clip` of the same
+  pattern and phase with `velocity_scale` times `10^(dB/20)` (clamped to 0.05..=2).
+- `thin_out`: a new pattern keeping accented (strong, bright) notes and beat steps (or the
+  downbeats if that removes nothing); sustaining presets ring into the next kept note.
+- `rewrite_motif`: a new pattern from the layer's rhythm with one to three steps changed (bar
+  downbeats kept) and new chord-relative degrees, in the layer's instrument, octave, register and
+  dynamics; placed with `place_clip` over the bars.
+- `change_instrument`: whole score -> `update_layer {instrument, class?, name?}` (+ `set_clips`
+  octave transposition into the preset's range); bars -> `clear_bars` on the layer and a new
+  layer `<layer>_<preset>` that plays the same patterns and phase in those bars. Drum <-> pitched
+  swaps are refused.
+
+Bar edits never mutate an existing pattern.
+
+### Locks, repair and widening
+
+Locked layers are never targets. A locked layer the plan names is listed in `refused` and the
+summary says it was left alone because it is locked; if nothing else is left to change, the
+outcome has an empty patch and the unchanged Score (not an error).
+
+Issue codes (`EditIssue {code, path, message}`, path a JSON pointer into the plan): `schema`,
+`scope`, `keep`, `unknown_layer`, `no_target`, `unknown_preset`, `avoided_class`, `material`,
+`rejected` (apply refused the patch), `widened`. In `plan_edit` issues go back to the provider
+(at most 3 repair rounds; a provider that returns the same plan twice is not asked again). The
+bars of the first plan whose scope resolved, and the target layers of the first plan that
+resolved completely, bind every later round: a repaired plan outside them gets `widened`.
+
+### Providers
+
+`RuleProvider` answers only `plan_score`, so `plan_edit` routes requests for a provider whose id
+is `offline-rules` to `edit::EditRules` (`parse_edit`). It reads clauses split at punctuation
+and "but/then/while", bar phrases, keep clauses ("keep", "leave", "don't touch"), and intents in
+this order: add (+ melody words, or nothing named) -> `add_melody`; add -> `add_layer`; remove,
+drop, without, mute -> `remove_layer`; swap, replace, instead, change X to Y -> `change_instrument`;
+thin, sparser, simpler -> `thin_out`; softer/louder words -> `change_dynamics` ("a little" 2 dB,
+"much" 8/6 dB); otherwise `rewrite_motif`. Model providers get the same forced-tool request with
+a system prompt that lists the catalogue and the Score (layers, bars they play, locks);
+`tests/edit_claude_replay.rs` replays `ClaudeProvider` through a repair round and a widened
+answer.
+
+### Variations
+
+`variations(score, scope, n, seed)`: `scope` is a `praxis_score::patch::Scope` (bars unset = the
+whole score; empty layers = every unlocked layer playing in the bars). Variation `i` tries seeds
+`derive_seed(seed, "variation{i}", k)` for k = 0..16 and keeps the first whose selected notes
+differ from the original and from every earlier variation; it fails with `material` when it
+cannot find N distinct ones, and with `no_target` when every selected layer is locked.
+Whole-score variations also set each varied layer's `seed_offset`; bar-scoped ones cannot (a
+`seed_offset` changes every bar, which `apply` refuses in a bar scope).
+
+### For agents (edits)
+
+Read `edit_schema()`, write an EditPlan and call `compose_edit(plan_json, score, catalogue,
+seed)`. Start from `crates/praxis-planner/tests/prompts/edit_last_four_melody.plan.json`. Name
+bars with `scope.phrase` or `scope.bars`, put what must stay in `scope.keep`, name existing
+layers by id, and prefer adding a layer in the bars to rewriting a part (layering). Check
+`refused` and `summary`: a locked layer is never changed. On `EditError::Invalid` fix the fields
+the issue paths point at and call again; never widen the bars to make an issue go away.

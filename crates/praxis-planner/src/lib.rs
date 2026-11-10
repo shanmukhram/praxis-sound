@@ -26,6 +26,10 @@ pub use provider::{Message, Provider, ProviderError, Role, ToolRequest};
 
 pub use brief::{PlanOutcome, compose_plan, plan_brief};
 pub use catalogue::Catalogue;
+pub use edit::{
+    EditError, EditOutcome, EditPlan, compose_edit, edit_schema, plan_edit, plan_project_edit,
+};
 pub use offline::RuleProvider;
 pub use plan::{ScorePlan, plan_schema};
 pub use repair::{PlanError, Repair};
+pub use variations::{Variation, variations, variations_with};

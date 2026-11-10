@@ -1,4 +1,4 @@
-# Handoff: Praxis Sound build (as of 2026-11-11, 00:50 IST)
+# Handoff: Praxis Sound build (kept current; last updated 2026-11-11: wave 2 being finished by sub-agents from the terminal)
 
 Paste the block below into a new Claude Code session opened in
 `C:\Users\admin\Desktop\praxis sound`. Everything else in this file is the detail it points to.
@@ -103,30 +103,85 @@ The soft kick layer is skipped until WP-C2 lands (the test says so and tightens 
 
 Test totals at handoff: 386 Rust tests pass in release; app: 140 unit tests on the WP-U2 branch.
 
-## 5. In flight
+## 5. In flight (updated 2026-11-11: WP-K, WP-P2, WP-C2 merged; WP-F2 mix bus and WP-X MCP server running as sub-agents)
 
-| Work | State | Where |
-| --- | --- | --- |
-| WP-U2 conversation UI rebuild | **Done and merged** (12c9e8e). Earlier note: session "WP-U1 workstation front end" (`local_4192c21f-...`) stopped on the account's 5-hour usage limit (resets 02:20 IST). Engine side committed: `27cd5be` on branch `wp/u2-conversation-ui`. Visible-screen work started but **uncommitted** in worktree `.claude/worktrees/funny-elion-3d4d1d/` (`app/src/styles.css` modified; `app/src/ui/context.ts`, `spectrogram.ts`, `waveform.ts`, `views/` new). | Resume that session (send it "continue WP-U2") or start a new session on that worktree. Brief: `docs/briefs/WP-U2-conversation-ui.md` |
+Running: WP-F2 in worktree `clever-cori-d1bc75` (branch `wp/f2-mix-bus`); WP-X MCP server in an
+agent worktree under `.claude/worktrees/` (branch `wp/x-agents`). Next after WP-X merges: WP-U3.
 
-Session cards proposed but **not started** (the owner starts them, or you start them when the
-owner asks): WP-C2 synth + drums, WP-F2 mix bus, WP-K CLI, WP-P2 edits + variations. Their
-briefs are in `docs/briefs/`. If the cards expired, start new sessions with those briefs.
+WP-K CLI is merged (`670353e`): `praxis_cli::ops` is the shared command layer for the app (WP-U3)
+and the MCP server (WP-X).
+
+The orchestrator resumed in a terminal session and started four background sub-agents, one per
+worktree below, each finishing its package from the uncommitted work and committing to its
+branch. When they report: review and merge each (section 7). If the terminal session ends
+first, check each worktree's branch for commits and its `git status` for leftovers, and resume
+as described below.
+
+### Earlier state (all sessions stopped by the owner)
+
+The four wave-2 sessions were **stopped** at the owner's request, mid-work. None had committed:
+all their work is **uncommitted** in their worktrees (safe there; worktrees with changes are not
+cleaned up). Nothing from them is in `build/integration`.
+
+| Package | Brief | Worktree (`.claude/worktrees/...`) | Branch | Work in progress (uncommitted) |
+| --- | --- | --- | --- | --- |
+| WP-C2 synth presets + drums | `docs/briefs/WP-C2-synth-drums.md` | `agitated-haibt-f5dfb9` | `wp/c2-synth-drums` | `crates/praxis-instruments/src/synth.rs` (+53 lines) and a new `src/synth/` directory (3 files). Drums not started |
+| WP-F2 engine mix bus | `docs/briefs/WP-F2-mix-bus.md` | `clever-cori-d1bc75` | `wp/f2-mix-bus` | `effects.rs`, `graph.rs`, `lib.rs`, `render.rs` (+575/-175) and new `latency.rs`, `master.rs`, `sidechain.rs` in `crates/praxis-engine/src/` |
+| WP-K CLI + command layer | `docs/briefs/WP-K-cli.md` | `mystifying-taussig-49d229` | `wp/k-cli` | `Cargo.toml` gains a `[lib] praxis_cli` target (approved: the shared command layer), `main.rs` reworked, `commands.rs` deleted, new `lib.rs`, `error.rs`, `output.rs`, `ops/` (14 new files) |
+| WP-P2 planner edits | `docs/briefs/WP-P2-edits-variations.md` | `charming-shirley-e77b69` | `wp/p2-edits` | new `crates/praxis-planner/src/edit/` (4 files); `edit.rs`/`variations.rs` not yet changed |
+
+**To resume a package**, pick one:
+- In the desktop app, open its session and send "continue your work package". It still has its
+  context. (Session ids: C2 `local_88556cd4-0270-499a-b444-4c1fc9d711da`, F2
+  `local_2cf5992e-16b3-4e4a-a236-095886095a12`, K `local_3900e1de-15d0-4166-8489-aa53b502c0e9`,
+  P2 `local_ebed52bd-b685-42a4-b0b3-99f60f5f8c91`.)
+- Or from a terminal: `cd ".claude/worktrees/<worktree>"`, run `claude`, and tell it: "You are
+  continuing work package <WP>. Read docs/BRIEFING.md and <brief>, inspect the uncommitted work
+  in this worktree with git status and git diff, then finish the package on branch <branch>,
+  following all rules in the brief, and report."
+- Or, as orchestrator, run each as a sub-agent in that worktree with the same instruction.
+
+Check progress at any time with git:
+
+```
+git worktree list
+git -C ".claude/worktrees/<worktree>" status --short
+git log --oneline build/integration..<branch>
+```
+
+Done since the first handoff: WP-U2 conversation UI merged (`12c9e8e`). Run the app with
+`npm --prefix app run dev -- --port 5174` (or `praxis-app` in `.claude/launch.json`); it uses the
+mock engine until WP-U3 lands. The front-end session (`local_4192c21f-...`) is finished and idle.
+
+## Continuing this orchestration in the terminal
+
+Resume this orchestrating session in a terminal opened in the project folder:
+
+```
+cd "C:\Users\admin\Desktop\praxis sound"
+claude --resume 1d1ce050-83ea-4eb7-af85-1081b75553dc
+```
+
+(or `claude --continue` for the most recent session in this folder, or `claude --resume` to pick
+from a list). If it cannot be resumed, start `claude` in the folder and paste the prompt at the
+top of this file. In the terminal, desktop-only tools (session cards, the browser pane, session
+messaging) are not available: review branches with git, start new work as sub-agents or ask the
+owner to open sessions, and take screenshots with headless Edge (section 8).
 
 ## 6. What to do next (in order)
 
 1. **WP-U2**: done and merged. Next UI step (later): a Tauri adapter that fills takes from the
    CLI command layer, plus the MCP take/view hooks.
-2. **WP-C2 synth + drums** (brief ready; needs merged B1): gives `bell` and `soft_kick`; then
+2. **WP-C2 synth + drums** (merged): gives `bell` and `soft_kick`; then
    acceptance test 1 renders with the kick.
-3. **WP-F2 mix bus** (brief ready; needs F + B2): effect chains, sidechain, master loudness to
+3. **WP-F2 mix bus** (running): effect chains, sidechain, master loudness to
    -16 LUFS and the true-peak limiter inside the loop wrap. Also must give the dry piano a room
    (earshot rated the dry render's realness 0.46 because there was no room sound).
 4. **Phase 2 exit**: render acceptance test 1 with felt piano + soft kick mixed, write
    `demos/phase-2/` with a README, ask the owner for listening sign-off (NEEDS_OWNER item 2).
-5. **WP-K CLI** then **WP-X MCP server** (ADR-0010; rmcp 3.9 is already in the workspace deps;
+5. **WP-K CLI** (merged), then **WP-U3 real adapter + Tauri shell** (`docs/briefs/WP-U3-real-adapter.md`, starts when WP-K merges) and **WP-X MCP server** (ADR-0010; rmcp 3.9 is already in the workspace deps;
    tools share the CLI's command layer; agent can write the plan; renders return verify reports).
-6. **WP-P2 edits + variations** (Phase 4 exit: "change the last four bars" leaves bars 1-12
+6. **WP-P2 edits + variations** (merged; live Claude smoke test still needs the API key) (Phase 4 exit: "change the last four bars" leaves bars 1-12
    sample-identical). Ask the owner for the API key when a live Claude smoke test is next.
 7. Then Phases 3 (real-time + Tauri shell), 5 (reference analysis), 6 (match + SFX patches),
    7 (scoring depth), 8 (performance + release) per `docs/PLAN.md`.
@@ -156,3 +211,9 @@ briefs are in `docs/briefs/`. If the cards expired, start new sessions with thos
 - Agent worktrees live in `.claude/worktrees/` (git-ignored). Old `worktree-agent-*` and `wp/*`
   branches are merged; they can be deleted once you no longer need them.
 - Multiple sessions share the scratchpad; use uniquely named commit-message files.
+
+## 9. Keeping this file current
+
+The owner asked for this file to track the project as it moves. After every merge or milestone:
+update section 4 (state), section 5 (in flight: sessions, branches, worktrees) and section 6
+(next steps), add a line to `docs/STATUS.md`'s log, commit, and push `build/integration`.

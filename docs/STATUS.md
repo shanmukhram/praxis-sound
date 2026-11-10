@@ -37,6 +37,17 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 
 ## Log
 
+- Merged WP-P2 edits + variations (331acac): plan_edit / compose_edit / plan_project_edit, EditPlan schema, locked layers refused out loud, repairs never widen scope, variations with own seeds; 15/15 edit prompt cases; bars 1-12 identical after "change the last four bars" (note level). Follow-ups noted: RuleProvider routing of edit tool, prompt_suite filter, planner dev-dep on praxis-engine for render-level isolation.
+- Merged WP-C2 synth + drums (394cb94): 11 synth presets + 11 drum presets + GM kit; pitch within 0.01 cent (warm_bass -3.5 c, warm_pad +2.7 c), soft_kick 100% energy < 150 Hz, -40 dB in 230 ms, 0 allocations. Acceptance 1 now renders the kick and passes all 8 checks (-15.54 LUFS, 93% on grid). CLI test updated: bell fixture now renders. 452 release tests pass.
+
+- Merged WP-K CLI (670353e): shared command layer praxis_cli::ops; render (+flac, checks in payload), validate, schema, check, generate (offline/claude/--plan), analyze, export-midi, packs, key, presets; 16 binary tests. 403 release tests pass; acceptance 1 passes all checks. Note: the hand-written fixtures/acceptance1.score.json render fails grid (87%) and loudness until WP-F2.
+
+- Owner stopped all four wave-2 sessions mid-work; their work is uncommitted in their worktrees (exact files and how to resume: docs/HANDOFF.md section 5).
+
+- Orchestration paused to continue in the terminal; four wave-2 sessions still running in the desktop app (see docs/HANDOFF.md section 5). WP-U3 adapter brief written.
+
+- Wave 2 started as sessions: WP-C2 synth + drums, WP-F2 mix bus, WP-K CLI, WP-P2 edits + variations (details and session ids in docs/HANDOFF.md section 5).
+
 - Merged WP-U2 (12c9e8e): `npm run dev` in app/ opens the approved conversation-first workstation (mock engine). 138 unit + 8 Playwright tests at 1440/390 rerun and passing; screenshots in app/screenshots/ match docs/design/. Next for the UI: Tauri adapter filling takes from praxis generate|edit|check, and MCP praxis_takes/praxis_open_view.
 
 - WP-U2 conversation UI: engine side committed (27cd5be on wp/u2-conversation-ui); visible screen uncommitted in worktree funny-elion-3d4d1d; session paused on the account usage limit. Handoff written: docs/HANDOFF.md.
