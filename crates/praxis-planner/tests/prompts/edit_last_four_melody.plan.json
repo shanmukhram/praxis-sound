@@ -1,0 +1,12 @@
+{
+  "intent": "add_melody",
+  "scope": {"phrase": "last 4 bars", "keep": "first half"},
+  "layers": [],
+  "params": {
+    "preset": "upright_piano",
+    "register": "high",
+    "dynamics": "soft",
+    "gain_db": -6.0
+  },
+  "notes": ["a subtle melody over the last four bars; bars 1-12 stay as they are"]
+}
