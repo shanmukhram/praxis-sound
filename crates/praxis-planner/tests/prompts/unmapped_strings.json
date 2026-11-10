@@ -1,0 +1,31 @@
+{
+  "brief": "Melancholy strings and piano in D minor, 8 bars at 72 bpm",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "D",
+      "mode": "minor"
+    },
+    "bars": 8,
+    "layer_count": 1,
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          8
+        ]
+      }
+    ],
+    "plan_note_contains": "strings",
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

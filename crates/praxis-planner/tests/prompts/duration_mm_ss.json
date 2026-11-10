@@ -1,0 +1,31 @@
+{
+  "brief": "a 1:30 melancholy piano piece in E minor at 80 bpm",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "E",
+      "mode": "minor"
+    },
+    "bpm": 80,
+    "bars": 30,
+    "emotion": "melancholy",
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          30
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

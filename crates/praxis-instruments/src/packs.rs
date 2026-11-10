@@ -46,16 +46,24 @@ impl Packs {
         if let Ok(p) = std::env::var("PRAXIS_PACKS") {
             return Packs::at(p);
         }
-        let mut candidates = vec![PathBuf::from("packs")];
+        // Look for `packs/` (marked by its index.json) in the current directory, the executable's
+        // directory, and their ancestors (so tests and `target/<profile>/praxis` find the
+        // workspace's packs).
+        let mut starts = Vec::new();
+        if let Ok(cwd) = std::env::current_dir() {
+            starts.push(cwd);
+        }
         if let Ok(exe) = std::env::current_exe()
             && let Some(dir) = exe.parent()
         {
-            candidates.push(dir.join("packs"));
-            candidates.push(dir.join("../../packs"));
+            starts.push(dir.to_path_buf());
         }
-        for c in candidates {
-            if c.is_dir() {
-                return Packs::at(c);
+        for start in starts {
+            for dir in start.ancestors().take(6) {
+                let c = dir.join("packs");
+                if c.join("index.json").is_file() {
+                    return Packs::at(c);
+                }
             }
         }
         Packs::none()

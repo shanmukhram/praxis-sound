@@ -1,0 +1,134 @@
+{
+  "id": "msg_01PlanAcceptanceOne",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-opus-5-5",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "EqQBCkYIARgCKkBfixture"
+    },
+    {
+      "type": "text",
+      "text": "Here is the plan."
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_01PlanScoreA1",
+      "name": "plan_score",
+      "input": {
+        "title": "Calm felt piano loop",
+        "emotion": "calm",
+        "key": {
+          "tonic": "A",
+          "mode": "minor"
+        },
+        "time_signature": {
+          "numerator": 4,
+          "denominator": 4
+        },
+        "bars": 16,
+        "duration_s": 30,
+        "playback": "loop",
+        "avoid": [
+          "fill"
+        ],
+        "sections": [
+          {
+            "name": "Piano alone",
+            "bars": {
+              "start": 1,
+              "end": 8
+            },
+            "role": "intro",
+            "intensity": 0.3,
+            "layers": [
+              "piano"
+            ]
+          },
+          {
+            "name": "Piano and kick",
+            "bars": {
+              "start": 9,
+              "end": 16
+            },
+            "role": "main",
+            "intensity": 0.4,
+            "layers": [
+              "piano",
+              "kick"
+            ]
+          }
+        ],
+        "layers": [
+          {
+            "id": "piano",
+            "class": "motif",
+            "preset": {
+              "kind": "sampler",
+              "name": "felt_piano"
+            },
+            "dynamics": "soft",
+            "motif": {
+              "grid": "eighth",
+              "length_bars": 2,
+              "spoken": "DON din don din TIN din don din",
+              "degrees": [
+                0,
+                4,
+                7,
+                4,
+                9,
+                4,
+                7,
+                4,
+                -2,
+                2,
+                5,
+                2,
+                7,
+                2,
+                6,
+                4
+              ],
+              "sustain_steps": 1.6
+            }
+          },
+          {
+            "id": "kick",
+            "class": "drums",
+            "preset": {
+              "kind": "drum",
+              "name": "soft_kick"
+            },
+            "register": "low",
+            "dynamics": "soft",
+            "motif": {
+              "grid": "eighth",
+              "spoken": "DON - - - don - - -"
+            }
+          }
+        ],
+        "chords": [
+          {
+            "bars": {
+              "start": 1,
+              "end": 16
+            },
+            "symbol": "Am"
+          }
+        ]
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 4210,
+    "output_tokens": 1388,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0
+  }
+}

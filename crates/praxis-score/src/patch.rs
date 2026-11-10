@@ -99,11 +99,18 @@ pub enum PatchOp {
     SetMaster {
         master: Master,
     },
+    /// Sets the root seed. Global.
+    SetSeed {
+        seed: u64,
+    },
     SetChords {
         chords: Vec<ChordSpan>,
     },
     AddSection {
         section: Section,
+        /// Insert position; None appends.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<u32>,
     },
     UpdateSection {
         section: Section,
@@ -113,6 +120,9 @@ pub enum PatchOp {
     },
     AddMarker {
         marker: Marker,
+        /// Insert position; None appends.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<u32>,
     },
     RemoveMarker {
         id: Id,
@@ -121,6 +131,9 @@ pub enum PatchOp {
     /// Adds a new pattern. Fails if the id exists.
     AddPattern {
         pattern: Pattern,
+        /// Insert position; None appends.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<u32>,
     },
     /// Replaces a pattern used ONLY by in-scope clips; otherwise fails (use write_bars).
     ReplacePattern {
@@ -133,6 +146,9 @@ pub enum PatchOp {
     // ---- layer ops ----
     AddLayer {
         layer: Layer,
+        /// Insert position; None appends.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        index: Option<u32>,
     },
     RemoveLayer {
         id: Id,
@@ -221,6 +237,7 @@ impl PatchOp {
             PatchOp::SetPlayback { .. } => "set_playback",
             PatchOp::SetConstraints { .. } => "set_constraints",
             PatchOp::SetMaster { .. } => "set_master",
+            PatchOp::SetSeed { .. } => "set_seed",
             PatchOp::SetChords { .. } => "set_chords",
             PatchOp::AddSection { .. } => "add_section",
             PatchOp::UpdateSection { .. } => "update_section",
@@ -254,6 +271,7 @@ impl PatchOp {
                 | PatchOp::SetPlayback { .. }
                 | PatchOp::SetConstraints { .. }
                 | PatchOp::SetMaster { .. }
+                | PatchOp::SetSeed { .. }
         )
     }
 }

@@ -31,4 +31,10 @@ pub trait Processor: Send {
 
     /// Feeds the sidechain key for the next `process` call. Only compressors use it.
     fn set_sidechain(&mut self, _left: &[f32], _right: &[f32]) {}
+
+    /// Tempo (quarter-note BPM) for tempo-synced effects. Only `Delay` uses it.
+    fn set_tempo(&mut self, _bpm: f32) {}
+
+    /// Impulse response for convolution. May allocate: call off the audio thread.
+    fn set_impulse(&mut self, _ir: &crate::buffer::StereoBuffer) {}
 }

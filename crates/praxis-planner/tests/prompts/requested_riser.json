@@ -1,0 +1,45 @@
+{
+  "brief": "Tense 8-bar build in D minor at 120 bpm with a felt piano and a riser",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "D",
+      "mode": "minor"
+    },
+    "bars": 8,
+    "bpm": 120,
+    "layer_count": 2,
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          8
+        ]
+      },
+      {
+        "preset": "riser",
+        "bars": [
+          1,
+          8
+        ]
+      }
+    ],
+    "absent_classes": [
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ],
+    "avoid_contains": [
+      "sweep",
+      "impact",
+      "pad"
+    ],
+    "avoid_absent": [
+      "riser"
+    ]
+  }
+}

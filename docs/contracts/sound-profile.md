@@ -41,10 +41,10 @@ Checks a master render against its Score; `praxis check` prints it. Checks and d
 | Check | Pass when |
 | --- | --- |
 | tempo | detected BPM within 2 of `score.tempo.bpm` (octave errors count as failures) |
-| key | detected key equals `score.key` (relative major/minor is a failure) |
+| key | detected tonic equals `score.key.tonic` and the detected major/minor equals the score mode's family (dorian, phrygian, locrian, harmonic/melodic minor count as minor; lydian, mixolydian as major); relative major/minor fails; chromatic and unpitched scores skip |
 | grid | >= 90% of onsets within 10 ms of a grid step of the score's finest pattern grid |
 | loudness | integrated within 0.5 LU of `master.loudness.target_lufs` |
 | true_peak | <= `true_peak_dbtp` + 0.05 |
 | clipping | no sample with \|x\| >= 1.0 |
-| loop_seam | (loops only) the jump between the last and first sample is no larger than ordinary sample-to-sample jumps at that point in the music, and no broadband transient appears at the seam (spectral flux at the seam within the 95th percentile of the clip) |
+| loop_seam | (loops only) the jump between the last and first sample is no larger than ordinary sample-to-sample jumps at that point in the music, and no broadband transient or broadband drop appears at the seam (first-difference energy, transient flux and drop flux at the seam at most 2 dB above their maximum elsewhere in the clip, excluding 50 ms around the seam) |
 | silence | the render is not silent where the score has notes |

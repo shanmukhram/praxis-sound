@@ -1,0 +1,55 @@
+{
+  "brief": "16 bars, 4/4, A minor, 30 seconds, loop. Soft felt piano with the rhythm \"DON din don din TIN din don din\" on an eighth grid. Bars 9-16: same piano plus a soft kick. No risers, sweeps, impacts or pads.",
+  "seed": 0,
+  "expect": {
+    "acceptance1": true,
+    "key": {
+      "tonic": "A",
+      "mode": "minor"
+    },
+    "bpm": 128,
+    "bars": 16,
+    "time_signature": [
+      4,
+      4
+    ],
+    "playback": "loop",
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          16
+        ],
+        "grid": "eighth"
+      },
+      {
+        "preset": "soft_kick",
+        "bars": [
+          9,
+          16
+        ]
+      }
+    ],
+    "layer_count": 2,
+    "sections": 2,
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ],
+    "avoid_contains": [
+      "riser",
+      "sweep",
+      "impact",
+      "pad"
+    ],
+    "spoken": {
+      "felt_piano": "DON din don din TIN din don din"
+    }
+  }
+}

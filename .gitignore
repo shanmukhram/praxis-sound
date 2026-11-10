@@ -3,8 +3,9 @@
 *.wav
 !demos/**/*.wav
 !tests/clips/**/*.wav
-/packs/*/samples/
-/packs/_downloads/
+/packs/*
+!/packs/index.json
+!/packs/README.md
 node_modules/
 dist/
 .DS_Store

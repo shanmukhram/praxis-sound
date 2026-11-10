@@ -37,11 +37,16 @@ One type per `EffectKind`, each implementing `Processor`, constructed with
 | limiter | `TruePeakLimiter` (4x oversampled peak detection, lookahead, never exceeds ceiling) |
 | gain | `GainFx` |
 
-Plus `pub fn create(kind_index: usize, sample_rate, max_block) -> Box<dyn Processor>` in
-`fx/mod.rs`, where `kind_index` is the position of the kind in this table (eq = 0 .. gain = 10).
+Plus `pub fn create(kind_index: usize, sample_rate: f32, max_block: usize) -> Option<Box<dyn Processor>>`
+(None for an unknown index), `param_count(kind_index)`, `PARAMS` (mirror of the score parameter
+table, checked by a cross-crate test) and `create_any` (`AnyFx` enum) in `fx/mod.rs`, where
+`kind_index` is the position of the kind in this table (eq = 0 .. gain = 10). `Processor` has
+`set_tempo(bpm)` (delay) and `set_impulse(&StereoBuffer)` (convolver; allocates, call off the
+audio thread) with no-op defaults.
 
 `meter/`: `LoudnessMeter` (BS.1770-4 K-weighting, momentary/short-term/integrated with gating,
-LRA), `true_peak_dbtp(&StereoBuffer, sr)` (4x oversampling), `rms_dbfs`. Must agree with the
+LRA), `true_peak_dbtp(left, right, sr)` (4x oversampling, same detector as the limiter),
+`sample_peak_dbfs(left, right)`, `rms_dbfs(left, right)`. Must agree with the
 `ebur128` crate within 0.1 LU on test signals (test against it as a dev reference).
 
 ## Conventions

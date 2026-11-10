@@ -17,7 +17,11 @@ normalisation (or frozen gain) -> true-peak limiter at `master.loudness.true_pea
 - **Order is fixed**: layers render in `score.layers` order; sums are accumulated in that order.
   Multi-threaded rendering is allowed only if each layer renders independently and the sum order
   is unchanged.
+- **Validation**: validator errors are fatal (`RenderError::InvalidScore`) except `avoided_class`,
+  which the engine handles by blocking the layer.
 - **Mute/solo**: muted layers are skipped; if any layer is solo, only solo layers render.
+  `opts.only_layers`, when non-empty, renders exactly those layers (mute/solo ignored); avoid-list
+  blocking still applies. Stems are returned for rendered layers only, in score order.
 - **Avoid-list**: layers whose class, or whose preset's intrinsic class, is in
   `constraints.avoid` are not rendered and are listed in `report.blocked_layers`.
 - **Sidechain**: a compressor with `sidechain: <layer id>` is keyed by that layer's instrument

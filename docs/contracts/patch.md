@@ -10,7 +10,9 @@ Every change to a Score, by a person or the model, is a `ScorePatch`: a list of 
 
 1. **Atomic.** All ops apply or none do. The result must pass `validate`; otherwise `Invalid`.
 2. **Locks.** Any op that changes a locked layer, or a pattern used by a locked layer, fails with
-   `LockedLayer`. `set_lock {locked: false}` succeeds only for `origin: user`.
+   `LockedLayer`. `set_lock {locked: false}` succeeds only for `origin: user`. A lock protects
+   content, not auditioning: an `origin: user` `update_layer` that changes only `muted`/`solo` is
+   allowed on a locked layer; any other field (or a model/system origin) is refused.
 3. **Scope.** If `scope.bars` is set, global ops (`PatchOp::is_global`) fail with `OutOfScope`, and
    bar ops (`write_bars`, `clear_bars`, `place_clip`) must lie inside it. If `scope.layers` is
    non-empty, layer ops must name one of them. Ops are rejected, never silently clipped.
@@ -21,20 +23,28 @@ Every change to a Score, by a person or the model, is a `ScorePatch`: a list of 
    exactly the steps it played before (a clip plays pattern step `(rel + offset) % length_steps`).
    `set_clips` replaces a layer's clip list and is accepted only if every bar outside the scope
    expands to the same note events; it is what inverses of bar ops use, so they are exact.
+   `write_bars` uses the given pattern id if it is free, reuses an existing pattern with that id
+   only if it is identical, and otherwise stores the pattern under a derived id
+   `<layer>_b<start>-<end>` (suffix `_2`, `_3`... on collision); it never fails with `DuplicateId`.
 5. **Exact inverse.** `apply(apply(s, p).score, inverse) == s` (structural equality), for every
    valid patch. Property-tested with generated scores and patches.
 6. **Isolation.** For any patch scoped to bars B and layers L: every layer not in L is
    structurally identical, and every bar outside B of a layer in L expands (via
    `timeline::expand_notes`) to exactly the same note events. Property-tested.
-7. **Deterministic ids.** New pattern ids created by splitting are derived from
+7. **Insert positions and seed.** `add_pattern`, `add_layer`, `add_section` and `add_marker` take an
+   optional `index` (None appends); inverses of removals re-insert at the old index in one op.
+   `set_seed` is a global op.
+8. **Deterministic ids.** New pattern ids created by splitting are derived from
    (layer id, bar range), e.g. `piano_b13-16`, with a numeric suffix on collision.
 
 ## Audio-level isolation (engine, tested in WP-F)
 
 Rendering a patched score scoped to bars B of layer X:
 - every other layer's stem is bit-identical over the whole render;
-- layer X's stem is bit-identical outside `[start(B), end(B) + tail(X))`, where `tail(X)` is the
-  instrument release plus the layer's effect tail;
+- layer X's stem is bit-identical outside `[start(B), end(B) + overhang(B) + tail(X))`, where
+  `overhang(B)` is how far notes starting in B (before or after the edit) sound past end(B) and
+  `tail(X)` is the instrument release plus the layer's effect tail; for loops the part past the
+  loop length wraps to `[0, ...)`;
 - with `master.frozen_gain_db` set, the master is bit-identical outside the same window, widened
   by the master chain's tail and limiter lookahead/release.
 

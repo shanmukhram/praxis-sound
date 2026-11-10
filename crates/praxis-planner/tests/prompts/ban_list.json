@@ -1,0 +1,37 @@
+{
+  "brief": "Dreamy glass motif in E major, 8 bars at 84 BPM, no drums, no bass, no pads",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "E",
+      "mode": "major"
+    },
+    "emotion": "dreamy",
+    "layer_count": 1,
+    "layers": [
+      {
+        "preset": "glass",
+        "bars": [
+          1,
+          8
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill",
+      "drums",
+      "bass"
+    ],
+    "avoid_contains": [
+      "drums",
+      "bass",
+      "pad"
+    ]
+  }
+}

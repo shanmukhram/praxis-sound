@@ -1,0 +1,48 @@
+{
+  "brief": "Warm keys playing chords Am F C G, one per bar, 8 bars at 90 bpm in A minor, with a sub bass",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "A",
+      "mode": "minor"
+    },
+    "bars": 8,
+    "bpm": 90,
+    "layer_count": 2,
+    "layers": [
+      {
+        "preset": "soft_keys",
+        "bars": [
+          1,
+          8
+        ]
+      },
+      {
+        "preset": "sub_bass",
+        "bars": [
+          1,
+          8
+        ]
+      }
+    ],
+    "chords": [
+      "Am",
+      "F",
+      "C",
+      "G",
+      "Am",
+      "F",
+      "C",
+      "G"
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

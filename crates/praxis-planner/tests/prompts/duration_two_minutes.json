@@ -1,0 +1,31 @@
+{
+  "brief": "two minutes at 120 bpm, playful plucks in G major, loop",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "G",
+      "mode": "major"
+    },
+    "bpm": 120,
+    "bars": 60,
+    "emotion": "playful",
+    "layers": [
+      {
+        "preset": "pluck",
+        "bars": [
+          1,
+          60
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}
