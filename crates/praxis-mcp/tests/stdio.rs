@@ -466,6 +466,33 @@ fn every_tool_over_stdio() {
         c.progress
     );
 
+    // --- the guide's second worked example: a sting with a tuned impact under the piano ---
+    let sting: Value = serde_json::from_str(
+        &std::fs::read_to_string(workspace().join("docs/agents/examples/sting.plan.json")).unwrap(),
+    )
+    .unwrap();
+    let sting_wav = at(&dir, "sting/sting.wav");
+    let st = c.ok(
+        "praxis_compose",
+        json!({"plan": sting, "project": s(&at(&dir, "sting/sting.praxis")), "render": s(&sting_wav), "skip_missing": true}),
+    );
+    assert_eq!(st["repairs"], json!([]), "{st:#}");
+    let hit = st["score_summary"]["layers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["id"] == "hit")
+        .expect("the requested impact layer survives");
+    assert_eq!(hit["class"], "impact");
+    assert_eq!(hit["bars"], json!([[2, 2]]));
+    assert!(sting_wav.is_file());
+    eprintln!(
+        "sting: passed {} failed {} skipped {}",
+        st["render"]["check"]["passed"],
+        st["render"]["check"]["failed"],
+        st["render"]["skipped_layers"]
+    );
+
     // --- praxis_render ---
     let flac = at(&dir, "render/loop.flac");
     let stems = at(&dir, "render/stems");

@@ -1,0 +1,37 @@
+{
+  "title": "Resolve sting",
+  "emotion": "resolute",
+  "key": { "tonic": "D", "mode": "minor" },
+  "bars": 2,
+  "tempo_bpm": 96,
+  "playback": "one_shot",
+  "requested": ["impact"],
+  "sections": [
+    { "name": "Piano pickup", "bars": { "start": 1, "end": 1 }, "role": "intro", "intensity": 0.4, "layers": ["piano"] },
+    { "name": "Landing", "bars": { "start": 2, "end": 2 }, "role": "peak", "intensity": 0.7, "layers": ["piano", "hit"] }
+  ],
+  "layers": [
+    {
+      "id": "piano",
+      "class": "motif",
+      "preset": { "kind": "sampler", "name": "felt_piano" },
+      "dynamics": "soft",
+      "gain_db": -0.5,
+      "motif": {
+        "grid": "eighth",
+        "length_bars": 2,
+        "spoken": "DON din don din TIN din don din DON - don - DON - - -",
+        "degrees": [4, 2, 0, 2, 4, 5, 6, 5, 7, 4, 0],
+        "sustain_steps": 1.6
+      }
+    },
+    {
+      "id": "hit",
+      "class": "impact",
+      "preset": { "kind": "sfx", "name": "impact" },
+      "register": "low",
+      "dynamics": "soft",
+      "motif": { "grid": "eighth", "spoken": "DON - - - - - - -", "degrees": [0] }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "praxis": {
+      "type": "stdio",
+      "command": "C:\\Users\\admin\\Desktop\\praxis sound\\target\\release\\praxis-mcp.exe",
+      "args": [],
+      "env": {
+        "PRAXIS_PACKS": "C:\\Users\\admin\\Desktop\\praxis sound\\packs"
+      }
+    }
+  }
+}
