@@ -28,6 +28,15 @@ body { background: var(--ground); color: var(--text); font: 400 var(--fs-body)/2
 button, input, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+/* Scrollbars match the theme: a slim grey thumb on the surface it scrolls, never a white bar. */
+html { color-scheme: dark; }
+* { scrollbar-width: thin; scrollbar-color: var(--active) transparent; }
+*:hover { scrollbar-color: var(--control) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--active); border-radius: 999px; border: 3px solid var(--ground); }
+::-webkit-scrollbar-thumb:hover { background: var(--control); }
+::-webkit-scrollbar-corner { background: transparent; }
 .num { font-variant-numeric: tabular-nums; }
 
 /* ---------- shell ---------- */

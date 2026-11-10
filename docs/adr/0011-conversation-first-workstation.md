@@ -1,6 +1,6 @@
 # ADR-0011: Conversation-first workstation
 
-Status: proposed (owner reviews `docs/design/workstation-concept.html`)
+Status: accepted (owner, 2026-11-11: "the UI is good"; scrollbars must match the theme)
 
 ## Context
 
@@ -38,7 +38,8 @@ The workstation opens on a conversation about one sound, with a Sound panel besi
 - **Style.** True-black flat (taste-skill app rules): elevation by lightness, 1px rules, colour
   only on the sound (waveform of the changed bars, change map, moved notes, playhead) in one amber
   accent; a white inverted primary button; Segoe UI Variable / system UI (no outside font loads);
-  sentence case; no gradients, glass, emoji, icon tiles or tracked caps.
+  sentence case; no gradients, glass, emoji, icon tiles or tracked caps. Scrollbars are themed
+  (slim grey thumb on a transparent track, `color-scheme: dark`), never the default white bar.
 - **Phone.** Conversation full width with a sticky composer; the Sound panel is a bottom sheet
   opened from the top bar or by the assistant.
 
