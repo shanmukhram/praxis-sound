@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 praxis-score.workspace = true
 praxis-dsp.workspace = true
 praxis-engine.workspace = true
-praxis-instruments.workspace = true
+praxis-instruments = { workspace = true, default-features = false }
 praxis-analyze.workspace = true
 serde_json.workspace = true
 wasm-bindgen.workspace = true

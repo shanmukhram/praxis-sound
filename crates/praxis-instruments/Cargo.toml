@@ -16,6 +16,14 @@ serde.workspace = true
 serde_json.workspace = true
 claxon.workspace = true
 hound.workspace = true
+blake3.workspace = true
+sevenz-rust2 = { workspace = true, optional = true }
+ureq = { workspace = true, optional = true }
+
+[features]
+default = ["install"]
+# Downloading and unpacking packs (desktop/CLI only, not WebAssembly).
+install = ["dep:sevenz-rust2", "dep:ureq"]
 [dev-dependencies]
 praxis-testkit.workspace = true
 [lints]
