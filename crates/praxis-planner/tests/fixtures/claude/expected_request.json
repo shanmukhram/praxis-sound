@@ -1,0 +1,20 @@
+{
+  "model": "claude-opus-5-5",
+  "max_tokens": 16000,
+  "messages": [
+    {
+      "role": "user",
+      "content": "16 bars, 4/4, A minor, 30 seconds, seamless loop. Bars 1-8: one soft felt piano playing a repeating rhythmic motif on an eighth-note grid with accents and overlapping sustain. Bars 9-16: the identical piano part plus a soft muted kick underneath. No new melody, no fills, no risers, sweeps, impacts or pads."
+    }
+  ],
+  "tools": [
+    {
+      "name": "plan_score",
+      "description": "Submit the ScorePlan for the brief: key, timing, sections, layers with spoken-rhythm motifs, chords and the avoid-list.",
+      "strict": true
+    }
+  ],
+  "tool_choice": { "type": "auto" },
+  "output_config": { "effort": "medium" },
+  "fallbacks": "default"
+}

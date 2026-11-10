@@ -1,0 +1,31 @@
+{
+  "brief": "Eighth-note triplet arpeggios in C minor, 8 bars, 30 seconds",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "C",
+      "mode": "minor"
+    },
+    "bars": 8,
+    "bpm": 64,
+    "layers": [
+      {
+        "preset": "pluck",
+        "bars": [
+          1,
+          8
+        ],
+        "grid": "eighth_triplet"
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

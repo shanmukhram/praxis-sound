@@ -12,12 +12,20 @@ pub mod provider;
 // ---- WP-P planner: implementation modules ----
 pub mod arrange;
 pub mod brief;
+pub mod catalogue;
 #[cfg(feature = "claude")]
 pub mod claude;
 pub mod edit;
+pub mod motifs;
 pub mod offline;
 pub mod plan;
 pub mod repair;
 pub mod variations;
 
 pub use provider::{Message, Provider, ProviderError, Role, ToolRequest};
+
+pub use brief::{PlanOutcome, compose_plan, plan_brief};
+pub use catalogue::Catalogue;
+pub use offline::RuleProvider;
+pub use plan::{ScorePlan, plan_schema};
+pub use repair::{PlanError, Repair};

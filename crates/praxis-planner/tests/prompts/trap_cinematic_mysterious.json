@@ -1,0 +1,32 @@
+{
+  "brief": "cinematic mysterious piano loop",
+  "seed": 0,
+  "expect": {
+    "emotion": "mysterious",
+    "playback": "loop",
+    "layer_count": 1,
+    "layers": [
+      {
+        "preset": "felt_piano"
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ],
+    "avoid_contains": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

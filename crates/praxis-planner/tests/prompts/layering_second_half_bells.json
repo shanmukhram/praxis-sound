@@ -1,0 +1,39 @@
+{
+  "brief": "Soft piano loop in C major, 8 bars at 96 BPM; add bells in the second half",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "C",
+      "mode": "major"
+    },
+    "bpm": 96,
+    "bars": 8,
+    "layer_count": 2,
+    "sections": 2,
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          8
+        ]
+      },
+      {
+        "preset": "bell",
+        "bars": [
+          5,
+          8
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

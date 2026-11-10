@@ -1,0 +1,34 @@
+{
+  "brief": "Piano rhythm DON - din DON ~ din TIN - on sixteenths, B minor, 4 bars at 100 bpm",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "B",
+      "mode": "minor"
+    },
+    "bpm": 100,
+    "bars": 4,
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          4
+        ],
+        "grid": "sixteenth"
+      }
+    ],
+    "spoken": {
+      "felt_piano": "DON - din DON ~ din TIN -"
+    },
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}
