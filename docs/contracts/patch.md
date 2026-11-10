@@ -17,6 +17,10 @@ Every change to a Score, by a person or the model, is a `ScorePatch`: a list of 
 4. **Copy-on-write.** `write_bars`/`clear_bars`/`place_clip` split the layer's clips at the range
    edges. Bars outside the range keep their clips and patterns; a pattern shared with other clips
    is never mutated in place. `replace_pattern` fails if any out-of-scope or locked clip uses it.
+   A split keeps the pattern phase: the right-hand piece gets `pattern_offset_steps` so it plays
+   exactly the steps it played before (a clip plays pattern step `(rel + offset) % length_steps`).
+   `set_clips` replaces a layer's clip list and is accepted only if every bar outside the scope
+   expands to the same note events; it is what inverses of bar ops use, so they are exact.
 5. **Exact inverse.** `apply(apply(s, p).score, inverse) == s` (structural equality), for every
    valid patch. Property-tested with generated scores and patches.
 6. **Isolation.** For any patch scoped to bars B and layers L: every layer not in L is

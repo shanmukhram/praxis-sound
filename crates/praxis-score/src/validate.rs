@@ -277,6 +277,15 @@ pub fn validate(score: &Score) -> Report {
                 }
                 Some(_) => {}
             }
+            if let Some(p) = score.patterns.iter().find(|p| p.id == clip.pattern)
+                && clip.pattern_offset_steps >= p.length_steps.max(1)
+            {
+                r.err(
+                    IssueCode::StepOutOfRange,
+                    format!("{cp}/pattern_offset_steps"),
+                    "pattern_offset_steps must be below the pattern length",
+                );
+            }
             if !(clip.velocity_scale > 0.0 && clip.velocity_scale <= 2.0) {
                 r.err(
                     IssueCode::VelocityRange,

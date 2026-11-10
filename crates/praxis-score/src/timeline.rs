@@ -142,19 +142,24 @@ pub fn expand_notes(score: &Score, sample_rate: u32) -> Vec<NoteEvent> {
                 continue;
             }
             let clip_steps = (last - first + 1) as u64 * spb as u64;
-            let mut base: u64 = 0;
-            while base < clip_steps {
+            let len = pat.length_steps as u64;
+            let offset = clip.pattern_offset_steps as u64 % len;
+            let clip_start_s = tm.bar_pos_to_s(first as f64);
+            // Clip-relative step `rel` plays pattern step `(rel + offset) % len`. Walk pattern
+            // repetitions starting at -offset so the notes of the partial first cycle are included.
+            let mut cycle_start: i64 = -(offset as i64);
+            while cycle_start < clip_steps as i64 {
                 for n in &pat.notes {
                     if n.step >= pat.length_steps {
                         continue;
                     }
-                    let abs_step = base + n.step as u64;
-                    if abs_step >= clip_steps {
+                    let rel = cycle_start + n.step as i64;
+                    if rel < 0 || rel >= clip_steps as i64 {
                         continue;
                     }
+                    let abs_step = rel as u64;
                     let bar = first + (abs_step / spb as u64) as u32;
                     let step_in_bar = (abs_step % spb as u64) as u32;
-                    let clip_start_s = tm.bar_pos_to_s(first as f64);
                     let start_s =
                         (clip_start_s + (abs_step as f64 + n.offset as f64) * step_s).max(0.0);
                     let length_s = n.length as f64 * step_s;
@@ -182,7 +187,7 @@ pub fn expand_notes(score: &Score, sample_rate: u32) -> Vec<NoteEvent> {
                         accent: n.accent,
                     });
                 }
-                base += pat.length_steps as u64;
+                cycle_start += len as i64;
             }
         }
     }

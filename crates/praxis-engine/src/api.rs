@@ -56,6 +56,8 @@ pub struct RenderReport {
     /// Layers skipped because their class is on the avoid-list (FR-3 enforcement).
     pub blocked_layers: Vec<String>,
     pub render_seconds: f64,
+    /// Non-fatal problems (an effect not built, a missing impulse response...). Never silent.
+    pub warnings: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -108,6 +108,12 @@
         "pattern": {
           "type": "string"
         },
+        "pattern_offset_steps": {
+          "description": "Pattern step at which this clip starts playing, so a clip split at bar N keeps the phase it\nhad (rule 6 of contracts/patch.md). Default 0. Must be < the pattern's `length_steps`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "transpose": {
           "default": 0,
           "description": "Semitones added to every note.",

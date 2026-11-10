@@ -163,6 +163,12 @@ pub enum PatchOp {
         layer: Id,
         clip: Clip,
     },
+    /// Replaces a layer's whole clip list. Allowed only when every bar outside the scope expands
+    /// to the same note events before and after (apply checks this). Used for exact inverses.
+    SetClips {
+        layer: Id,
+        clips: Vec<Clip>,
+    },
 }
 
 /// Why a patch was rejected.
@@ -231,6 +237,7 @@ impl PatchOp {
             PatchOp::WriteBars { .. } => "write_bars",
             PatchOp::ClearBars { .. } => "clear_bars",
             PatchOp::PlaceClip { .. } => "place_clip",
+            PatchOp::SetClips { .. } => "set_clips",
         }
     }
 

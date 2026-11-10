@@ -108,6 +108,12 @@
         "pattern": {
           "type": "string"
         },
+        "pattern_offset_steps": {
+          "description": "Pattern step at which this clip starts playing, so a clip split at bar N keeps the phase it\nhad (rule 6 of contracts/patch.md). Default 0. Must be < the pattern's `length_steps`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "transpose": {
           "default": 0,
           "description": "Semitones added to every note.",
@@ -1173,6 +1179,31 @@
             "op",
             "layer",
             "clip"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Replaces a layer's whole clip list. Allowed only when every bar outside the scope expands\nto the same note events before and after (apply checks this). Used for exact inverses.",
+          "properties": {
+            "clips": {
+              "items": {
+                "$ref": "#/$defs/Clip"
+              },
+              "type": "array"
+            },
+            "layer": {
+              "type": "string"
+            },
+            "op": {
+              "const": "set_clips",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "layer",
+            "clips"
           ],
           "type": "object"
         }

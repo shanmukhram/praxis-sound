@@ -334,11 +334,19 @@ pub struct Layer {
 pub struct Clip {
     pub bars: BarRange,
     pub pattern: Id,
+    /// Pattern step at which this clip starts playing, so a clip split at bar N keeps the phase it
+    /// had (rule 6 of contracts/patch.md). Default 0. Must be < the pattern's `length_steps`.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub pattern_offset_steps: u32,
     /// Semitones added to every note.
     #[serde(default)]
     pub transpose: i8,
     #[serde(default = "one")]
     pub velocity_scale: f32,
+}
+
+fn is_zero_u32(v: &u32) -> bool {
+    *v == 0
 }
 
 fn one() -> f32 {

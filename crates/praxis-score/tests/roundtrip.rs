@@ -93,3 +93,29 @@ fn acceptance_timeline() {
     }
     assert!(ev.iter().filter(|e| e.layer == 1).all(|e| e.bar >= 9));
 }
+
+#[test]
+fn split_clip_keeps_phase() {
+    // A 4-bar pattern on bars 1-8, split into 1-4 and 5-8 with the second continuing the phase,
+    // expands to the same events as the unsplit clip; restarting the phase would not.
+    let mut s = praxis_score::from_json(&fixture("acceptance1_bell.score.json")).unwrap();
+    s.patterns[0].length_steps = 32;
+    s.patterns[0].notes.push(praxis_score::Note {
+        step: 20,
+        pitch: 76,
+        velocity: 0.5,
+        accent: praxis_score::Accent::Normal,
+        length: 1.0,
+        offset: 0.0,
+    });
+    s.layers[0].clips[0].bars = praxis_score::BarRange { start: 1, end: 6 };
+    let whole = praxis_score::timeline::expand_notes(&s, 48_000);
+    let mut split = s.clone();
+    let mut second = split.layers[0].clips[0].clone();
+    split.layers[0].clips[0].bars.end = 3;
+    second.bars = praxis_score::BarRange { start: 4, end: 6 };
+    second.pattern_offset_steps = 24; // bar 4 is step 24 of the 32-step pattern
+    split.layers[0].clips.push(second);
+    assert!(validate(&split).is_valid(), "{:?}", validate(&split).errors);
+    assert_eq!(whole, praxis_score::timeline::expand_notes(&split, 48_000));
+}
