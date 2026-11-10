@@ -157,20 +157,26 @@ owner to open sessions, and take screenshots with headless Edge (section 8).
 
 ## 6. What to do next (in order)
 
-1. **WP-U2**: done and merged. Next UI step (later): a Tauri adapter that fills takes from the
-   CLI command layer, plus the MCP take/view hooks.
-2. **WP-C2 synth + drums** (merged): gives `bell` and `soft_kick`; then
-   acceptance test 1 renders with the kick.
-3. **WP-F2 mix bus** (merged): effect chains, sidechain, master loudness to
-   -16 LUFS and the true-peak limiter inside the loop wrap. Also must give the dry piano a room
-   (earshot rated the dry render's realness 0.46 because there was no room sound).
-4. **Phase 2 exit**: demo rendered (`demos/phase-2/`); waiting for the owner's listening sign-off.
-5. **WP-K CLI** (merged), then **WP-U3 real adapter + Tauri shell** (`docs/briefs/WP-U3-real-adapter.md`, starts when WP-K merges) and **WP-X MCP server** (ADR-0010; rmcp 3.9 is already in the workspace deps;
-   tools share the CLI's command layer; agent can write the plan; renders return verify reports).
-6. **WP-P2 edits + variations** (merged; live Claude smoke test still needs the API key) (Phase 4 exit: "change the last four bars" leaves bars 1-12
-   sample-identical). Ask the owner for the API key when a live Claude smoke test is next.
-7. Then Phases 3 (real-time + Tauri shell), 5 (reference analysis), 6 (match + SFX patches),
-   7 (scoring depth), 8 (performance + release) per `docs/PLAN.md`.
+Done: Phases 0 and 1; Phase 2 built (demo awaiting sign-off); WP-A, B1, B2, C1, C2, D1, E, F,
+F2, K, P, P2, U1, U2, X all merged.
+
+1. **Phase 2 sign-off**: ask the owner to listen to `demos/phase-2/acceptance1_mixed_loop.flac`.
+   Fix anything they hear before closing the phase; their sign-off does not block the next steps.
+2. **WP-U3 real adapter + Tauri shell** (`docs/briefs/WP-U3-real-adapter.md`): the approved app
+   plays real, checked takes on Windows.
+3. **Wire edits into the CLI and MCP** (follow-up 2 in section 5).
+4. **Analyzer onset robustness** (follow-up 1 in section 5).
+5. **Phase 3**: WP-R real-time engine (cpal output, lock-free bridge, no dropouts at 256 frames),
+   then the Phase 3 exit (build acceptance 1 by hand in the window, play, export) and the owner's
+   real-hardware check.
+6. **Phase 4 exit**: a live Claude run of the prompt and edit suites. Ask the owner for the
+   Anthropic API key at that point (not before).
+7. **Phase 5** WP-D2 Sound Profile + labelled test set; **Phase 6** WP-H SFX patches + WP-M
+   match loop; **Phase 7** WP-P3 scoring depth; **Phase 8** WP-W wasm/browser + WP-Z performance
+   and release, per `docs/PLAN.md`.
+
+Verification preference (owner): after a package, run only its new or affected tests plus the
+acceptance test; run the full workspace suite at phase exits or when shared code changes.
 
 ## 7. How to review and merge a package (what has worked)
 
