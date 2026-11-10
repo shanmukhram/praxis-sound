@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Praxis Sound: workstation concept</title>
+<style>
+/* Praxis Sound workstation concept (ADR-0011). Self-contained: no outside loads.
+   Style: true-black flat (elevation by lightness, colour on the sound only).
+   Grid at 1440: sounds list 248 + gap 0 | conversation 1fr | sound panel 456. */
+:root {
+  --ground: #111111; --surface: #181818; --raised: #212121; --active: #2a2a2a;
+  --border: #262626; --rule: #1f1f1f; --control: #444444;
+  --text: #ffffff; --muted: #b4b4b4; --faint: #949494;
+  --primary: #ffffff; --on-primary: #111111;
+  --accent: #f5a524;            /* the sound: waveform, playhead, changed bars */
+  --accent-soft: rgba(245, 165, 36, 0.16);
+  --positive: #3fc07a; --pill-positive-bg: #172a1d;
+  --negative: #e5566f;
+  --radius-card: 14px; --radius-control: 999px; --radius-chip: 999px; --radius-lane: 6px;
+  --gap: 16px; --pad: 24px;
+  --font: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --fs-title: 22px; --fs-section: 16px; --fs-body: 14px; --fs-small: 12px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--ground); color: var(--text); font: 400 var(--fs-body)/20px var(--font); -webkit-font-smoothing: antialiased; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- shell ---------- */
+.app { display: grid; grid-template-columns: 248px minmax(0, 1fr) 456px; height: 100vh; }
+.side { display: flex; flex-direction: column; padding: 18px 12px; border-right: 1px solid var(--rule); min-height: 0; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 20px; }
+.brand svg { flex: none; }
+.brand b { font-weight: 600; font-size: 15px; }
+.new-sound { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: var(--radius-control); background: var(--raised); border: 0; margin: 0 4px 18px; }
+.new-sound:hover { background: var(--active); }
+.side h2 { font-size: 12px; font-weight: 400; color: var(--faint); margin: 0 10px 8px; }
+.sounds { list-style: none; margin: 0; padding: 0; overflow: auto; }
+.sounds button { width: 100%; text-align: left; border: 0; background: none; border-radius: 10px; padding: 8px 10px; display: grid; gap: 2px; color: var(--muted); }
+.sounds button:hover { background: var(--surface); }
+.sounds button[aria-current="true"] { background: var(--active); color: var(--text); }
+.sounds small { color: var(--faint); font-size: 12px; }
+.side .agents { margin-top: auto; padding: 14px 10px 4px; border-top: 1px solid var(--rule); color: var(--faint); font-size: 12px; line-height: 18px; }
+.side .agents b { color: var(--muted); font-weight: 500; display: block; font-size: 13px; }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--positive); margin-right: 6px; vertical-align: 1px; }
+
+/* ---------- conversation ---------- */
+.chat { display: flex; flex-direction: column; min-height: 0; }
+.chat-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 32px 14px; }
+.chat-head h1 { font-size: var(--fs-title); font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+.chat-head p { margin: 2px 0 0; color: var(--muted); }
+.ghost { height: 32px; padding: 0 14px; border-radius: var(--radius-control); border: 1px solid var(--control); background: none; }
+.ghost:hover { background: var(--raised); }
+.thread { flex: 1; overflow: auto; padding: 8px 32px 24px; display: flex; flex-direction: column; gap: 20px; scroll-behavior: smooth; }
+.msg-user { align-self: flex-end; max-width: 78%; background: var(--raised); border-radius: 18px 18px 6px 18px; padding: 10px 16px; font-size: 15px; line-height: 22px; }
+.msg-user small { display: block; color: var(--faint); font-size: 12px; margin-bottom: 2px; }
+.take { background: var(--surface); border-radius: var(--radius-card); padding: 18px 20px 16px; }
+.take-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; }
+.take-head h3 { margin: 0; font-size: var(--fs-section); font-weight: 600; }
+.take-head span { color: var(--faint); font-size: 12px; white-space: nowrap; }
+.take p.say { margin: 6px 0 14px; color: var(--muted); font-size: 15px; line-height: 22px; }
+.player { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; align-items: center; }
+.play { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--primary); color: var(--on-primary); display: grid; place-items: center; }
+.play:hover { transform: scale(1.04); }
+.wave { position: relative; height: 64px; }
+.wave svg { display: block; width: 100%; height: 64px; }
+.ruler { display: grid; grid-template-columns: repeat(16, 1fr); color: var(--faint); font-size: 11px; margin: 4px 0 0 52px; }
+.ruler span:nth-child(4n+1) { color: var(--muted); }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 14px 0 0; color: var(--muted); }
+.facts b { color: var(--text); font-weight: 500; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; }
+.check { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: var(--radius-chip); background: var(--pill-positive-bg); color: var(--positive); font-size: 12px; white-space: nowrap; }
+.check.warn { background: #2c1a20; color: var(--negative); }
+.changed { margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.checkline { margin: 12px 0 0; color: var(--faint); font-size: 12px; line-height: 20px; }
+.checkline .check { margin-right: 8px; }
+.past { display: grid; grid-template-columns: 32px minmax(0, 1fr) minmax(0, 220px) auto; gap: 14px; align-items: center; padding: 10px 14px; border-radius: 12px; background: var(--surface); }
+.past b { font-weight: 500; display: block; }
+.past small { color: var(--faint); font-size: 12px; }
+.mini-play { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--control); background: none; display: grid; place-items: center; color: var(--text); }
+.mini-play:hover { background: var(--raised); }
+.wave.mini, .wave.mini svg { height: 28px; }
+.maplegend { margin: 10px 0 0; color: var(--muted); font-size: 12px; line-height: 18px; }
+.maplegend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--accent); margin-right: 8px; vertical-align: -1px; }
+table.moves { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.moves th { font-weight: 400; color: var(--faint); font-size: 12px; text-align: left; padding: 0 0 6px; }
+table.moves th.num, table.moves td.num { text-align: right; }
+table.moves td { padding: 8px 0; border-top: 1px solid var(--rule); color: var(--muted); }
+table.moves td:last-child { color: var(--accent); }
+.changed b { color: var(--accent); font-weight: 500; }
+.take-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.take-actions button { height: 32px; padding: 0 14px; border-radius: var(--radius-control); border: 1px solid var(--control); background: none; }
+.take-actions button:hover { background: var(--raised); }
+.take-actions button.primary { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.opened { margin-top: 10px; color: var(--faint); font-size: 12px; }
+.making { color: var(--muted); display: flex; align-items: center; gap: 10px; }
+.making i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+
+.composer-wrap { padding: 0 32px 22px; }
+.suggest { display: flex; gap: 8px; padding-bottom: 10px; overflow-x: auto; scrollbar-width: none; }
+.suggest button { flex: none; height: 32px; padding: 0 14px; border-radius: var(--radius-chip); border: 1px solid var(--control); background: none; color: var(--muted); }
+.suggest button:hover { color: var(--text); background: var(--raised); }
+.composer { background: var(--surface); border-radius: 20px; padding: 12px 12px 10px 18px; border: 1px solid var(--border); }
+.composer:focus-within { border-color: var(--control); }
+.scope { display: none; align-items: center; gap: 8px; margin: 0 0 8px; }
+.scope.on { display: flex; }
+.scope span { height: 24px; padding: 0 10px; border-radius: var(--radius-chip); background: var(--accent-soft); color: var(--accent); font-size: 12px; display: inline-flex; align-items: center; }
+.scope button { border: 0; background: none; color: var(--faint); font-size: 12px; }
+.composer textarea { width: 100%; border: 0; outline: 0; background: none; resize: none; font-size: 15px; line-height: 22px; min-height: 44px; }
+.composer textarea::placeholder { color: var(--faint); }
+.composer-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.attach { height: 32px; padding: 0 12px; border-radius: var(--radius-control); border: 0; background: none; color: var(--muted); display: inline-flex; gap: 8px; align-items: center; }
+.attach:hover { background: var(--raised); color: var(--text); }
+.send { height: 36px; padding: 0 18px; border-radius: var(--radius-control); border: 0; background: var(--primary); color: var(--on-primary); font-weight: 600; }
+.send:disabled { background: var(--raised); color: var(--faint); cursor: default; }
+.drop { position: fixed; inset: 0; display: none; place-items: center; background: rgba(17,17,17,.92); z-index: 9; font-size: 18px; }
+.drop.on { display: grid; }
+
+/* ---------- sound panel ---------- */
+.panel { border-left: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; background: var(--ground); }
+.panel-head { padding: 18px 24px 0; }
+.panel-head h2 { margin: 0; font-size: var(--fs-section); font-weight: 600; }
+.panel-head p { margin: 2px 0 12px; color: var(--muted); }
+.tabs { display: flex; gap: 4px; padding: 0 20px; border-bottom: 1px solid var(--border); }
+.tabs button { border: 0; background: none; padding: 10px 8px 9px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs button[aria-selected="true"] { color: var(--text); border-color: var(--text); }
+.panel-body { flex: 1; overflow: auto; padding: 18px 24px 24px; }
+.flash { color: var(--faint); font-size: 12px; margin: -6px 0 12px; min-height: 16px; }
+.flash b { color: var(--accent); font-weight: 500; }
+.section-h { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 10px; }
+.section-h h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.section-h span { color: var(--faint); font-size: 12px; }
+.arr { background: var(--surface); border-radius: var(--radius-card); padding: 14px 16px 12px; margin-bottom: 18px; }
+.sections { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; margin: 0 0 8px 92px; font-size: 12px; color: var(--muted); }
+.sections div { padding: 0 0 4px; border-bottom: 2px solid var(--control); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lane { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: center; height: 32px; }
+.lane > span { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cells { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; }
+.cell { height: 20px; border-radius: 3px; background: var(--raised); border: 0; padding: 0; }
+.cell.on { background: #4a4a4a; }
+.cell.on.chg { background: var(--accent); }
+.cell.sel { outline: 2px solid var(--text); outline-offset: -2px; }
+.barnums { display: grid; grid-template-columns: repeat(16, 1fr); gap: 2px; margin: 6px 0 0 92px; color: var(--faint); font-size: 11px; }
+.hint { color: var(--faint); font-size: 12px; margin: 10px 0 0; }
+.layers { display: grid; gap: 8px; margin-bottom: 18px; }
+.layer { background: var(--surface); border-radius: 12px; padding: 12px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; }
+.layer b { font-weight: 500; }
+.layer small { color: var(--faint); font-size: 12px; grid-column: 1; }
+.toggles { display: flex; gap: 4px; grid-row: 1 / span 2; grid-column: 2; }
+.toggles button { height: 28px; padding: 0 10px; border-radius: var(--radius-control); border: 1px solid var(--control); background: none; color: var(--muted); font-size: 12px; }
+.toggles button[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+.knobs { display: grid; gap: 14px; background: var(--surface); border-radius: var(--radius-card); padding: 16px; }
+.knob label { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.knob label b { color: var(--text); font-weight: 500; }
+.knob input { width: 100%; accent-color: var(--text); }
+.knob .ends { display: flex; justify-content: space-between; color: var(--faint); font-size: 12px; margin-top: 2px; }
+
+/* rhythm view */
+.steps { display: grid; grid-template-columns: repeat(16, 1fr); gap: 4px; }
+.step { height: 64px; border-radius: 6px; background: var(--raised); position: relative; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 6px; font-size: 11px; color: var(--muted); border: 0; }
+.step .v { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 6px; background: #3a3a3a; }
+.step span { position: relative; }
+.step.strong .v { background: #6a6a6a; }
+.step.bright .v { background: var(--accent); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+/* notes view */
+.roll { position: relative; height: 220px; background: var(--surface); border-radius: var(--radius-card); overflow: hidden; }
+.roll .row { position: absolute; left: 0; right: 0; height: 1px; background: var(--rule); }
+.roll .row.tonic { background: #2e2e2e; }
+.roll .n { position: absolute; height: 8px; border-radius: 3px; background: #6a6a6a; }
+.roll .n.chg { background: var(--accent); }
+.roll .bar13 { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--control); }
+/* mix + export */
+.meter { background: var(--surface); border-radius: var(--radius-card); padding: 16px; margin-bottom: 14px; }
+.meter .big { font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
+.meter .big small { font-size: 14px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+.track { height: 8px; border-radius: 999px; background: var(--raised); position: relative; margin: 12px 0 6px; }
+.track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--text); }
+.track b { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--accent); }
+.ends2 { display: flex; justify-content: space-between; font-size: 12px; color: var(--faint); }
+.export { display: grid; gap: 8px; }
+.export label { display: flex; align-items: center; gap: 12px; background: var(--surface); border-radius: 12px; padding: 12px 14px; cursor: pointer; }
+.export label small { color: var(--faint); display: block; font-size: 12px; }
+.export input { accent-color: var(--text); width: 16px; height: 16px; }
+.wide { width: 100%; height: 40px; border-radius: var(--radius-control); border: 0; background: var(--primary); color: var(--on-primary); font-weight: 600; margin-top: 12px; }
+
+/* phone */
+.phone-bar { display: none; }
+.phone-bar .sheet-toggle { display: none; }
+@media (max-width: 1100px) {
+  .app { grid-template-columns: minmax(0, 1fr) 400px; }
+  .side { display: none; }
+  .phone-bar { display: flex; }
+}
+@media (max-width: 760px) {
+  .suggest { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .past { grid-template-columns: 32px minmax(0, 1fr) auto; }
+  .past .wave.mini { display: none; }
+  .take { padding: 16px; }
+  .app { grid-template-columns: minmax(0, 1fr); height: auto; min-height: 100vh; }
+  .phone-bar .sheet-toggle { display: inline-flex; align-items: center; }
+  .phone-bar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--rule); }
+  .chat-head { padding: 14px 16px 8px; }
+  .chat-head .ghost { display: none; }
+  .thread { padding: 8px 16px 16px; overflow: visible; }
+  .composer-wrap { position: sticky; bottom: 0; background: var(--ground); padding: 10px 16px 14px; }
+  .msg-user { max-width: 88%; }
+  .ruler { display: none; }
+  .panel { position: fixed; inset: auto 0 0 0; height: 82vh; border: 0; border-radius: 20px 20px 0 0; background: var(--ground); transform: translateY(100%); transition: transform .25s ease; z-index: 8; box-shadow: 0 -12px 32px rgba(0,0,0,.5); }
+  .panel.open { transform: none; }
+  .sections, .barnums { margin-left: 72px; }
+  .lane { grid-template-columns: 72px minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- sounds list -->
+  <nav class="side" aria-label="Your sounds">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect width="26" height="26" rx="7" fill="#f5a524"/><path d="M6 17V9M10 19V7M14 16v-6M18 18V8M22 14v-2" stroke="#111" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <b>Praxis Sound</b>
+    </div>
+    <button class="new-sound" id="newSound"><span aria-hidden="true">+</span> New sound</button>
+    <h2>Sounds</h2>
+    <ul class="sounds">
+      <li><button aria-current="true"><span>Calm piano loop</span><small>A minor · 0:30 loop</small></button></li>
+      <li><button><span>Logo sting, warm</span><small>D major · 0:04</small></button></li>
+      <li><button><span>Rain on a tin roof</span><small>Ambience · 1:00 loop</small></button></li>
+      <li><button><span>Cut to black, low hit</span><small>Tuned to F · 0:03</small></button></li>
+    </ul>
+    <div class="agents"><b><span class="dot" aria-hidden="true"></span>2 agents connected</b>cut-assistant, trailer-bot. They see this sound and can make takes here too.</div>
+  </nav>
+
+  <!-- conversation -->
+  <main class="chat">
+    <div class="phone-bar">
+      <b>Praxis Sound</b>
+      <button class="ghost sheet-toggle" id="sheetToggle" aria-controls="panel">Sound</button>
+    </div>
+    <div class="chat-head">
+      <div><h1 id="soundTitle">Calm piano loop</h1><p id="soundLine">Take 3 is current · A minor · 128 BPM · 16 bars</p></div>
+      <button class="ghost" id="exportTop">Export</button>
+    </div>
+    <div class="thread" id="thread" aria-live="polite"></div>
+    <div class="composer-wrap">
+      <div class="suggest" id="suggest" aria-label="Suggestions"></div>
+      <form class="composer" id="composer">
+        <div class="scope" id="scope"><span id="scopeLabel">Bars 13–16 · Felt piano</span><button type="button" id="clearScope">Clear</button></div>
+        <label for="prompt" class="sr" style="position:absolute;left:-9999px">Describe what you want</label>
+        <textarea id="prompt" rows="1" placeholder="Describe a sound, or drop in a clip to start from"></textarea>
+        <div class="composer-row">
+          <button type="button" class="attach" id="attach"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.5 5 5.8 9.7a1.5 1.5 0 0 0 2.1 2.1l5-5a3 3 0 0 0-4.2-4.2l-5 5a4.5 4.5 0 0 0 6.4 6.4L14 9"/></svg>Add a clip</button>
+          <button class="send" id="send" disabled>Make it</button>
+        </div>
+      </form>
+    </div>
+  </main>
+
+  <!-- sound panel -->
+  <aside class="panel" id="panel" aria-label="Sound panel">
+    <div class="panel-head"><h2>Sound</h2><p id="panelLine">What is playing in take 3</p></div>
+    <div class="tabs" role="tablist" id="tabs">
+      <button role="tab" data-view="overview" aria-selected="true">Overview</button>
+      <button role="tab" data-view="rhythm" aria-selected="false">Rhythm</button>
+      <button role="tab" data-view="notes" aria-selected="false">Notes</button>
+      <button role="tab" data-view="mix" aria-selected="false">Mix</button>
+      <button role="tab" data-view="export" aria-selected="false">Export</button>
+    </div>
+    <div class="panel-body" id="panelBody" role="tabpanel"></div>
+  </aside>
+</div>
+<div class="drop" id="drop">Drop an audio or video clip. Praxis keeps its character, never its melody.</div>
+
+<script>
+/* ---------- the sample sound (mirrors fixtures/acceptance1.score.json) ---------- */
+const BARS = 16;
+const SECTIONS = [{ name: "Piano alone", from: 1, to: 8 }, { name: "Piano and kick", from: 9, to: 16 }];
+// Two-bar motif on an eighth grid: [pitch, accent]; accents: strong (DON), soft (din), normal (don), bright (TIN)
+const MOTIF = [[57,"strong"],[64,"soft"],[69,"normal"],[64,"soft"],[72,"bright"],[64,"soft"],[69,"normal"],[64,"soft"],
+               [53,"strong"],[60,"soft"],[65,"normal"],[60,"soft"],[69,"bright"],[60,"soft"],[67,"normal"],[64,"soft"]];
+const LIFT = [[57,"strong"],[64,"soft"],[69,"normal"],[71,"soft"],[72,"bright"],[71,"soft"],[69,"normal"],[64,"soft"],
+              [53,"strong"],[60,"soft"],[65,"normal"],[67,"soft"],[69,"bright"],[72,"soft"],[71,"normal"],[64,"soft"]];
+const CHECKS = (lufs, peak) => [
+  ["In key", "A minor"], ["On the beat", "98% of notes within 10 ms"], ["Loudness", lufs.toFixed(1) + " LUFS"],
+  ["Peak", peak.toFixed(1) + " dB"], ["Seamless loop", "no click at 0:30"]];
+
+const takes = [
+  { n: 1, who: "You", ask: "A calm 30-second felt piano loop in A minor. Rhythmic, notes ringing into each other. No risers or pads.",
+    title: "Felt piano loop", say: "One felt piano playing a two-bar motif on an eighth-note grid, strong on the first beat and bright on beat 3, each note ringing into the next. 16 bars at 128 BPM, so it loops at exactly 30 seconds.",
+    layers: { piano: [1, 16] }, changed: { piano: [1, 16] }, untouched: "", lufs: -16.0, peak: -1.3, lift: false },
+  { n: 2, who: "You", ask: "Add a soft kick from bar 9.",
+    title: "Felt piano + soft kick", say: "Kept the piano exactly as it was and added a soft, muted kick on beats 1 and 3 under bars 9 to 16. No new melody, no fills.",
+    layers: { piano: [1, 16], kick: [9, 16] }, changed: { kick: [9, 16] }, untouched: "Piano: all 16 bars sample-identical to take 1.", lufs: -16.0, peak: -1.1, lift: false },
+  { n: 3, who: "Agent · cut-assistant", ask: "Give the last four bars a gentle lift so the loop can end on the cut at 0:30.",
+    title: "Lift in bars 13–16", say: "Raised the motif's inner notes in bars 13 to 16 so they climb toward the loop point. Opened Notes so you can see what moved.",
+    layers: { piano: [1, 16], kick: [9, 16] }, changed: { piano: [13, 16] }, untouched: "Bars 1–12 sample-identical to take 2. Kick unchanged.", lufs: -16.0, peak: -1.1, lift: true, opens: "notes" },
+];
+let current = takes[takes.length - 1];
+let view = "overview";
+let selection = null; // {layer, from, to}
+const state = { mute: {}, solo: {}, lock: { piano: true } };
+const LAYER_NAMES = { piano: "Felt piano", kick: "Soft kick", melody: "Glass melody" };
+const LAYER_SUB = { piano: "Sampler · upright, voiced soft", kick: "Drum · soft, low-passed", melody: "Synth · glass, quiet" };
+
+/* ---------- waveform: drawn from the notes, deterministic ---------- */
+function envelope(take, bins) {
+  const out = new Array(bins).fill(0);
+  const stepLen = bins / (BARS * 8);
+  for (let bar = 1; bar <= BARS; bar++) {
+    const motif = (take.lift && bar >= 13) ? LIFT : MOTIF;
+    if (take.layers.piano && bar >= take.layers.piano[0] && bar <= take.layers.piano[1]) {
+      for (let s = 0; s < 8; s++) {
+        const [, acc] = motif[((bar - 1) % 2) * 8 + s];
+        const amp = { strong: 1, bright: 0.85, normal: 0.62, soft: 0.45 }[acc];
+        const start = Math.floor(((bar - 1) * 8 + s) * stepLen);
+        for (let k = 0; k < stepLen * 3; k++) { const i = start + k; if (i < bins) out[i] += amp * Math.exp(-k / (stepLen * 1.1)); }
+      }
+    }
+    if (take.layers.kick && bar >= take.layers.kick[0] && bar <= take.layers.kick[1]) {
+      for (const s of [0, 4]) {
+        const start = Math.floor(((bar - 1) * 8 + s) * stepLen);
+        for (let k = 0; k < stepLen * 1.4; k++) { const i = start + k; if (i < bins) out[i] += 0.55 * Math.exp(-k / (stepLen * 0.45)); }
+      }
+    }
+  }
+  const max = Math.max(...out, 1);
+  return out.map(v => Math.min(1, v / max));
+}
+function waveSVG(take, playing) {
+  const bins = 192, env = envelope(take, bins), w = 1000, h = 64, bw = w / bins;
+  const ch = isEdit(take) ? Object.values(take.changed)[0] : null;
+  let s = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="Waveform of take ${take.n}">`;
+  if (ch) { const x0 = (ch[0] - 1) / BARS * w, x1 = ch[1] / BARS * w; s += `<rect x="${x0}" y="0" width="${x1 - x0}" height="${h}" fill="rgba(245,165,36,.08)"/>`; }
+  env.forEach((v, i) => {
+    const bar = Math.floor(i / bins * BARS) + 1, hh = Math.max(2, v * (h - 6));
+    const hot = ch && bar >= ch[0] && bar <= ch[1];
+    s += `<rect x="${(i * bw + 0.6).toFixed(1)}" y="${((h - hh) / 2).toFixed(1)}" width="${(bw - 1.2).toFixed(1)}" height="${hh.toFixed(1)}" rx="1" fill="${hot ? "#f5a524" : "#7a7a7a"}"/>`;
+  });
+  s += `<rect class="ph" x="0" y="0" width="2" height="${h}" fill="#ffffff" opacity="${playing ? 1 : 0}"/></svg>`;
+  return s;
+}
+
+/* ---------- thread ---------- */
+const thread = document.getElementById("thread");
+const isEdit = t => t.n > 1 && !t.fresh;
+function changedText(t) {
+  if (!isEdit(t)) return "A new sound.";
+  return "Changed " + Object.entries(t.changed).map(([l, r]) => `${LAYER_NAMES[l].toLowerCase()} in bars ${r[0]}–${r[1]}`).join(", ") + ".";
+}
+function takeHTML(t) {
+  const facts = `<b>A minor</b><span><b class="num">128</b> BPM</span><span><b class="num">16</b> bars</span><span><b class="num">0:30</b> loop</span>`;
+  const list = CHECKS(t.lufs, t.peak).map(([k, v]) => `${k.toLowerCase()} (${v})`).join(" · ");
+  return `<article class="take" data-take="${t.n}" aria-label="Take ${t.n}, current">
+    <div class="take-head"><h3>Take ${t.n} · ${t.title}</h3><span>${t.who === "You" ? "Current" : "Current · made by " + t.who.replace("Agent · ", "")}</span></div>
+    <p class="say">${t.say}</p>
+    <div class="player"><button class="play" aria-label="Play take ${t.n}" data-play="${t.n}">${playIcon()}</button><div class="wave">${waveSVG(t, false)}</div></div>
+    <div class="ruler" aria-hidden="true">${Array.from({ length: BARS }, (_, i) => `<span>${i + 1}</span>`).join("")}</div>
+    <div class="facts">${facts}</div>
+    <p class="checkline"><span class="check">5 of 5 checks passed</span> ${list}</p>
+    ${isEdit(t) ? `<p class="changed"><b>${changedText(t)}</b> ${t.untouched}</p>` : ""}
+    <div class="take-actions">
+      <button class="primary" data-act="variations">Try 3 variations</button>
+      <button data-act="open" data-view="export">Export</button>
+    </div>
+  </article>`;
+}
+function pastHTML(t) {
+  return `<div class="past"><button class="mini-play" aria-label="Play take ${t.n}" data-play="${t.n}">${playIcon()}</button>
+    <div class="past-text"><b>Take ${t.n} · ${t.title}</b><small>${changedText(t)}${t.who !== "You" ? " · by " + t.who.replace("Agent · ", "") : ""}</small></div>
+    <div class="wave mini">${waveSVG(t, false)}</div>
+    <button class="ghost" data-act="restore" data-n="${t.n}">Go back</button></div>`;
+}
+function playIcon(on) { return on ? `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="1" width="3.5" height="12" fill="currentColor"/><rect x="8.5" y="1" width="3.5" height="12" fill="currentColor"/></svg>` : `<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 1.5v11l9.5-5.5z" fill="currentColor"/></svg>`; }
+function renderThread() {
+  thread.innerHTML = takes.map(t => `<div class="msg-user"><small>${t.who}</small>${t.ask}</div>${t.n === current.n ? takeHTML(t) : pastHTML(t)}`).join("");
+  toEnd();
+  document.getElementById("soundLine").textContent = `Take ${current.n} is current · A minor · 128 BPM · 16 bars`;
+  document.getElementById("panelLine").textContent = `What is playing in take ${current.n}`;
+}
+
+function toEnd() {
+  const go = () => { thread.scrollTop = thread.scrollHeight; if (window.matchMedia("(max-width: 760px)").matches) window.scrollTo(0, document.body.scrollHeight); };
+  go(); requestAnimationFrame(go); setTimeout(go, 60);
+}
+window.addEventListener("load", () => toEnd());
+/* ---------- panel views ---------- */
+const body = document.getElementById("panelBody");
+function laneHTML(layer) {
+  const r = current.layers[layer], ch = isEdit(current) ? current.changed[layer] : null;
+  const cells = Array.from({ length: BARS }, (_, i) => {
+    const b = i + 1, on = r && b >= r[0] && b <= r[1], c = on && ch && b >= ch[0] && b <= ch[1];
+    const sel = selection && selection.layer === layer && b >= selection.from && b <= selection.to;
+    return `<button class="cell${on ? " on" : ""}${c ? " chg" : ""}${sel ? " sel" : ""}" data-layer="${layer}" data-bar="${b}" aria-label="${LAYER_NAMES[layer]} bar ${b}${on ? "" : ", silent"}"></button>`;
+  }).join("");
+  return `<div class="lane"><span>${LAYER_NAMES[layer]}</span><div class="cells">${cells}</div></div>`;
+}
+function changeMap() {
+  const layers = Object.keys(current.layers);
+  const sec = SECTIONS.map(s => `<div style="grid-column:${s.from} / ${s.to + 1}">${s.name}</div>`).join("");
+  const note = isEdit(current) ? `<p class="maplegend"><i></i>${changedText(current)} ${current.untouched}</p>`
+    : `<p class="maplegend">Take ${current.n} is a new sound. After an edit, the bars it changed light up here.</p>`;
+  return `<div class="arr">
+      <div class="section-h"><h3>Where each layer plays</h3><span>Take ${current.n}</span></div>
+      <div class="sections">${sec}</div>
+      ${layers.map(laneHTML).join("")}
+      <div class="barnums" aria-hidden="true">${Array.from({ length: BARS }, (_, i) => `<span>${i + 1}</span>`).join("")}</div>
+      ${note}
+    </div>`;
+}
+function overview() {
+  const layers = Object.keys(current.layers);
+  return `<p class="hint" style="margin:-6px 0 16px">Drag across bars above to change only those. Everything else stays exactly as it is.</p>
+    <div class="section-h"><h3>Layers</h3><span>${layers.length} of 5</span></div>
+    <div class="layers">${layers.map(l => `<div class="layer"><b>${LAYER_NAMES[l]}</b><div class="toggles">
+        <button aria-pressed="${!!state.mute[l]}" data-tg="mute" data-l="${l}">Mute</button>
+        <button aria-pressed="${!!state.solo[l]}" data-tg="solo" data-l="${l}">Solo</button>
+        <button aria-pressed="${!!state.lock[l]}" data-tg="lock" data-l="${l}">${state.lock[l] ? "Locked" : "Lock"}</button></div>
+        <small>${LAYER_SUB[l]}${state.lock[l] ? " · no edit can change it" : ""}</small></div>`).join("")}</div>
+    <div class="section-h"><h3>Feel</h3><span>Changes make a new take</span></div>
+    <div class="knobs">
+      ${knob("Mood", "Calm", "Tense", 22, "calm")}${knob("Brightness", "Dark", "Bright", 38, "soft")}
+      ${knob("Space", "Dry", "Big room", 30, "small room")}${knob("Energy", "Still", "Driving", 26, "gentle")}
+    </div>`;
+}
+function knob(name, lo, hi, v, word) { return `<div class="knob"><label for="k-${name}">${name}<b>${word}</b></label><input id="k-${name}" type="range" min="0" max="100" value="${v}" data-knob="${name}"><div class="ends"><span>${lo}</span><span>${hi}</span></div></div>`; }
+function rhythm() {
+  const m = current.lift ? LIFT : MOTIF;
+  const word = { strong: "DON", soft: "din", normal: "don", bright: "TIN" }, h = { strong: 100, bright: 88, normal: 64, soft: 44 };
+  return `<div class="section-h"><h3>Piano rhythm, two bars</h3><span>Eighth notes · repeats 8 times</span></div>
+    <div class="steps">${m.map(([, a], i) => `<button class="step ${a}" aria-label="Step ${i + 1}, ${a}"><i class="v" style="height:${h[a]}%"></i><span>${word[a]}</span></button>`).join("")}</div>
+    <div class="legend"><span><i style="background:#6a6a6a"></i>DON strong</span><span><i style="background:#3a3a3a"></i>don, din normal and soft</span><span><i style="background:#f5a524"></i>TIN bright</span></div>
+    <p class="hint">Say a rhythm out loud in the chat, like "DON din don din TIN din don din", and Praxis puts it on the grid.</p>`;
+}
+function notes() {
+  const m0 = MOTIF, m1 = current.lift ? LIFT : MOTIF, lo = 50, hi = 75, H = 220;
+  const y = p => H - 14 - (p - lo) / (hi - lo) * (H - 28);
+  let s = "";
+  for (let p = lo; p <= hi; p++) if ([57, 60, 64, 69, 72].includes(p)) s += `<div class="row${p % 12 === 9 ? " tonic" : ""}" style="top:${y(p)}px"></div>`;
+  // show bars 11-16 (6 bars) so the edit and its neighbours are visible
+  for (let bar = 11; bar <= 16; bar++) {
+    const m = bar >= 13 ? m1 : m0;
+    for (let st = 0; st < 8; st++) {
+      const [p] = m[((bar - 1) % 2) * 8 + st], [p0] = m0[((bar - 1) % 2) * 8 + st];
+      const x = ((bar - 11) * 8 + st) / 48 * 100, chg = bar >= 13 && current.lift && p !== p0;
+      s += `<div class="n${chg ? " chg" : ""}" style="left:${x}%;width:calc(${1.6 / 48 * 100}% - 2px);top:${y(p) - 4}px" title="bar ${bar}"></div>`;
+    }
+  }
+  s += `<div class="bar13" style="left:${2 * 8 / 48 * 100}%"></div>`;
+  const NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"], nm = p => NAMES[p % 12] + (Math.floor(p / 12) - 1);
+  const moved = [];
+  if (current.lift) for (let bar = 13; bar <= 16; bar++) for (let st = 0; st < 8; st++) {
+    const i = ((bar - 1) % 2) * 8 + st; if (m0[i][0] !== m1[i][0]) moved.push([bar, st + 1, nm(m0[i][0]), nm(m1[i][0])]);
+  }
+  const rows = moved.slice(0, 6).map(([b, st, a, z]) => `<tr><td>Bar ${b}, step ${st}</td><td class="num">${a}</td><td class="num">${z}</td></tr>`).join("");
+  return `<div class="section-h"><h3>Piano notes, bars 11–16</h3><span>A minor scale only</span></div>
+    <div class="roll" role="img" aria-label="Piano roll of bars 11 to 16">${s}</div>
+    <div class="legend"><span><i style="background:#6a6a6a"></i>Unchanged</span><span><i style="background:#f5a524"></i>Moved in take ${current.n}</span><span>Line marks bar 13</span></div>
+    ${moved.length ? `<div class="section-h" style="margin-top:18px"><h3>What moved</h3><span>${moved.length} notes, all in A minor</span></div>
+    <table class="moves"><thead><tr><th>Where</th><th class="num">Was</th><th class="num">Now</th></tr></thead><tbody>${rows}</tbody></table>
+    ${moved.length > 6 ? `<p class="hint">and ${moved.length - 6} more in bars 15–16, the same climb.</p>` : ""}`
+    : `<p class="hint">No notes moved in take ${current.n}. Every note stays in A minor, and each rings 1.6 steps into the next.</p>`}`;
+}
+function mix() {
+  const pct = (v, lo, hi) => ((v - lo) / (hi - lo) * 100).toFixed(1);
+  return `<div class="meter"><div class="section-h"><h3>Loudness</h3><span>Target −16.0 LUFS</span></div>
+      <div class="big num">${current.lufs.toFixed(1)}<small>LUFS</small></div>
+      <div class="track"><i style="width:${pct(current.lufs, -30, 0)}%"></i><b style="left:${pct(-16, -30, 0)}%"></b></div>
+      <div class="ends2"><span>−30 quiet</span><span>0 loud</span></div></div>
+    <div class="meter"><div class="section-h"><h3>Peak</h3><span>Never above −1.0 dB</span></div>
+      <div class="big num">${current.peak.toFixed(1)}<small>dB true peak</small></div>
+      <p class="hint">Room for streaming and video platforms; nothing clips.</p></div>
+    <div class="layers">${Object.keys(current.layers).map(l => `<div class="layer"><b>${LAYER_NAMES[l]}</b><small>${l === "kick" ? "−5.0 dB, low-passed at 2.5 kHz" : "0.0 dB, small room reverb"}</small></div>`).join("")}</div>`;
+}
+function exportView() {
+  return `<div class="section-h"><h3>Export take ${current.n}</h3><span>0:30 loop</span></div>
+    <div class="export">
+      <label><input type="radio" name="fmt" checked> <span>WAV, 24-bit<small>Best for video editors. 10.4 MB</small></span></label>
+      <label><input type="radio" name="fmt"> <span>FLAC<small>Same quality, smaller file</small></span></label>
+      <label><input type="checkbox"> <span>Each layer on its own<small>Felt piano and soft kick as separate files</small></span></label>
+      <label><input type="checkbox"> <span>MIDI<small>The notes, for another music app</small></span></label>
+    </div>
+    <button class="wide" id="doExport">Export</button>
+    <p class="hint">Exports are the sound itself. A reference clip you dropped in is never mixed into them.</p>`;
+}
+const VIEWS = { overview, rhythm, notes, mix, export: exportView };
+const VIEW_NAMES = { overview: "Overview", rhythm: "Rhythm", notes: "Notes", mix: "Mix", export: "Export" };
+function openView(v, by, quiet) {
+  view = v;
+  document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.view === v)));
+  body.innerHTML = changeMap() + (by ? `<p class="flash">${VIEW_NAMES[v]} opened by <b>${by}</b></p>` : "") + VIEWS[v]();
+  if (window.matchMedia("(max-width: 760px)").matches && by && !quiet) document.getElementById("panel").classList.add("open");
+}
+
+/* ---------- interactions ---------- */
+document.getElementById("tabs").addEventListener("click", e => { const b = e.target.closest("button"); if (b) openView(b.dataset.view); });
+let drag = null;
+body.addEventListener("pointerdown", e => { const c = e.target.closest(".cell"); if (!c) return; drag = { layer: c.dataset.layer, a: +c.dataset.bar }; setSel(drag.layer, drag.a, drag.a); });
+body.addEventListener("pointerover", e => { const c = e.target.closest(".cell"); if (drag && c && c.dataset.layer === drag.layer) setSel(drag.layer, Math.min(drag.a, +c.dataset.bar), Math.max(drag.a, +c.dataset.bar)); });
+window.addEventListener("pointerup", () => { drag = null; });
+function setSel(layer, from, to) {
+  selection = { layer, from, to }; openView("overview");
+  const sc = document.getElementById("scope"); sc.classList.add("on");
+  document.getElementById("scopeLabel").textContent = `${from === to ? "Bar " + from : "Bars " + from + "–" + to} · ${LAYER_NAMES[layer]}`;
+  document.getElementById("prompt").placeholder = `What should change in ${from === to ? "bar " + from : "bars " + from + "–" + to}?`;
+}
+document.getElementById("clearScope").onclick = () => { selection = null; document.getElementById("scope").classList.remove("on"); document.getElementById("prompt").placeholder = "Describe a sound, or drop in a clip to start from"; openView("overview"); };
+body.addEventListener("click", e => {
+  const t = e.target.closest("[data-tg]"); if (!t) return;
+  const { tg, l } = t.dataset; state[tg][l] = !state[tg][l]; openView(view);
+});
+body.addEventListener("input", e => { const k = e.target.dataset.knob; if (!k) return; const v = +e.target.value;
+  const words = { Mood: ["calm", "settled", "uneasy", "tense"], Brightness: ["dark", "soft", "clear", "bright"], Space: ["dry", "small room", "hall", "big room"], Energy: ["still", "gentle", "moving", "driving"] }[k];
+  e.target.previousElementSibling.querySelector("b").textContent = words[Math.min(3, Math.floor(v / 25))]; });
+
+const SUGGESTIONS = ["Make it a little darker", "Change the last four bars", "Shorter, 15 seconds", "Add a quiet glass melody from bar 9"];
+const sug = document.getElementById("suggest");
+sug.innerHTML = SUGGESTIONS.map(s => `<button type="button">${s}</button>`).join("");
+sug.addEventListener("click", e => { const b = e.target.closest("button"); if (b) ask(b.textContent); });
+
+const prompt = document.getElementById("prompt"), send = document.getElementById("send");
+prompt.addEventListener("input", () => { send.disabled = !prompt.value.trim(); prompt.style.height = "auto"; prompt.style.height = Math.min(160, prompt.scrollHeight) + "px"; });
+prompt.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (prompt.value.trim()) ask(prompt.value.trim()); } });
+document.getElementById("composer").addEventListener("submit", e => { e.preventDefault(); if (prompt.value.trim()) ask(prompt.value.trim()); });
+
+function ask(text) {
+  prompt.value = ""; send.disabled = true; prompt.style.height = "auto";
+  const scopeText = selection ? ` (${document.getElementById("scopeLabel").textContent})` : "";
+  thread.insertAdjacentHTML("beforeend", `<div class="msg-user"><small>You</small>${text}${scopeText}</div><div class="take making" id="making"><i aria-hidden="true"></i>Making take ${takes.length + 1}: planning the score, rendering, checking it…</div>`);
+  thread.scrollTop = thread.scrollHeight;
+  setTimeout(() => {
+    document.getElementById("making").remove();
+    takes.push(mockTake(text));
+    current = takes[takes.length - 1];
+    renderThread();
+    openView(current.opens || "overview", current.opens ? "Praxis" : null);
+    selection = null; document.getElementById("scope").classList.remove("on");
+  }, 1100);
+}
+function mockTake(text) {
+  const n = takes.length + 1, base = { n, who: "You", ask: text + (selection ? ` (${document.getElementById("scopeLabel").textContent})` : ""), layers: { ...current.layers }, lufs: -16.0, peak: -1.1, lift: current.lift };
+  const t = text.toLowerCase();
+  if (selection) {
+    const { layer, from, to } = selection;
+    return { ...base, title: `${LAYER_NAMES[layer]}, bars ${from}–${to}`, say: `Changed only ${LAYER_NAMES[layer].toLowerCase()} in bars ${from} to ${to}, as asked. Opened Notes so you can see it.`, changed: { [layer]: [from, to] }, untouched: `Everything outside bars ${from}–${to} sample-identical to take ${n - 1}.`, lift: true, opens: "notes" };
+  }
+  if (t.includes("melody")) return { ...base, title: "Quiet glass melody", say: "Added a quiet glass melody in bars 9 to 16, on the same chords, below the piano's loudest notes. The piano and kick did not change.", layers: { ...current.layers, melody: [9, 16] }, changed: { melody: [9, 16] }, untouched: "Piano and kick sample-identical to the last take." };
+  if (t.includes("dark")) return { ...base, title: "A little darker", say: "Closed the piano's felt filter a little and shortened the room. Same notes, same rhythm. Opened Mix so you can see the level held at −16 LUFS.", changed: { piano: [1, 16] }, untouched: "Kick unchanged.", opens: "mix" };
+  if (t.includes("last four")) return { ...base, title: "New last four bars", say: "Rewrote the piano's motif in bars 13 to 16 so it climbs back into bar 1. Opened Notes to show what moved.", changed: { piano: [13, 16] }, untouched: "Bars 1–12 sample-identical to the last take.", lift: true, opens: "notes" };
+  if (t.includes("15") || t.includes("short")) return { ...base, title: "15-second version", say: "Made an 8-bar version at the same tempo, still a seamless loop, now exactly 15 seconds. The original take is still here if you want it.", changed: { piano: [1, 8] }, untouched: "" };
+  return { ...base, title: "New take", say: "In the real app, Praxis plans a score from your words, renders it and checks it. This concept only shows how the reply and the panel would look.", changed: { piano: [1, 16] }, untouched: "" };
+}
+
+thread.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.play) return play(+b.dataset.play, b);
+  if (b.dataset.act === "open") openView(b.dataset.view);
+  if (b.dataset.act === "variations") ask("Try 3 variations of this take");
+  if (b.dataset.act === "restore") { current = takes.find(t => t.n === +b.dataset.n); renderThread(); openView("overview"); }
+});
+document.getElementById("exportTop").onclick = () => openView("export");
+document.getElementById("sheetToggle").onclick = () => document.getElementById("panel").classList.toggle("open");
+document.getElementById("newSound").onclick = () => prompt.focus();
+document.getElementById("attach").onclick = () => { const d = document.getElementById("drop"); d.classList.add("on"); setTimeout(() => d.classList.remove("on"), 1600); };
+
+/* ---------- a sketch preview (simple tones, labelled as such; the real app plays the render) ---------- */
+let ac, playing = null;
+function play(n, btn) {
+  if (playing) { stop(); if (playing === n) { playing = null; return; } }
+  const t = takes.find(x => x.n === n); ac = ac || new AudioContext(); playing = n; btn.innerHTML = playIcon(true);
+  const t0 = ac.currentTime + 0.05, step = 60 / 128 / 2, dur = 4 * step * 8; // play the first four bars of the take's sound at 128 BPM
+  const startBar = Object.values(t.changed)[0][0] > 4 ? Object.values(t.changed)[0][0] : 1;
+  for (let bar = startBar; bar < startBar + 4; bar++) {
+    const m = (t.lift && bar >= 13) ? LIFT : MOTIF;
+    for (let s = 0; s < 8; s++) {
+      const [p, a] = m[((bar - 1) % 2) * 8 + s], at = t0 + ((bar - startBar) * 8 + s) * step;
+      const o = ac.createOscillator(), g = ac.createGain(); o.type = "triangle"; o.frequency.value = 440 * 2 ** ((p - 69) / 12);
+      const v = { strong: .16, bright: .13, normal: .1, soft: .07 }[a];
+      g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(v, at + 0.004); g.gain.exponentialRampToValueAtTime(0.0008, at + step * 2.4);
+      o.connect(g).connect(ac.destination); o.start(at); o.stop(at + step * 2.6);
+    }
+    if (t.layers.kick && bar >= t.layers.kick[0]) for (const s of [0, 4]) {
+      const at = t0 + ((bar - startBar) * 8 + s) * step, o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.setValueAtTime(120, at); o.frequency.exponentialRampToValueAtTime(48, at + 0.12);
+      g.gain.setValueAtTime(0.25, at); g.gain.exponentialRampToValueAtTime(0.001, at + 0.3);
+      o.connect(g).connect(ac.destination); o.start(at); o.stop(at + 0.32);
+    }
+  }
+  const ph = btn.parentElement.querySelector(".ph"), x0 = (startBar - 1) / BARS * 1000, x1 = (startBar + 3) / BARS * 1000;
+  ph.setAttribute("opacity", 1);
+  const tick = () => { if (playing !== n) return; const f = Math.min(1, (ac.currentTime - t0) / dur); ph.setAttribute("x", x0 + f * (x1 - x0)); if (f < 1) requestAnimationFrame(tick); else { stop(); playing = null; } };
+  requestAnimationFrame(tick);
+}
+function stop() { document.querySelectorAll(".play").forEach(b => b.innerHTML = playIcon(false)); document.querySelectorAll(".ph").forEach(p => p.setAttribute("opacity", 0)); if (ac) { ac.close(); ac = null; } }
+
+renderThread();
+openView("notes", "cut-assistant", true);
+</script>
+</body>
+</html>
