@@ -7,6 +7,12 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# The command layer (`praxis_cli::ops`) is a library so the CLI and the MCP server (WP-X) share
+# one implementation of every command.
+[lib]
+name = "praxis_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "praxis"
 path = "src/main.rs"
