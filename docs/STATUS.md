@@ -37,6 +37,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 
 ## Log
 
+- Paused by the owner. WP-U3 was started and stopped before writing anything. Nothing running, nothing uncommitted; next steps in docs/HANDOFF.md sections 5-6.
+
 - Merged WP-F2 mix bus (e6afe04): effect chains + automation, sidechain, latency compensation, master normalisation (within 0.01 LU), true-peak limiter, seam stitch, FDN reverb early reflections (modulation off). Acceptance 1 with felt piano + soft kick + room: all 8 checks pass, -16.00 LUFS, grid 90.9% (thin margin: analyzer reads a soft note's second swell under reverb as an onset; follow-up for the analyzer). Phase 2 demo in demos/phase-2/ awaits the owner's listening sign-off.
 
 - Merged WP-X MCP server (06a1d05): `praxis-mcp` stdio binary with praxis_plan_schema, presets, compose, generate, render, check, analyze, export, validate (all via praxis_cli::ops); agent guide docs/agents/praxis-skill/SKILL.md and docs/agents/mcp.json.example. tokio + praxis-cli moved into workspace deps. 456 release tests pass. Pending tools: praxis_edit, praxis_variations (wire to WP-P2), praxis_takes / praxis_open_view (with WP-U3).

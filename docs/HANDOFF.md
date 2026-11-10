@@ -1,4 +1,4 @@
-# Handoff: Praxis Sound build (kept current; last updated 2026-11-11: wave 2 being finished by sub-agents from the terminal)
+# Handoff: Praxis Sound build (kept current; last updated 2026-11-11 05:10 IST: paused, nothing running)
 
 Paste the block below into a new Claude Code session opened in
 `C:\Users\admin\Desktop\praxis sound`. Everything else in this file is the detail it points to.
@@ -103,66 +103,42 @@ The soft kick layer is skipped until WP-C2 lands (the test says so and tightens 
 
 Test totals at handoff: 386 Rust tests pass in release; app: 140 unit tests on the WP-U2 branch.
 
-## 5. In flight (updated 2026-11-11: all of wave 2 merged; Phase 2 demo awaits owner sign-off)
+## 5. In flight (updated 2026-11-11 05:10 IST: paused by the owner; nothing running)
 
-Nothing is running. Wave 2 (WP-C2, F2, K, P2) and WP-X are merged. Phase 2 exit demo:
-`demos/phase-2/acceptance1_mixed_loop.flac` (+ x3 seam file, README); owner listening sign-off
-pending (NEEDS_OWNER item 2). Next: WP-U3 real adapter + Tauri shell, wire praxis_edit /
-praxis_variations into the MCP server and CLI, analyzer onset robustness (grid margin 90.9%).
+**Nothing is running and nothing is uncommitted.** Every package so far is merged into
+`build/integration` and pushed (HEAD `734b309` or later). Wave 2 (WP-C2 synth + drums, WP-F2 mix
+bus, WP-K CLI, WP-P2 edits + variations) and WP-X (MCP server) are all merged.
 
-### Earlier notes
+- **Phase 2 exit demo is ready**: `demos/phase-2/acceptance1_mixed_loop.flac` (+ `_x3` seam file,
+  README with what to listen for). Waiting for the owner's listening sign-off
+  (docs/NEEDS_OWNER.md item 2). Measured: 127.99 BPM, A minor, -16.00 LUFS, -2.72 dBTP, seamless,
+  kick adds 7.9 dB below 120 Hz from bar 9; grid 90.9% (thin margin, see below).
+- **WP-U3 real adapter + Tauri shell** was started and then stopped by the owner before it wrote
+  anything (its empty worktree was removed). Restart it from `docs/briefs/WP-U3-real-adapter.md`
+  on a new branch `wp/u3-adapter` from `build/integration`. Authorise exactly one root
+  `Cargo.toml` edit: add `crates/praxis-app` to `[workspace] members` only (not default-members),
+  plus any audited third-party deps; check Tauri versions/licences first.
 
-WP-F2 (worktree `clever-cori-d1bc75`, branch `wp/f2-mix-bus`): mix bus built; it is adding early
-reflections to the FDN reverb because the abrupt 40 ms wet entry broke the grid check (85%). Merge
-when acceptance test 1 passes all checks with the reverb on. Next: Phase 2 demo, then WP-U3.
+Known follow-ups (not started):
+1. **Analyzer onset robustness**: the acceptance grid passes at 90.9% (threshold 90%). The
+   detector counts a soft felt-piano note's second swell (pitch 60, velocity 0.55), made more
+   visible by the room reverb, as an extra onset; 8 soft notes read ~12 ms late. Fix in
+   `praxis-analyze` onset detection (do not bend the reverb further). The FDN reverb's modulation
+   is off (time-invariant, exactly periodic loops); revisit only if the owner hears ringing.
+2. **Wire edits into the CLI and MCP**: `praxis edit` / `praxis variations` in `praxis_cli::ops`
+   and `praxis_edit` / `praxis_variations` tools in `praxis-mcp`, using
+   `praxis_planner::{plan_project_edit, compose_edit, variations}`.
+3. **Planner tidy-ups proposed by WP-P2**: route the edit tool inside `RuleProvider::call_tool`;
+   make `prompt_suite.rs` skip `edit_*` files; add `praxis-engine` as a planner dev-dependency for
+   render-level edit-isolation tests.
+4. **CLI**: `validate` should accept `.praxis` projects; `pack_verify_failed` error code; a
+   keychain delete helper for `key clear`.
+5. Old merged branches (`wp/*`, `worktree-agent-*`) and stale worktrees under `.claude/worktrees/`
+   can be deleted (`git worktree list`, `git worktree remove <path>`, `git branch -d <branch>`).
 
-Running: WP-F2 in worktree `clever-cori-d1bc75` (branch `wp/f2-mix-bus`); WP-X MCP server in an
-agent worktree under `.claude/worktrees/` (branch `wp/x-agents`). Next after WP-X merges: WP-U3.
-
-WP-K CLI is merged (`670353e`): `praxis_cli::ops` is the shared command layer for the app (WP-U3)
-and the MCP server (WP-X).
-
-The orchestrator resumed in a terminal session and started four background sub-agents, one per
-worktree below, each finishing its package from the uncommitted work and committing to its
-branch. When they report: review and merge each (section 7). If the terminal session ends
-first, check each worktree's branch for commits and its `git status` for leftovers, and resume
-as described below.
-
-### Earlier state (all sessions stopped by the owner)
-
-The four wave-2 sessions were **stopped** at the owner's request, mid-work. None had committed:
-all their work is **uncommitted** in their worktrees (safe there; worktrees with changes are not
-cleaned up). Nothing from them is in `build/integration`.
-
-| Package | Brief | Worktree (`.claude/worktrees/...`) | Branch | Work in progress (uncommitted) |
-| --- | --- | --- | --- | --- |
-| WP-C2 synth presets + drums | `docs/briefs/WP-C2-synth-drums.md` | `agitated-haibt-f5dfb9` | `wp/c2-synth-drums` | `crates/praxis-instruments/src/synth.rs` (+53 lines) and a new `src/synth/` directory (3 files). Drums not started |
-| WP-F2 engine mix bus | `docs/briefs/WP-F2-mix-bus.md` | `clever-cori-d1bc75` | `wp/f2-mix-bus` | `effects.rs`, `graph.rs`, `lib.rs`, `render.rs` (+575/-175) and new `latency.rs`, `master.rs`, `sidechain.rs` in `crates/praxis-engine/src/` |
-| WP-K CLI + command layer | `docs/briefs/WP-K-cli.md` | `mystifying-taussig-49d229` | `wp/k-cli` | `Cargo.toml` gains a `[lib] praxis_cli` target (approved: the shared command layer), `main.rs` reworked, `commands.rs` deleted, new `lib.rs`, `error.rs`, `output.rs`, `ops/` (14 new files) |
-| WP-P2 planner edits | `docs/briefs/WP-P2-edits-variations.md` | `charming-shirley-e77b69` | `wp/p2-edits` | new `crates/praxis-planner/src/edit/` (4 files); `edit.rs`/`variations.rs` not yet changed |
-
-**To resume a package**, pick one:
-- In the desktop app, open its session and send "continue your work package". It still has its
-  context. (Session ids: C2 `local_88556cd4-0270-499a-b444-4c1fc9d711da`, F2
-  `local_2cf5992e-16b3-4e4a-a236-095886095a12`, K `local_3900e1de-15d0-4166-8489-aa53b502c0e9`,
-  P2 `local_ebed52bd-b685-42a4-b0b3-99f60f5f8c91`.)
-- Or from a terminal: `cd ".claude/worktrees/<worktree>"`, run `claude`, and tell it: "You are
-  continuing work package <WP>. Read docs/BRIEFING.md and <brief>, inspect the uncommitted work
-  in this worktree with git status and git diff, then finish the package on branch <branch>,
-  following all rules in the brief, and report."
-- Or, as orchestrator, run each as a sub-agent in that worktree with the same instruction.
-
-Check progress at any time with git:
-
-```
-git worktree list
-git -C ".claude/worktrees/<worktree>" status --short
-git log --oneline build/integration..<branch>
-```
-
-Done since the first handoff: WP-U2 conversation UI merged (`12c9e8e`). Run the app with
-`npm --prefix app run dev -- --port 5174` (or `praxis-app` in `.claude/launch.json`); it uses the
-mock engine until WP-U3 lands. The front-end session (`local_4192c21f-...`) is finished and idle.
+Test totals at pause: about 475 Rust tests in release (run the full suite with
+`PRAXIS_PACKS` pointing at `packs/` so the piano tests run), app 138 unit + 8 Playwright,
+MCP stdio test, acceptance test 1 all 8 checks.
 
 ## Continuing this orchestration in the terminal
 
