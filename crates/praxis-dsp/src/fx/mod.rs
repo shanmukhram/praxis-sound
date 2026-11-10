@@ -264,6 +264,14 @@ impl AnyFx {
 }
 
 impl Processor for AnyFx {
+    fn set_tempo(&mut self, bpm: f32) {
+        AnyFx::set_tempo(self, bpm);
+    }
+
+    fn set_impulse(&mut self, ir: &StereoBuffer) {
+        AnyFx::set_impulse(self, ir);
+    }
+
     fn prepare(&mut self, sample_rate: f32, max_block: usize) {
         each!(self, p => p.prepare(sample_rate, max_block))
     }

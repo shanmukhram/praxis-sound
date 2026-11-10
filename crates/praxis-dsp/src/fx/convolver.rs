@@ -404,6 +404,10 @@ impl Convolver {
 }
 
 impl Processor for Convolver {
+    fn set_impulse(&mut self, ir: &StereoBuffer) {
+        Convolver::set_impulse(self, ir);
+    }
+
     fn prepare(&mut self, sample_rate: f32, _max_block: usize) {
         self.sr = sample_rate;
         let len = ramp_len(RAMP_SECONDS, sample_rate);

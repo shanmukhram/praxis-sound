@@ -73,6 +73,10 @@ impl Delay {
 }
 
 impl Processor for Delay {
+    fn set_tempo(&mut self, bpm: f32) {
+        Delay::set_tempo(self, bpm);
+    }
+
     fn prepare(&mut self, sample_rate: f32, _max_block: usize) {
         self.sr = sample_rate;
         let cap = (MAX_SECONDS * sample_rate).ceil() as usize + 8;
