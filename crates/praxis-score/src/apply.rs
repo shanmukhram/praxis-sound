@@ -19,9 +19,8 @@
 //!    sorted by start and merged across the two range edges when the merge is exact.
 //! 5. **Exact inverse.** Each op records the ops that undo it; the inverse is those groups in
 //!    reverse order. Bar ops are undone with `set_clips` (+ `remove_pattern` for a pattern they
-//!    added), so the original clip list comes back exactly. Removals of a list item that was not
-//!    last are undone with a chain that removes and re-adds the items after it (the frozen
-//!    `add_*` ops only append; see the contract note in the WP-A report).
+//!    added), so the original clip list comes back exactly. A removal is undone by an `add_*` op
+//!    with `index` set to the removed item's position.
 //! 6. **Isolation.** After all ops, a final check compares the note events of every layer outside
 //!    the bar scope and every layer outside the layer scope (see `apply/isolation.rs`).
 //! 7. **Deterministic ids.** Patterns created by `write_bars` whose id is missing or already taken

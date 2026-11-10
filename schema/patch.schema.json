@@ -878,6 +878,26 @@
         },
         {
           "additionalProperties": false,
+          "description": "Sets the root seed. Global.",
+          "properties": {
+            "op": {
+              "const": "set_seed",
+              "type": "string"
+            },
+            "seed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "op",
+            "seed"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
           "properties": {
             "chords": {
               "items": {
@@ -899,6 +919,15 @@
         {
           "additionalProperties": false,
           "properties": {
+            "index": {
+              "description": "Insert position; None appends.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "op": {
               "const": "add_section",
               "type": "string"
@@ -950,6 +979,15 @@
         {
           "additionalProperties": false,
           "properties": {
+            "index": {
+              "description": "Insert position; None appends.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "marker": {
               "$ref": "#/$defs/Marker"
             },
@@ -985,6 +1023,15 @@
           "additionalProperties": false,
           "description": "Adds a new pattern. Fails if the id exists.",
           "properties": {
+            "index": {
+              "description": "Insert position; None appends.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "op": {
               "const": "add_pattern",
               "type": "string"
@@ -1038,6 +1085,15 @@
         {
           "additionalProperties": false,
           "properties": {
+            "index": {
+              "description": "Insert position; None appends.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "layer": {
               "$ref": "#/$defs/Layer"
             },

@@ -117,6 +117,7 @@ fn versions_save_and_restore_as_undoable_patch() {
     p.commit(patch(vec![
         PatchOp::RemoveLayer { id: "piano".into() },
         PatchOp::AddPattern {
+            index: None,
             pattern: pattern("extra", Grid::Quarter, 4, vec![note(0, 57, 2.0)]),
         },
         PatchOp::SetLock {
@@ -133,6 +134,7 @@ fn versions_save_and_restore_as_undoable_patch() {
         },
         PatchOp::SetTempo { bpm: 140.0 },
         PatchOp::AddSection {
+            index: None,
             section: Section {
                 id: "s".into(),
                 name: String::new(),
@@ -252,10 +254,23 @@ fn from_json_moves_next_seq_past_history() {
 }
 
 #[test]
+fn restore_brings_back_the_seed() {
+    let mut p = Project::new(base_score());
+    p.save_version("v").unwrap();
+    p.commit(patch(vec![PatchOp::SetSeed { seed: 99 }]))
+        .unwrap();
+    let entry = p.restore_version("v").unwrap();
+    assert!(entry.patch.ops.contains(&PatchOp::SetSeed { seed: 0 }));
+    assert_eq!(p.score.seed, 0);
+    p.undo().unwrap();
+    assert_eq!(p.score.seed, 99);
+}
+
+#[test]
 fn restore_refuses_what_no_patch_can_change() {
     let mut p = Project::new(base_score());
     p.save_version("v").unwrap();
-    p.score.seed = 99; // only possible by editing the struct directly
+    p.score.schema_version = 2; // only possible by editing the struct directly
     assert!(matches!(
         p.restore_version("v"),
         Err(ProjectError::Restore { .. })

@@ -2,7 +2,6 @@
 
 use crate::types::{BarRange, Pattern, Score};
 use crate::validate::valid_id;
-use std::collections::BTreeSet;
 
 /// Maximum id length accepted by the validator.
 const MAX_ID: usize = 64;
@@ -56,19 +55,6 @@ pub(super) fn resolve_write_pattern(
         }
     }
     Err(format!("no free pattern id for layer `{layer}` {tail}"))
-}
-
-/// A fresh id `<stem>-undo[_n]` not in `taken`; the id is inserted into `taken`.
-pub(super) fn fresh_id(taken: &mut BTreeSet<String>, stem: &str) -> String {
-    let mut n = 1;
-    loop {
-        let id = compose(stem, "-undo", n);
-        if !taken.contains(&id) {
-            taken.insert(id.clone());
-            return id;
-        }
-        n += 1;
-    }
 }
 
 #[cfg(test)]
