@@ -18,7 +18,7 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 | WP-D1 analyze-verify | **merged** (c730c4f) | wp/d1-analyze-verify | verify_render: tempo, key, grid, loudness, true peak, clipping, seam, silence; synthetic tempo within 0.03 BPM, 10/10 keys |
 | WP-E audio-io | **merged** (fbdb8d1) | wp/e-audio-io | WAV/FLAC/OGG/MP3 native, M4A/MP4/MOV/WebM via ffmpeg (hardened), FLAC + stems export, MIDI export; 47 tests. Gaps: no ffmpeg timeout; resampler ~0.5 sample offset |
 | WP-F engine-core | **merged** (5075c5b) | wp/f-engine-core | offline render, stems, avoid-list, loop wrap, determinism; 88x real time; effects plumbing awaits WP-F2 |
-| WP-U1 front end (mock engine) | **merged** (f073ab7, merge ce36ac9) | wp/u1-frontend | app/: timeline, step sequencer, piano roll, waveform/spectrogram, undo/versions, export dialog vs a mock engine; 121 Vitest + 5 Playwright. Direction under review: ADR-0011 conversation-first (concept in docs/design/) |
+| WP-U1 front end (mock engine) | **merged** (f073ab7, merge ce36ac9) | wp/u1-frontend | app/: timeline, step sequencer, piano roll, waveform/spectrogram, undo/versions, export dialog vs a mock engine; 121 Vitest + 5 Playwright. Rebuilt to the approved ADR-0011 conversation-first design (WP-U2, merged) |
 | WP-P planner | **merged** (627e121) | wp/p-planner | ScorePlan, RuleProvider, arranger, repair, ClaudeProvider (replay fixtures only), compose_plan for agents; 27/27 prompt suite; acceptance-1 brief -> Score first try |
 
 ## What works now
@@ -36,6 +36,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- Merged WP-U2 (12c9e8e): `npm run dev` in app/ opens the approved conversation-first workstation (mock engine). 138 unit + 8 Playwright tests at 1440/390 rerun and passing; screenshots in app/screenshots/ match docs/design/. Next for the UI: Tauri adapter filling takes from praxis generate|edit|check, and MCP praxis_takes/praxis_open_view.
 
 - WP-U2 conversation UI: engine side committed (27cd5be on wp/u2-conversation-ui); visible screen uncommitted in worktree funny-elion-3d4d1d; session paused on the account usage limit. Handoff written: docs/HANDOFF.md.
 

@@ -107,7 +107,7 @@ Test totals at handoff: 386 Rust tests pass in release; app: 140 unit tests on t
 
 | Work | State | Where |
 | --- | --- | --- |
-| WP-U2 conversation UI rebuild | Session "WP-U1 workstation front end" (`local_4192c21f-...`) stopped on the account's 5-hour usage limit (resets 02:20 IST). Engine side committed: `27cd5be` on branch `wp/u2-conversation-ui`. Visible-screen work started but **uncommitted** in worktree `.claude/worktrees/funny-elion-3d4d1d/` (`app/src/styles.css` modified; `app/src/ui/context.ts`, `spectrogram.ts`, `waveform.ts`, `views/` new). | Resume that session (send it "continue WP-U2") or start a new session on that worktree. Brief: `docs/briefs/WP-U2-conversation-ui.md` |
+| WP-U2 conversation UI rebuild | **Done and merged** (12c9e8e). Earlier note: session "WP-U1 workstation front end" (`local_4192c21f-...`) stopped on the account's 5-hour usage limit (resets 02:20 IST). Engine side committed: `27cd5be` on branch `wp/u2-conversation-ui`. Visible-screen work started but **uncommitted** in worktree `.claude/worktrees/funny-elion-3d4d1d/` (`app/src/styles.css` modified; `app/src/ui/context.ts`, `spectrogram.ts`, `waveform.ts`, `views/` new). | Resume that session (send it "continue WP-U2") or start a new session on that worktree. Brief: `docs/briefs/WP-U2-conversation-ui.md` |
 
 Session cards proposed but **not started** (the owner starts them, or you start them when the
 owner asks): WP-C2 synth + drums, WP-F2 mix bus, WP-K CLI, WP-P2 edits + variations. Their
@@ -115,9 +115,8 @@ briefs are in `docs/briefs/`. If the cards expired, start new sessions with thos
 
 ## 6. What to do next (in order)
 
-1. **WP-U2**: finish the conversation UI (resume the session or a new one on its worktree). Then
-   review against `docs/design/workstation-concept.html` (screenshots at 1440 and 390), rerun
-   `npm test`, `npm run typecheck`, `npm run build`, Playwright, and merge.
+1. **WP-U2**: done and merged. Next UI step (later): a Tauri adapter that fills takes from the
+   CLI command layer, plus the MCP take/view hooks.
 2. **WP-C2 synth + drums** (brief ready; needs merged B1): gives `bell` and `soft_kick`; then
    acceptance test 1 renders with the kick.
 3. **WP-F2 mix bus** (brief ready; needs F + B2): effect chains, sidechain, master loudness to
