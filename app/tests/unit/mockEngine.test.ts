@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyPatch, resolveWritePattern, splitOut } from '../../src/engine/mock/apply';
 import { MockEngine } from '../../src/engine/MockEngine';
-import { History } from '../../src/score/history';
 import { derivePattern, editPatternInRange, muteLayer, toggleNote } from '../../src/score/patchBuilder';
 import type { NScore, Note, PatchOp, ScorePatch } from '../../src/score/types';
 import { eventKey, layerEvents } from '../../src/score/timeline';
@@ -366,58 +365,5 @@ describe('MockEngine adapter', () => {
     expect(seen.at(-1)).toBeCloseTo(5, 9);
     await e.setLoop({ start: 13, end: 16 });
     e.dispose();
-  });
-});
-
-describe('history mirrors the project contract', () => {
-  it('commit, undo, redo and versions', async () => {
-    const e = new MockEngine();
-    const { score } = await e.load(fixture());
-    const h = new History(e);
-    h.reset(score);
-    const range = { start: 13, end: 16 };
-    const d = derivePattern(score, 'kick', range)!;
-    const notes = toggleNote(d.pattern.notes, 2, 36, { velocity: 0.5, length: 1, accent: 'soft' });
-    const p = editPatternInRange(score, 'kick', range, notes, 'Edit')!;
-    h.saveVersion('original', score);
-    const r1 = await h.commit(p);
-    expect(r1.ok).toBe(true);
-    expect(h.undo.map((x) => x.seq)).toEqual([1]);
-    const u = await h.undoLast();
-    expect(u?.ok && u.score).toEqual(score);
-    expect(h.redo).toHaveLength(1);
-    const rd = await h.redoLast();
-    expect(rd?.ok).toBe(true);
-    expect(h.redo).toHaveLength(0);
-    const rv = await h.restoreVersion('original');
-    expect(rv?.ok && rv.score).toEqual(score);
-    expect(h.undo).toHaveLength(2);
-    expect(h.current).toEqual(e.current());
-    const project = h.toProject(e.current()!);
-    expect(project.format).toBe('praxis-project');
-    expect(project.next_seq).toBe(3);
-  });
-
-  it('undo clicks fired without waiting each apply their own inverse', async () => {
-    const e = new MockEngine();
-    const { score } = await e.load(fixture());
-    const h = new History(e);
-    h.reset(score);
-    await h.commit(muteLayer(score, 'kick', true));
-    await h.commit({ ...muteLayer(score, 'kick', true), ops: [{ op: 'update_layer', id: 'kick', update: { gain_db: -10 } }] });
-    await h.commit({ ...muteLayer(score, 'kick', true), ops: [{ op: 'set_tempo', bpm: 100 }], scope: { layers: [] } });
-    await Promise.all([h.undoLast(), h.undoLast(), h.undoLast()]);
-    expect(h.undo).toHaveLength(0);
-    expect(h.redo).toHaveLength(3);
-    expect(e.current()).toEqual(score);
-  });
-
-  it('a rejected patch is not recorded', async () => {
-    const e = new MockEngine();
-    await e.load(fixture());
-    const h = new History(e);
-    const r = await h.commit(scoped([{ op: 'update_layer', id: 'piano', update: { gain_db: -3 } }]));
-    expect(r.ok).toBe(false);
-    expect(h.undo).toHaveLength(0);
   });
 });

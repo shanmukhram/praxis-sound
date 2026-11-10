@@ -161,6 +161,14 @@ describe('restore and undo', () => {
     expect(e.state().score).toEqual((await e.takes())[2].score);
   });
 
+  it('undo calls fired without waiting each undo one step (operations are serialised)', async () => {
+    const e = await demo();
+    await Promise.all([e.undo(), e.undo()]);
+    expect(e.state().current).toBe(1);
+    expect(e.state().score).toEqual((await e.takes())[0].score);
+    expect(e.state().canUndo).toBe(false); // the history held takes 2 and 3; take 1 is where it starts
+  });
+
   it('mute on the live score is undoable and makes no take', async () => {
     const e = await demo();
     await e.applyPatch({ origin: 'user', scope: { layers: ['kick'] }, ops: [{ op: 'update_layer', id: 'kick', update: { muted: true } }] });
