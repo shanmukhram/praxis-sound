@@ -10,12 +10,12 @@ fn common_prefix<T: PartialEq>(a: &[T], b: &[T]) -> usize {
 
 /// Builds an unscoped `origin: user` patch that makes `from` equal to `to` when applied.
 ///
-/// Lists keep their longest common prefix; the rest of `from` is removed last-first (so every
-/// removal has a trivial inverse) and the rest of `to` is added in order. Layers that are removed
-/// and locked are unlocked first; re-added layers carry their own `locked` flag. A kept layer only
-/// plays kept patterns, so pattern removals never hit a pattern in use.
+/// Lists keep their longest common prefix; the rest of `from` is removed last-first and the rest
+/// of `to` is appended in order. Layers that are removed and locked are unlocked first; re-added
+/// layers carry their own `locked` flag. A kept layer only plays kept patterns, so pattern
+/// removals never hit a pattern in use.
 ///
-/// Fails when the scores differ in something no op can change (`schema_version`, `seed`).
+/// Fails only when the schema versions differ (no op changes `schema_version`).
 pub fn patch_between(from: &Score, to: &Score, description: String) -> Result<ScorePatch, String> {
     if from.schema_version != to.schema_version {
         return Err(format!(
@@ -23,13 +23,10 @@ pub fn patch_between(from: &Score, to: &Score, description: String) -> Result<Sc
             from.schema_version, to.schema_version
         ));
     }
-    if from.seed != to.seed {
-        return Err(format!(
-            "seed {} cannot become {}: no patch op sets the seed",
-            from.seed, to.seed
-        ));
-    }
     let mut ops = Vec::new();
+    if from.seed != to.seed {
+        ops.push(PatchOp::SetSeed { seed: to.seed });
+    }
     if from.title != to.title {
         ops.push(PatchOp::SetTitle {
             title: to.title.clone(),
@@ -103,7 +100,10 @@ pub fn patch_between(from: &Score, to: &Score, description: String) -> Result<Sc
         ops.push(PatchOp::RemovePattern { id: p.id.clone() });
     }
     for p in &to.patterns[kp..] {
-        ops.push(PatchOp::AddPattern { pattern: p.clone() });
+        ops.push(PatchOp::AddPattern {
+            pattern: p.clone(),
+            index: None,
+        });
     }
 
     // Sections and markers.
@@ -112,18 +112,27 @@ pub fn patch_between(from: &Score, to: &Score, description: String) -> Result<Sc
         ops.push(PatchOp::RemoveSection { id: x.id.clone() });
     }
     for x in &to.sections[ks..] {
-        ops.push(PatchOp::AddSection { section: x.clone() });
+        ops.push(PatchOp::AddSection {
+            section: x.clone(),
+            index: None,
+        });
     }
     let km = common_prefix(&from.markers, &to.markers);
     for x in from.markers[km..].iter().rev() {
         ops.push(PatchOp::RemoveMarker { id: x.id.clone() });
     }
     for x in &to.markers[km..] {
-        ops.push(PatchOp::AddMarker { marker: x.clone() });
+        ops.push(PatchOp::AddMarker {
+            marker: x.clone(),
+            index: None,
+        });
     }
 
     for l in &to.layers[kl..] {
-        ops.push(PatchOp::AddLayer { layer: l.clone() });
+        ops.push(PatchOp::AddLayer {
+            layer: l.clone(),
+            index: None,
+        });
     }
     Ok(ScorePatch {
         description,

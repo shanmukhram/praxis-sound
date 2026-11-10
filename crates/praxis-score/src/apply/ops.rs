@@ -3,13 +3,13 @@
 //! Every function returns the inverse group for its op, in the order those inverse ops must run.
 
 use super::clips::{canonicalize, carve, inside};
-use super::ids::{fresh_id, resolve_write_pattern};
+use super::ids::resolve_write_pattern;
 use super::isolation::{layer_events, outside, same_events};
 use crate::patch::{LayerUpdate, Origin, PatchError, PatchOp, Scope, ScorePatch};
 use crate::timeline::TimeMap;
 use crate::types::*;
 use crate::validate::unpitched_class;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::Display;
 
 /// The op being applied and where it sits in its patch.
@@ -166,14 +166,18 @@ pub(super) fn apply_op(s: &mut Score, cx: &Cx) -> Result<Vec<PatchOp>, PatchErro
             let old = std::mem::replace(&mut s.master, master.clone());
             Ok(vec![PatchOp::SetMaster { master: old }])
         }
+        PatchOp::SetSeed { seed } => {
+            let old = std::mem::replace(&mut s.seed, *seed);
+            Ok(vec![PatchOp::SetSeed { seed: old }])
+        }
         // ---- score-level lists ----
         PatchOp::SetChords { chords } => set_chords(s, cx, chords),
-        PatchOp::AddSection { section } => {
+        PatchOp::AddSection { section, index } => {
             if s.sections.iter().any(|x| x.id == section.id) {
                 return Err(cx.duplicate("section", &section.id));
             }
             cx.bars_scope(section.bars, "section")?;
-            s.sections.push(section.clone());
+            insert_at(cx, &mut s.sections, section.clone(), *index)?;
             Ok(vec![PatchOp::RemoveSection {
                 id: section.id.clone(),
             }])
@@ -196,21 +200,18 @@ pub(super) fn apply_op(s: &mut Score, cx: &Cx) -> Result<Vec<PatchOp>, PatchErro
                 .position(|x| &x.id == id)
                 .ok_or_else(|| cx.unknown("section", id))?;
             cx.bars_scope(s.sections[i].bars, "section")?;
-            let removed = s.sections.remove(i);
-            let later = s.sections[i..].to_vec();
-            Ok(restore_chain(
-                &later,
-                removed,
-                |x| PatchOp::RemoveSection { id: x.id.clone() },
-                |x| PatchOp::AddSection { section: x },
-            ))
+            let section = s.sections.remove(i);
+            Ok(vec![PatchOp::AddSection {
+                section,
+                index: at(i),
+            }])
         }
-        PatchOp::AddMarker { marker } => {
+        PatchOp::AddMarker { marker, index } => {
             if s.markers.iter().any(|x| x.id == marker.id) {
                 return Err(cx.duplicate("marker", &marker.id));
             }
             marker_scope(s, cx, marker)?;
-            s.markers.push(marker.clone());
+            insert_at(cx, &mut s.markers, marker.clone(), *index)?;
             Ok(vec![PatchOp::RemoveMarker {
                 id: marker.id.clone(),
             }])
@@ -222,21 +223,18 @@ pub(super) fn apply_op(s: &mut Score, cx: &Cx) -> Result<Vec<PatchOp>, PatchErro
                 .position(|x| &x.id == id)
                 .ok_or_else(|| cx.unknown("marker", id))?;
             marker_scope(s, cx, &s.markers[i])?;
-            let removed = s.markers.remove(i);
-            let later = s.markers[i..].to_vec();
-            Ok(restore_chain(
-                &later,
-                removed,
-                |x| PatchOp::RemoveMarker { id: x.id.clone() },
-                |x| PatchOp::AddMarker { marker: x },
-            ))
+            let marker = s.markers.remove(i);
+            Ok(vec![PatchOp::AddMarker {
+                marker,
+                index: at(i),
+            }])
         }
         // ---- pattern ops ----
-        PatchOp::AddPattern { pattern } => {
+        PatchOp::AddPattern { pattern, index } => {
             if s.pattern(&pattern.id).is_some() {
                 return Err(cx.duplicate("pattern", &pattern.id));
             }
-            s.patterns.push(pattern.clone());
+            insert_at(cx, &mut s.patterns, pattern.clone(), *index)?;
             Ok(vec![PatchOp::RemovePattern {
                 id: pattern.id.clone(),
             }])
@@ -244,7 +242,7 @@ pub(super) fn apply_op(s: &mut Score, cx: &Cx) -> Result<Vec<PatchOp>, PatchErro
         PatchOp::ReplacePattern { pattern } => replace_pattern(s, cx, pattern),
         PatchOp::RemovePattern { id } => remove_pattern(s, cx, id),
         // ---- layer ops ----
-        PatchOp::AddLayer { layer } => add_layer(s, cx, layer),
+        PatchOp::AddLayer { layer, index } => add_layer(s, cx, layer, *index),
         PatchOp::RemoveLayer { id } => remove_layer(s, cx, id),
         PatchOp::UpdateLayer { id, update } => update_layer(s, cx, id, update),
         PatchOp::SetLock { id, locked } => {
@@ -292,19 +290,27 @@ pub(super) fn apply_op(s: &mut Score, cx: &Cx) -> Result<Vec<PatchOp>, PatchErro
     }
 }
 
-/// Undo group for removing item `removed` that had `later` after it: remove the later items
-/// (last first, so each removal is of the last item), re-add `removed`, re-add the later items.
-/// When `later` is empty this is just the re-add.
-fn restore_chain<T: Clone>(
-    later: &[T],
-    removed: T,
-    remove: impl Fn(&T) -> PatchOp,
-    add: impl Fn(T) -> PatchOp,
-) -> Vec<PatchOp> {
-    let mut ops: Vec<PatchOp> = later.iter().rev().map(remove).collect();
-    ops.push(add(removed));
-    ops.extend(later.iter().cloned().map(add));
-    ops
+/// Inserts `item` at `index` (None appends). An index past the end is rejected, not clamped.
+fn insert_at<T>(cx: &Cx, list: &mut Vec<T>, item: T, index: Option<u32>) -> Result<(), PatchError> {
+    let i = match index {
+        None => list.len(),
+        Some(i) => usize::try_from(i)
+            .ok()
+            .filter(|i| *i <= list.len())
+            .ok_or_else(|| {
+                cx.invalid(format!(
+                    "index {i} is past the end of the list ({} items)",
+                    list.len()
+                ))
+            })?,
+    };
+    list.insert(i, item);
+    Ok(())
+}
+
+/// The `index` an inverse add uses to put a removed item back where it was.
+fn at(i: usize) -> Option<u32> {
+    u32::try_from(i).ok()
 }
 
 fn set_key(
@@ -469,98 +475,19 @@ fn remove_pattern(s: &mut Score, cx: &Cx, id: &str) -> Result<Vec<PatchOp>, Patc
             )));
         }
     }
-    let removed = s.patterns.remove(pi);
-    if pi == s.patterns.len() {
-        return Ok(vec![PatchOp::AddPattern { pattern: removed }]);
-    }
-    Ok(pattern_restore_chain(s, pi, removed))
+    let pattern = s.patterns.remove(pi);
+    Ok(vec![PatchOp::AddPattern {
+        pattern,
+        index: at(pi),
+    }])
 }
 
-/// Undo group for removing a pattern that was not last (`s` is the state after the removal, the
-/// removed pattern sat at `pi`). `add_pattern` only appends, so the patterns after `pi` are
-/// removed and re-added behind it. Those still in use are first swapped for temporary copies
-/// (`<id>-undo`) on every layer that plays them, unlocking and re-locking locked layers; the
-/// copies are identical, so no note event changes at any point.
-fn pattern_restore_chain(s: &Score, pi: usize, removed: Pattern) -> Vec<PatchOp> {
-    let later: Vec<Pattern> = s.patterns[pi..].to_vec();
-    let used: BTreeSet<&str> = s
-        .layers
-        .iter()
-        .flat_map(|l| l.clips.iter().map(|c| c.pattern.as_str()))
-        .collect();
-    let mut taken: BTreeSet<String> = s.patterns.iter().map(|p| p.id.clone()).collect();
-    taken.insert(removed.id.clone());
-    let mut tmp: BTreeMap<String, String> = BTreeMap::new();
-    let mut ops = Vec::new();
-    for q in later.iter().filter(|q| used.contains(q.id.as_str())) {
-        let id = fresh_id(&mut taken, &q.id);
-        tmp.insert(q.id.clone(), id.clone());
-        let mut copy = q.clone();
-        copy.id = id;
-        ops.push(PatchOp::AddPattern { pattern: copy });
-    }
-    let affected: Vec<&Layer> = s
-        .layers
-        .iter()
-        .filter(|l| l.clips.iter().any(|c| tmp.contains_key(&c.pattern)))
-        .collect();
-    for l in &affected {
-        if l.locked {
-            ops.push(PatchOp::SetLock {
-                id: l.id.clone(),
-                locked: false,
-            });
-        }
-        let clips = l
-            .clips
-            .iter()
-            .map(|c| {
-                let mut c = c.clone();
-                if let Some(t) = tmp.get(&c.pattern) {
-                    c.pattern = t.clone();
-                }
-                c
-            })
-            .collect();
-        ops.push(PatchOp::SetClips {
-            layer: l.id.clone(),
-            clips,
-        });
-    }
-    ops.extend(
-        later
-            .iter()
-            .rev()
-            .map(|q| PatchOp::RemovePattern { id: q.id.clone() }),
-    );
-    ops.push(PatchOp::AddPattern { pattern: removed });
-    ops.extend(
-        later
-            .iter()
-            .cloned()
-            .map(|q| PatchOp::AddPattern { pattern: q }),
-    );
-    for l in &affected {
-        ops.push(PatchOp::SetClips {
-            layer: l.id.clone(),
-            clips: l.clips.clone(),
-        });
-        if l.locked {
-            ops.push(PatchOp::SetLock {
-                id: l.id.clone(),
-                locked: true,
-            });
-        }
-    }
-    for q in later.iter() {
-        if let Some(t) = tmp.get(&q.id) {
-            ops.push(PatchOp::RemovePattern { id: t.clone() });
-        }
-    }
-    ops
-}
-
-fn add_layer(s: &mut Score, cx: &Cx, layer: &Layer) -> Result<Vec<PatchOp>, PatchError> {
+fn add_layer(
+    s: &mut Score,
+    cx: &Cx,
+    layer: &Layer,
+    index: Option<u32>,
+) -> Result<Vec<PatchOp>, PatchError> {
     if s.layer(&layer.id).is_some() {
         return Err(cx.duplicate("layer", &layer.id));
     }
@@ -569,7 +496,8 @@ fn add_layer(s: &mut Score, cx: &Cx, layer: &Layer) -> Result<Vec<PatchOp>, Patc
         cx.bars_scope(c.bars, "clip")?;
     }
     known_patterns(s, cx, &layer.clips)?;
-    s.layers.push(layer.clone());
+    insert_at(cx, &mut s.layers, layer.clone(), index)?;
+    // A layer added locked has to be unlocked before its removal can undo the add.
     let mut inv = Vec::new();
     if layer.locked {
         inv.push(PatchOp::SetLock {
@@ -595,23 +523,11 @@ fn remove_layer(s: &mut Score, cx: &Cx, id: &str) -> Result<Vec<PatchOp>, PatchE
             c.bars.start, c.bars.end, b.start, b.end
         )));
     }
-    let removed = s.layers.remove(li);
-    // Layers after `li` are removed (unlocking locked ones) and re-added behind it, with their
-    // original `locked` flags, because add_layer only appends.
-    let later = s.layers[li..].to_vec();
-    let mut ops = Vec::new();
-    for l in later.iter().rev() {
-        if l.locked {
-            ops.push(PatchOp::SetLock {
-                id: l.id.clone(),
-                locked: false,
-            });
-        }
-        ops.push(PatchOp::RemoveLayer { id: l.id.clone() });
-    }
-    ops.push(PatchOp::AddLayer { layer: removed });
-    ops.extend(later.into_iter().map(|layer| PatchOp::AddLayer { layer }));
-    Ok(ops)
+    let layer = s.layers.remove(li);
+    Ok(vec![PatchOp::AddLayer {
+        layer,
+        index: at(li),
+    }])
 }
 
 /// True when `u` changes anything but the name of `l` (such changes affect every bar).

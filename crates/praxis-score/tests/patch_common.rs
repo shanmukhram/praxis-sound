@@ -178,26 +178,11 @@ pub fn outside(events: &[NoteEvent], range: BarRange) -> Vec<NoteEvent> {
         .collect()
 }
 
-/// Same events, allowing the `f64` seconds to differ by 1 ns (split clips reach the same note
-/// through a different float path in `expand_notes`) and the rounded sample positions by one
-/// sample only when the seconds differ. Every musical field must be exactly equal.
+/// Same events, exactly: every field including the `f64` seconds (`expand_notes` computes note
+/// times from one integer step count, so a split clip reproduces them bit for bit).
 pub fn assert_same_events(a: &[NoteEvent], b: &[NoteEvent], what: &str) {
     assert_eq!(a.len(), b.len(), "{what}: event count differs");
     for (x, y) in a.iter().zip(b) {
-        let exact_s = x.start_s == y.start_s && x.length_s == y.length_s;
-        let ok = x.key == y.key
-            && x.bar == y.bar
-            && x.pitch == y.pitch
-            && x.velocity == y.velocity
-            && x.accent == y.accent
-            && (x.start_s - y.start_s).abs() <= 1e-9
-            && (x.length_s - y.length_s).abs() <= 1e-9
-            && if exact_s {
-                x.start_sample == y.start_sample && x.length_samples == y.length_samples
-            } else {
-                x.start_sample.abs_diff(y.start_sample) <= 1
-                    && x.length_samples.abs_diff(y.length_samples) <= 1
-            };
-        assert!(ok, "{what}: {x:?} != {y:?}");
+        assert_eq!(x, y, "{what}");
     }
 }

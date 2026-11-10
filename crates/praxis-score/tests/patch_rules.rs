@@ -183,15 +183,133 @@ fn rule2_model_may_lock_and_its_undo_unlocks_as_user() {
 fn rule3_global_ops_need_unscoped_patch() {
     let s = base_score();
     for (range, layers) in [(Some((13, 16)), vec![]), (None, vec!["piano"])] {
-        let p = scoped(range, &layers, vec![PatchOp::SetTempo { bpm: 90.0 }]);
-        assert!(
-            matches!(apply_err(&s, &p), PatchError::OutOfScope { index: 0, .. }),
-            "{range:?} {layers:?}"
-        );
+        for op in [
+            PatchOp::SetTempo { bpm: 90.0 },
+            PatchOp::SetSeed { seed: 9 },
+        ] {
+            let p = scoped(range, &layers, vec![op]);
+            assert!(
+                matches!(apply_err(&s, &p), PatchError::OutOfScope { index: 0, .. }),
+                "{range:?} {layers:?}"
+            );
+        }
     }
     // Unscoped works.
-    let a = apply_ok(&s, &patch(vec![PatchOp::SetTempo { bpm: 90.0 }]));
-    assert_eq!(a.score.tempo.bpm, 90.0);
+    let a = apply_ok(
+        &s,
+        &patch(vec![
+            PatchOp::SetTempo { bpm: 90.0 },
+            PatchOp::SetSeed { seed: 9 },
+        ]),
+    );
+    assert_eq!((a.score.tempo.bpm, a.score.seed), (90.0, 9));
+    assert!(PatchOp::SetSeed { seed: 0 }.is_global());
+    assert_eq!(PatchOp::SetSeed { seed: 0 }.name(), "set_seed");
+}
+
+// ---------------------------------------------------------------- add index (contract B)
+
+#[test]
+fn add_ops_insert_at_index() {
+    let mut s = base_score();
+    s.sections = vec![Section {
+        id: "a".into(),
+        name: String::new(),
+        bars: bars(1, 8),
+        role: SectionRole::Intro,
+        intensity: 0.5,
+    }];
+    let hit = Marker {
+        id: "hit".into(),
+        time_s: 1.0,
+        label: String::new(),
+        kind: MarkerKind::Hit,
+    };
+    s.markers = vec![hit.clone()];
+    let a = apply_ok(
+        &s,
+        &patch(vec![
+            PatchOp::AddPattern {
+                pattern: melody("first"),
+                index: Some(0),
+            },
+            PatchOp::AddLayer {
+                layer: layer("top", GeneratorClass::Harmony, vec![clip(1, 2, "first")]),
+                index: Some(1),
+            },
+            PatchOp::AddSection {
+                section: Section {
+                    id: "zero".into(),
+                    name: String::new(),
+                    bars: bars(9, 16),
+                    role: SectionRole::Main,
+                    intensity: 0.5,
+                },
+                index: Some(0),
+            },
+            PatchOp::AddMarker {
+                marker: Marker {
+                    id: "early".into(),
+                    time_s: 0.5,
+                    ..hit
+                },
+                index: Some(0),
+            },
+        ]),
+    );
+    assert_eq!(a.score.patterns[0].id, "first");
+    let ids: Vec<&str> = a.score.layers.iter().map(|l| l.id.as_str()).collect();
+    assert_eq!(ids, ["piano", "top", "kick", "bass"]);
+    assert_eq!(a.score.sections[0].id, "zero");
+    assert_eq!(a.score.markers[0].id, "early");
+    // index == len appends; past the end is rejected, never clamped.
+    let n = s.patterns.len() as u32;
+    apply_ok(
+        &s,
+        &patch(vec![PatchOp::AddPattern {
+            pattern: melody("last"),
+            index: Some(n),
+        }]),
+    );
+    let e = apply_err(
+        &s,
+        &patch(vec![PatchOp::AddPattern {
+            pattern: melody("far"),
+            index: Some(n + 1),
+        }]),
+    );
+    assert!(matches!(e, PatchError::Invalid(_)), "{e:?}");
+}
+
+#[test]
+fn removals_are_undone_by_an_indexed_add() {
+    let s = base_score();
+    // The first layer, with a locked layer after it: one op, no unlock or re-lock.
+    let a = apply_ok(
+        &s,
+        &patch(vec![PatchOp::RemoveLayer { id: "piano".into() }]),
+    );
+    assert_eq!(
+        a.inverse.ops,
+        vec![PatchOp::AddLayer {
+            layer: s.layers[0].clone(),
+            index: Some(0),
+        }]
+    );
+    let mut tagged = base_score();
+    let sec = |id: &str, a: u32, b: u32| Section {
+        id: id.into(),
+        name: String::new(),
+        bars: bars(a, b),
+        role: SectionRole::Main,
+        intensity: 0.5,
+    };
+    tagged.sections = vec![sec("a", 1, 8), sec("b", 9, 16)];
+    let a = apply_ok(
+        &tagged,
+        &patch(vec![PatchOp::RemoveSection { id: "a".into() }]),
+    );
+    assert_eq!(a.inverse.ops.len(), 1);
 }
 
 #[test]
@@ -250,6 +368,7 @@ fn rule3_layer_ops_must_name_scoped_layer() {
         None,
         &["piano"],
         vec![PatchOp::AddLayer {
+            index: None,
             layer: layer("pad2", GeneratorClass::Harmony, vec![]),
         }],
     );
@@ -302,6 +421,7 @@ fn rule3_bar_scope_limits_whole_layer_changes() {
                 Some((9, 16)),
                 &[],
                 vec![PatchOp::AddLayer {
+                    index: None,
                     layer: extra.clone()
                 }]
             )
@@ -311,7 +431,14 @@ fn rule3_bar_scope_limits_whole_layer_changes() {
     extra.clips = vec![clip(9, 16, "kick")];
     apply_ok(
         &s,
-        &scoped(Some((9, 16)), &[], vec![PatchOp::AddLayer { layer: extra }]),
+        &scoped(
+            Some((9, 16)),
+            &[],
+            vec![PatchOp::AddLayer {
+                index: None,
+                layer: extra,
+            }],
+        ),
     );
     // Kick plays only bars 9-16, so a 9-16 scope may remove it.
     apply_ok(
@@ -582,6 +709,7 @@ fn clips_must_name_existing_patterns_at_every_op() {
     let e = apply_err(
         &s,
         &patch(vec![PatchOp::AddLayer {
+            index: None,
             layer: layer("x", GeneratorClass::Harmony, vec![clip(1, 1, "ghost")]),
         }]),
     );
@@ -632,6 +760,7 @@ fn rule5_inverse_of_every_op_is_exact() {
     tagged.markers = vec![marker("m1", 1.0), marker("m2", 2.0), marker("m3", 3.0)];
     let cases: Vec<(Score, Vec<PatchOp>)> = vec![
         (s.clone(), vec![PatchOp::SetTitle { title: "t".into() }]),
+        (s.clone(), vec![PatchOp::SetSeed { seed: 42 }]),
         (
             s.clone(),
             vec![PatchOp::SetMeta {
@@ -688,6 +817,7 @@ fn rule5_inverse_of_every_op_is_exact() {
         (
             s.clone(),
             vec![PatchOp::AddSection {
+                index: None,
                 section: Section {
                     id: "c".into(),
                     name: String::new(),
@@ -709,7 +839,7 @@ fn rule5_inverse_of_every_op_is_exact() {
                 },
             }],
         ),
-        // Removing the first of two sections / the middle marker needs the reorder chain.
+        // Removing the first of two sections / the middle marker: undone by an indexed add.
         (
             tagged.clone(),
             vec![PatchOp::RemoveSection { id: "a".into() }],
@@ -721,12 +851,14 @@ fn rule5_inverse_of_every_op_is_exact() {
         (
             tagged.clone(),
             vec![PatchOp::AddMarker {
+                index: None,
                 marker: marker("m4", 4.0),
             }],
         ),
         (
             s.clone(),
             vec![PatchOp::AddPattern {
+                index: None,
                 pattern: melody("spare"),
             }],
         ),
@@ -739,12 +871,14 @@ fn rule5_inverse_of_every_op_is_exact() {
         (
             s.clone(),
             vec![PatchOp::AddLayer {
+                index: None,
                 layer: layer("hats", GeneratorClass::Percussion, vec![clip(1, 4, "kick")]),
             }],
         ),
         (
             s.clone(),
             vec![PatchOp::AddLayer {
+                index: None,
                 layer: {
                     let mut l = layer("held", GeneratorClass::Harmony, vec![clip(1, 4, "motif")]);
                     l.locked = true;
@@ -826,7 +960,14 @@ fn rule5_remove_pattern_that_is_not_last() {
         }]),
     );
     assert_eq!(a.score.patterns.len(), 3);
-    assert_eq!(a.inverse.origin, Origin::User);
+    // The inverse is one indexed re-add: no reorder chain, no unlock of the locked bass.
+    assert_eq!(
+        a.inverse.ops,
+        vec![PatchOp::AddPattern {
+            pattern: melody("unused"),
+            index: Some(0),
+        }]
+    );
     // A pattern still in use cannot be removed.
     let e = apply_err(
         &s,
@@ -859,6 +1000,7 @@ fn rule5_multi_op_patch_inverse() {
             bars: bars(14, 14),
         },
         PatchOp::AddLayer {
+            index: None,
             layer: layer("perc", GeneratorClass::Percussion, vec![clip(5, 8, "kick")]),
         },
         PatchOp::SetTempo { bpm: 101.5 },
@@ -888,7 +1030,7 @@ fn rule6_scoped_edit_isolates_bars_and_layers() {
         if orig.id != "piano" {
             assert_eq!(orig, new, "layer {} outside scope", orig.id);
         }
-        // 128 BPM: exact equality, not just within tolerance.
+        // Exact equality of every event.
         assert_eq!(
             outside(&layer_events(&s, &orig.id), bars(13, 16)),
             outside(&layer_events(&a.score, &orig.id), bars(13, 16)),
@@ -1085,11 +1227,11 @@ fn duplicate_and_unknown_ids() {
     let s = base_score();
     let dup = |op: PatchOp| apply_err(&s, &patch(vec![op]));
     assert!(matches!(
-        dup(PatchOp::AddPattern { pattern: melody("motif") }),
+        dup(PatchOp::AddPattern { index: None, pattern: melody("motif") }),
         PatchError::DuplicateId { ref what, .. } if what == "pattern"
     ));
     assert!(matches!(
-        dup(PatchOp::AddLayer { layer: layer("piano", GeneratorClass::Motif, vec![]) }),
+        dup(PatchOp::AddLayer { index: None, layer: layer("piano", GeneratorClass::Motif, vec![]) }),
         PatchError::DuplicateId { ref what, .. } if what == "layer"
     ));
     assert!(matches!(
@@ -1144,6 +1286,7 @@ fn sections_and_markers_respect_bar_scope() {
             Some((9, 16)),
             &[],
             vec![PatchOp::AddSection {
+                index: None,
                 section: sec("b", 9, 16),
             }],
         ),
@@ -1155,6 +1298,7 @@ fn sections_and_markers_respect_bar_scope() {
                 Some((9, 16)),
                 &[],
                 vec![PatchOp::AddSection {
+                    index: None,
                     section: sec("b", 8, 16)
                 }]
             )
@@ -1163,6 +1307,7 @@ fn sections_and_markers_respect_bar_scope() {
     ));
     // Bar 9 starts at 8 * 1.875 s = 15 s at 128 BPM.
     let m = |t: f64| PatchOp::AddMarker {
+        index: None,
         marker: Marker {
             id: "hit".into(),
             time_s: t,

@@ -1,12 +1,8 @@
 //! Isolation checks (rules 4 and 6): compare the note events a layer expands to.
 //!
-//! Events are compared with [`same_event`]: everything that reaches the engine as an integer or a
-//! musical value (stable key, bar, pitch, velocity, accent, sample positions) must be equal, and
-//! the `f64` seconds may differ by at most 1 ns. The tolerance exists because
-//! `timeline::expand_notes` computes `start_s` as `clip_start_s + steps * step_s`, so the same
-//! note reached through a split clip can differ in the last bits of `start_s` (see the timeline
-//! note in the WP-A report). Sample positions differ by at most one sample only in that same
-//! rounding case.
+//! Events are compared with exact equality (`NoteEvent: PartialEq`). `timeline::expand_notes`
+//! computes every note time from one integer step count, so a note reached through a split clip
+//! is bit-identical to the same note in the unsplit clip.
 
 use crate::patch::{PatchError, ScorePatch};
 use crate::timeline::{NoteEvent, expand_notes};
@@ -15,9 +11,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Sample rate used for event comparisons. Any rate works; equal music gives equal events.
 pub(super) const SR: u32 = 48_000;
-
-/// Tolerance on `start_s` / `length_s` in seconds.
-const SECONDS_EPS: f64 = 1e-9;
 
 /// Note events of every layer, keyed by layer id (`NoteEvent::layer` set to 0 so that adding or
 /// removing another layer does not change them).
@@ -48,30 +41,6 @@ pub(super) fn layer_events(s: &Score, li: usize) -> Vec<NoteEvent> {
     out
 }
 
-fn close(a: f64, b: f64) -> bool {
-    a == b || (a - b).abs() <= SECONDS_EPS
-}
-
-/// Equal for rendering purposes (see the module docs).
-pub(super) fn same_event(a: &NoteEvent, b: &NoteEvent) -> bool {
-    let seconds_equal = a.start_s == b.start_s && a.length_s == b.length_s;
-    let samples_ok = if seconds_equal {
-        a.start_sample == b.start_sample && a.length_samples == b.length_samples
-    } else {
-        a.start_sample.abs_diff(b.start_sample) <= 1
-            && a.length_samples.abs_diff(b.length_samples) <= 1
-    };
-    a.layer == b.layer
-        && a.key == b.key
-        && a.bar == b.bar
-        && a.pitch == b.pitch
-        && a.velocity.to_bits() == b.velocity.to_bits()
-        && a.accent == b.accent
-        && close(a.start_s, b.start_s)
-        && close(a.length_s, b.length_s)
-        && samples_ok
-}
-
 /// True when the events of `a` and `b` that satisfy `keep` are the same, in the same order.
 pub(super) fn same_events(
     a: &[NoteEvent],
@@ -80,7 +49,7 @@ pub(super) fn same_events(
 ) -> bool {
     let fa: Vec<&NoteEvent> = a.iter().filter(|e| keep(e)).collect();
     let fb: Vec<&NoteEvent> = b.iter().filter(|e| keep(e)).collect();
-    fa.len() == fb.len() && fa.iter().zip(&fb).all(|(x, y)| same_event(x, y))
+    fa == fb
 }
 
 /// True when bar `bar` lies outside `bars`.

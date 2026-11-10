@@ -236,6 +236,7 @@ enum RawOp {
     },
     AddPattern {
         pat: RawPattern,
+        at: Option<u32>,
     },
     ReplacePattern {
         pattern: usize,
@@ -250,12 +251,16 @@ enum RawOp {
         b: u32,
         pattern: usize,
         locked: bool,
+        at: Option<u32>,
     },
     RemoveLayer {
         layer: usize,
     },
     Tempo {
         bpm: f64,
+    },
+    Seed {
+        seed: u64,
     },
     Key {
         tonic: usize,
@@ -277,13 +282,14 @@ fn raw_op() -> impl Strategy<Value = RawOp> {
         1 => ix.clone().prop_map(|layer| RawOp::Rename { layer }),
         1 => (ix.clone(), -12.0f32..0.0).prop_map(|(layer, db)| RawOp::Gain { layer, db }),
         1 => (ix.clone(), any::<bool>()).prop_map(|(layer, locked)| RawOp::Lock { layer, locked }),
-        1 => raw_pattern().prop_map(|pat| RawOp::AddPattern { pat }),
+        1 => (raw_pattern(), prop::option::of(0u32..4)).prop_map(|(pat, at)| RawOp::AddPattern { pat, at }),
         1 => (ix.clone(), raw_pattern()).prop_map(|(pattern, pat)| RawOp::ReplacePattern { pattern, pat }),
         1 => ix.clone().prop_map(|pattern| RawOp::RemovePattern { pattern }),
-        1 => (0usize..4, bar.clone(), bar.clone(), ix.clone(), any::<bool>())
-            .prop_map(|(class, a, b, pattern, locked)| RawOp::AddLayer { class, a, b, pattern, locked }),
+        1 => (0usize..4, bar.clone(), bar.clone(), ix.clone(), any::<bool>(), prop::option::of(0u32..4))
+            .prop_map(|(class, a, b, pattern, locked, at)| RawOp::AddLayer { class, a, b, pattern, locked, at }),
         1 => ix.clone().prop_map(|layer| RawOp::RemoveLayer { layer }),
         1 => (60.0f64..180.0).prop_map(|bpm| RawOp::Tempo { bpm }),
+        1 => any::<u64>().prop_map(|seed| RawOp::Seed { seed }),
         1 => (0usize..12, any::<bool>()).prop_map(|(tonic, transpose)| RawOp::Key { tonic, transpose }),
     ]
 }
@@ -386,7 +392,8 @@ fn build_op(
             id: pick(*layer)?,
             locked: *locked,
         },
-        RawOp::AddPattern { pat } => PatchOp::AddPattern {
+        RawOp::AddPattern { pat, at } => PatchOp::AddPattern {
+            index: at.map(|i| i % (s.patterns.len() as u32 + 1)),
             pattern: build_pattern(&format!("new{n}"), s.time_signature, pat),
         },
         RawOp::ReplacePattern { pattern, pat } => PatchOp::ReplacePattern {
@@ -401,6 +408,7 @@ fn build_op(
             b,
             pattern,
             locked,
+            at,
         } => {
             let mut l = layer(
                 &format!("added{n}"),
@@ -408,10 +416,14 @@ fn build_op(
                 vec![place_clip(*a, *b, *pattern, 0)],
             );
             l.locked = *locked;
-            PatchOp::AddLayer { layer: l }
+            PatchOp::AddLayer {
+                index: at.map(|i| i % (s.layers.len() as u32 + 1)),
+                layer: l,
+            }
         }
         RawOp::RemoveLayer { layer } => PatchOp::RemoveLayer { id: pick(*layer)? },
         RawOp::Tempo { bpm } => PatchOp::SetTempo { bpm: *bpm },
+        RawOp::Seed { seed } => PatchOp::SetSeed { seed: *seed },
         RawOp::Key { tonic, transpose } => PatchOp::SetKey {
             key: Key {
                 tonic: PitchClass::ALL[*tonic],
