@@ -16,7 +16,7 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 | WP-B2 dsp-effects | next | wp/b2-dsp-effects | |
 | WP-C1 sampler | next | wp/c1-sampler | |
 | WP-D1 analyze-verify | next | wp/d1-analyze-verify | |
-| WP-E audio-io | next | wp/e-audio-io | |
+| WP-E audio-io | **merged** (fbdb8d1) | wp/e-audio-io | WAV/FLAC/OGG/MP3 native, M4A/MP4/MOV/WebM via ffmpeg (hardened), FLAC + stems export, MIDI export; 47 tests. Gaps: no ffmpeg timeout; resampler ~0.5 sample offset |
 | WP-F engine-core | next | wp/f-engine-core | |
 | WP-P planner | next | wp/p-planner | |
 
@@ -35,6 +35,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- Merged WP-E audio-io; accepted its contract corrections (stem tuple, hardened ffmpeg command).
 
 - Phase 0 exit: CI green on all three OSes. ADR-0010: agents are first-class users (MCP server).
 
