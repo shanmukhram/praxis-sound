@@ -80,28 +80,36 @@ fn preset_intrinsic_class_is_blocked_too() {
     assert!(buffers_equal(&out.master, &kick.master));
 }
 
+/// Without the master chain the master is the plain ordered sum of the stems.
+fn raw(stems: bool) -> RenderOptions {
+    RenderOptions {
+        master: false,
+        ..opts(stems)
+    }
+}
+
 #[test]
 fn mute_solo_and_only_layers() {
     let score = bell_score();
-    let all = render(&score, &opts(true));
+    let all = render(&score, &raw(true));
 
     let mut muted = score.clone();
     muted.layers[1].muted = true;
-    let m = render(&muted, &opts(true));
+    let m = render(&muted, &raw(true));
     assert_eq!(m.stems.len(), 1);
     assert_eq!(m.stems[0].layer_id, "piano");
     assert!(buffers_equal(&m.master, stem(&all, "piano")));
 
     let mut solo = score.clone();
     solo.layers[1].solo = true;
-    let s = render(&solo, &opts(true));
+    let s = render(&solo, &raw(true));
     assert_eq!(s.stems.len(), 1);
     assert!(buffers_equal(&s.master, stem(&all, "kick")));
 
     // only_layers is an explicit request: it renders the named layer even when muted.
     let o = RenderOptions {
         only_layers: vec!["kick".into()],
-        ..opts(true)
+        ..raw(true)
     };
     let only = render(&muted, &o);
     assert_eq!(only.stems.len(), 1);
@@ -116,9 +124,11 @@ fn mute_solo_and_only_layers() {
     assert_eq!(none.master.peak_abs(), 0.0);
     assert!(none.report.warnings.iter().any(|w| w.contains("`nope`")));
 
-    // Master equals the ordered sum of the stems.
+    // Master equals the ordered sum of the stems (after the loop-seam stitch, where the stems
+    // and the bus are each cross-faded into their continuation and round differently).
     let (p, k) = (stem(&all, "piano"), stem(&all, "kick"));
-    for i in (0..all.master.len()).step_by(997) {
+    let stitch = praxis_engine::effects::seam_stitch_samples(all.master.len() as u64, SR) as usize;
+    for i in (stitch..all.master.len()).step_by(997) {
         assert_eq!(
             all.master.left[i].to_bits(),
             (p.left[i] + k.left[i]).to_bits()
@@ -215,7 +225,8 @@ fn gain_and_pan_automation() {
 fn instrument_parameter_automation_reaches_the_instrument() {
     let mut score = bell_score();
     score.layers.retain(|l| l.id == "piano");
-    let base = render(&score, &opts(false));
+    // Without the master chain: normalisation would undo the level change.
+    let base = render(&score, &raw(false));
     let mut long = score.clone();
     automate(
         &mut long,
@@ -224,7 +235,7 @@ fn instrument_parameter_automation_reaches_the_instrument() {
         Curve::Step,
         &[(1.0, 3.0)],
     );
-    let l = render(&long, &opts(false));
+    let l = render(&long, &raw(false));
     assert!(rms(&l.master.left) > rms(&base.master.left) * 1.2);
     let mut bad = score.clone();
     automate(
@@ -246,11 +257,14 @@ fn instrument_parameter_automation_reaches_the_instrument() {
 #[test]
 fn frozen_master_gain_is_applied() {
     let score = bell_score();
-    let base = render(&score, &opts(false));
+    // The bus: the sum through the (empty) master chain, before gain and limiter.
+    let base = render(&score, &raw(false));
     let mut frozen = score.clone();
     frozen.master.frozen_gain_db = Some(-6.0);
     let f = render(&frozen, &opts(false));
     assert_eq!(f.report.applied_gain_db, -6.0);
+    // At -6 dB the bell stays far below the -1 dBTP ceiling, so the latency-compensated
+    // limiter is transparent and the master is exactly the bus times the frozen gain.
     let g = praxis_dsp::util::db_to_gain_f64(-6.0) as f32;
     assert!(
         base.master

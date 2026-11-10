@@ -418,3 +418,72 @@ fn chorus_delays_within_its_sweep() {
     assert!((570..=586).contains(&first), "first {first}");
     assert!(c.tail_samples() >= (14.0 * 48.0) as usize);
 }
+
+#[test]
+fn reverb_wet_envelope_builds_up_smoothly_after_the_predelay() {
+    // A natural room: the wet signal of a click starts right after the predelay (early
+    // reflections) and builds up smoothly into the late field, with no gap and no step where
+    // the feedback network's first arrivals come in (heard as a ghost attack).
+    let w = 120; // 2.5 ms windows
+    for (decay, size, damp, pd) in [
+        (1.8f32, 0.35f32, 7000.0f32, 12.0f32),
+        (1.0, 0.0, 20000.0, 0.0),
+        (2.2, 0.6, 7000.0, 15.0),
+        (3.0, 1.0, 7000.0, 40.0),
+        (0.5, 0.3, 20000.0, 5.0),
+    ] {
+        let mut rv = reverb(decay, size, damp);
+        rv.set_param(1, pd);
+        rv.reset();
+        let (l, r) = impulse_response(&mut rv, (SR * 0.3) as usize, 1.0);
+        let start = (pd * SR * 0.001).round() as usize;
+        let first = first_nonzero(&l, 0)
+            .unwrap()
+            .min(first_nonzero(&r, 0).unwrap());
+        assert!(
+            first >= start && first <= start + 48,
+            "wet starts at {first}, predelay {start}"
+        );
+        let env: Vec<f64> = (0..(l.len() - start) / w)
+            .map(|k| {
+                let a = start + k * w;
+                let e: f64 = l[a..a + w]
+                    .iter()
+                    .chain(&r[a..a + w])
+                    .map(|v| (*v as f64).powi(2))
+                    .sum();
+                10.0 * e.max(1e-30).log10()
+            })
+            .collect();
+        let peak = env.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        // Within 5 ms of the predelay the wet is already within 30 dB of its peak.
+        assert!(
+            env[1] > peak - 30.0,
+            "{decay}/{size}: {:.1} vs peak {peak:.1}",
+            env[1]
+        );
+        // From then on (first 200 ms) no window rises more than 4 dB above the previous one
+        // and none falls more than 4 dB below it.
+        let worst_rise = env[2..80]
+            .windows(2)
+            .map(|p| p[1] - p[0])
+            .fold(f64::NEG_INFINITY, f64::max);
+        let worst_fall = env[2..80]
+            .windows(2)
+            .map(|p| p[0] - p[1])
+            .fold(f64::NEG_INFINITY, f64::max);
+        println!(
+            "reverb envelope: RT60 {decay} s, size {size}, predelay {pd} ms: first wet sample +{}              samples, -{:.1} dB at 5 ms, worst step +{worst_rise:.1} / -{worst_fall:.1} dB per 2.5 ms",
+            first - start,
+            peak - env[1]
+        );
+        assert!(
+            worst_rise <= 4.0,
+            "{decay}/{size}: step +{worst_rise:.1} dB"
+        );
+        assert!(
+            worst_fall <= 4.0,
+            "{decay}/{size}: step -{worst_fall:.1} dB"
+        );
+    }
+}

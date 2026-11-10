@@ -11,6 +11,9 @@
 //!   how far notes of bars 13-16 sound past the end of bar 16 (their note length) and `tail` is the
 //!   piano instrument release plus its effect tails. So bars 1-12 are compared over
 //!   `[overhang + tail, start(13))`.
+//! - with a frozen master gain, the master is bit-identical outside that window widened by the
+//!   master chain's tail and limiter settling after it and the limiter lookahead before bar 13
+//!   (`praxis_engine::master::isolation_tail_samples`, `limiter_latency_samples`).
 
 mod common;
 
@@ -78,7 +81,11 @@ fn splitting_a_clip_keeps_the_render_identical() {
 
 #[test]
 fn editing_bars_13_16_of_the_piano_leaves_everything_else_bit_identical() {
-    let score = bell_score();
+    // The piano's FDN reverb is bypassed: its recirculating state keeps float rounding
+    // differences (about -140 dBFS) alive after an edit, so bit identity holds only for
+    // finite-memory chains (mix_master.rs measures the reverb case).
+    let mut score = bell_score();
+    score.layers[0].effects[0].bypass = true;
     let edited = edited_score(&score);
     let tm = TimeMap::new(&score, SR);
     let len = timeline::score_length_samples(&score, SR) as usize;
@@ -112,11 +119,21 @@ fn editing_bars_13_16_of_the_piano_leaves_everything_else_bit_identical() {
             seed: 0,
         };
         let piano = score.layer("piano").unwrap();
+        let mut w = Vec::new();
         praxis_engine::testing::TestFactory::new()
             .create(&piano.instrument, &ctx)
             .unwrap()
             .tail_samples()
-        // + effect tails: the piano's reverb is not built yet (0).
+            + praxis_engine::effects::EffectChain::build(
+                &piano.effects,
+                &praxis_engine::effects::BuiltinEffects,
+                SR as f32,
+                128,
+                score.tempo.bpm as f32,
+                "piano",
+                &mut w,
+            )
+            .tail_samples()
     };
     let wrap_end = overhang + tail;
     assert!(wrap_end < start13);
@@ -161,7 +178,16 @@ fn editing_bars_13_16_of_the_piano_leaves_everything_else_bit_identical() {
     fb.master.frozen_gain_db = Some(-3.0);
     let ma = render(&fa, &opts(false));
     let mb = render(&fb, &opts(false));
-    assert!(identical_in(&ma.master, &mb.master, wrap_end..start13));
+    let master_end = wrap_end
+        + praxis_engine::master::isolation_tail_samples(&fa.master, SR, 128, fa.tempo.bpm as f32)
+            as usize;
+    let lookahead =
+        praxis_engine::master::limiter_latency_samples(&fa.master.loudness, SR, 128) as usize;
+    assert!(identical_in(
+        &ma.master,
+        &mb.master,
+        master_end..start13 - lookahead
+    ));
 }
 
 #[test]

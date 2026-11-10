@@ -1,6 +1,7 @@
 //! Effect-chain plumbing with injected processors: latency compensation keeps stems on the grid,
 //! effect tails raise the loop warm-up, and effect parameters reach the processor.
-//! (Real processors arrive from praxis_dsp::fx in WP-F2.)
+//! The references are rendered with the same injected builder, so the fixture's own effects are
+//! the same (pass-through) processors in both renders.
 
 mod common;
 
@@ -110,12 +111,12 @@ fn fx(delay: usize, tail: usize) -> TestFx {
 #[test]
 fn latency_is_compensated_on_layers_and_master() {
     let score = bell_score();
-    let plain = render(&score, &opts(true));
     let builder = fx(301, 0);
     let config = RenderConfig {
         effects: &builder,
         ..RenderConfig::default()
     };
+    let plain = render_offline_with(&score, &TestFactory::new(), &opts(true), &config).unwrap();
     let mut delayed = score.clone();
     delayed.layers[1].effects.push(delay_fx("lookahead"));
     delayed.master.effects.push(delay_fx("master_lookahead"));
@@ -131,7 +132,7 @@ fn latency_is_compensated_on_layers_and_master() {
     let mut one_plain = score.clone();
     one_plain.playback = one.playback.clone();
     let a = render_offline_with(&one, &TestFactory::new(), &opts(true), &config).unwrap();
-    let b = render(&one_plain, &opts(true));
+    let b = render_offline_with(&one_plain, &TestFactory::new(), &opts(true), &config).unwrap();
     assert!(buffers_equal(&a.master, &b.master));
 }
 
@@ -148,7 +149,17 @@ fn short_loop() -> Score {
 #[test]
 fn effect_tails_raise_loop_warmup() {
     let score = short_loop(); // L = 3.75 s; the test bell's release tail is about 5.2 s
-    let base = render(&score, &opts(false));
+    let pass = fx(1, 0);
+    let base = render_offline_with(
+        &score,
+        &TestFactory::new(),
+        &opts(false),
+        &RenderConfig {
+            effects: &pass,
+            ..RenderConfig::default()
+        },
+    )
+    .unwrap();
     assert_eq!(base.report.warmup_cycles, 2);
     let l = base.report.length_samples as usize;
     let instrument_tail = {

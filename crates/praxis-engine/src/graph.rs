@@ -1,6 +1,7 @@
 //! The per-block render graph: one [`LayerNode`] per rendered layer (sequencer -> instrument ->
-//! effect chain -> gain/pan) summed in score order into the master bus, then the master chain and
-//! master gain.
+//! effect chain -> gain/pan) summed in score order into the master bus, then the master chain.
+//! Master gain and the true-peak limiter run after the graph, in `master.rs`, because loudness
+//! normalisation must measure the bus first.
 //!
 //! The graph is built and preallocated completely before the first block; [`Graph::process_block`]
 //! performs no allocation, locking or I/O, so the same code can later be driven by the real-time
@@ -16,13 +17,26 @@
 //!   changes how another layer is processed.
 //! - Latency compensation: a layer whose chain reports `latency_samples = d` runs its instrument
 //!   `d` samples ahead of the grid (pre-rolled before the first block), so its output is aligned
-//!   with the grid. The master chain's latency is compensated by the driver.
+//!   with the grid. The master chain's latency is compensated by the driver (see `latency.rs`).
+//! - Sidechain (see `sidechain.rs`): layers are processed in an order that puts key layers first;
+//!   each key layer writes its instrument output (pre effects) into a [`KeyTap`] and keyed
+//!   compressors read it at the musical time they process. Sums are always in score order.
 
 use crate::automation::Lane;
 use crate::effects::EffectChain;
 use crate::instrument::Instrument;
+use crate::latency::{KeyAlignment, key_alignment, tap_capacity};
 use crate::mixer;
 use crate::sequencer::{Delivered, Sequencer};
+use crate::sidechain::{Cycle, KeyTap, processing_order};
+
+/// One sidechained compressor of a layer: chain slot, key node, alignment.
+#[derive(Clone, Copy, Debug)]
+struct SidechainFeed {
+    slot: usize,
+    key: usize,
+    align: KeyAlignment,
+}
 
 /// What a parameter lane drives.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -65,6 +79,10 @@ pub struct LayerNode {
     pan: Lane,
     params: Vec<ParamLane>,
     latency: u64,
+    key_only: bool,
+    feeds: Vec<SidechainFeed>,
+    sc_l: Vec<f32>,
+    sc_r: Vec<f32>,
     out_l: Vec<f32>,
     out_r: Vec<f32>,
     n: usize,
@@ -92,14 +110,48 @@ impl LayerNode {
             pan,
             params,
             latency,
+            key_only: false,
+            feeds: Vec::new(),
+            sc_l: Vec::new(),
+            sc_r: Vec::new(),
             out_l: vec![0.0; max_block.max(1)],
             out_r: vec![0.0; max_block.max(1)],
             n: 0,
         }
     }
 
+    /// A node that only runs its instrument to key other layers' compressors: it is not mixed
+    /// and has no stem (its layer is not rendered, see `sidechain.rs`).
+    pub fn key_only(
+        layer_id: String,
+        instrument: Box<dyn Instrument>,
+        seq: Sequencer,
+        max_block: usize,
+    ) -> LayerNode {
+        let mut n = LayerNode::new(
+            layer_id,
+            instrument,
+            seq,
+            EffectChain::empty(),
+            Lane::constant(0.0),
+            Lane::constant(0.0),
+            Vec::new(),
+            max_block,
+        );
+        n.key_only = true;
+        n
+    }
+
     pub fn layer_id(&self) -> &str {
         &self.layer_id
+    }
+
+    pub fn is_key_only(&self) -> bool {
+        self.key_only
+    }
+
+    pub fn chain(&self) -> &EffectChain {
+        &self.chain
     }
 
     /// Instrument release tail plus the chain's effect tails, in samples.
@@ -147,18 +199,20 @@ impl LayerNode {
         }
     }
 
-    /// Runs the instrument and chain over `[0, latency)` so the output lines up with the grid.
-    pub fn preroll(&mut self) {
-        let max = self.out_l.len();
-        let mut t = 0u64;
-        while t < self.latency {
-            let n = ((self.latency - t) as usize).min(max);
-            self.run_instrument(t, n);
-            self.chain
-                .process(&mut self.out_l[..n], &mut self.out_r[..n]);
-            t += n as u64;
+    /// Reads the sidechain keys for a chain-input block at musical time `start` and hands them to
+    /// the compressors.
+    fn feed_sidechains(&mut self, start: u64, n: usize, taps: &[Option<KeyTap>]) {
+        for f in &self.feeds {
+            if let Some(tap) = taps.get(f.key).and_then(|t| t.as_ref()) {
+                tap.read(
+                    f.align.key_start(start),
+                    &mut self.sc_l[..n],
+                    &mut self.sc_r[..n],
+                );
+                self.chain
+                    .set_sidechain(f.slot, &self.sc_l[..n], &self.sc_r[..n]);
+            }
         }
-        self.n = 0;
     }
 
     fn set_block_params(&mut self, grid_t: u64) {
@@ -175,8 +229,9 @@ impl LayerNode {
         }
     }
 
-    /// Processes the grid block `[grid_t, grid_t + n)`.
-    pub fn process(&mut self, grid_t: u64, n: usize) {
+    /// First half of grid block `[grid_t, grid_t + n)`: parameters and instrument. Afterwards
+    /// the output buffers hold the instrument output (pre effects), the sidechain key.
+    fn front(&mut self, grid_t: u64, n: usize) {
         let n = n.min(self.out_l.len());
         self.n = n;
         if n == 0 {
@@ -184,6 +239,15 @@ impl LayerNode {
         }
         self.set_block_params(grid_t);
         self.run_instrument(grid_t + self.latency, n);
+    }
+
+    /// Second half: sidechain keys, effect chain, gain/pan.
+    fn back(&mut self, grid_t: u64, taps: &[Option<KeyTap>]) {
+        let n = self.n;
+        if n == 0 || self.key_only {
+            return;
+        }
+        self.feed_sidechains(grid_t + self.latency, n, taps);
         self.chain
             .process(&mut self.out_l[..n], &mut self.out_r[..n]);
         let at = |gain: &Lane, pan: &Lane, t: u64| {
@@ -198,11 +262,12 @@ impl LayerNode {
     }
 }
 
-/// All layers plus the master bus.
+/// All layers plus the master bus (sum and master effects; gain and limiter are in `master.rs`).
 pub struct Graph {
     layers: Vec<LayerNode>,
+    order: Vec<usize>,
+    taps: Vec<Option<KeyTap>>,
     master: EffectChain,
-    master_gain: f32,
     mix_l: Vec<f32>,
     mix_r: Vec<f32>,
     max_block: usize,
@@ -210,29 +275,74 @@ pub struct Graph {
 }
 
 impl Graph {
-    /// `master_gain` is linear (frozen gain or, later, normalisation gain).
+    /// Wires the sidechains (keys by layer id among `layers`) and allocates every buffer.
+    /// Problems (a key layer that is not in the graph, a key read late because of latency) go to
+    /// `warnings`; a sidechain cycle is an error.
     pub fn new(
-        layers: Vec<LayerNode>,
+        mut layers: Vec<LayerNode>,
         master: EffectChain,
-        master_gain: f32,
         max_block: usize,
-    ) -> Graph {
+        warnings: &mut Vec<String>,
+    ) -> Result<Graph, Cycle> {
         let max_block = max_block.max(1);
-        Graph {
+        let ids: Vec<String> = layers.iter().map(|l| l.layer_id.clone()).collect();
+        let lat: Vec<u64> = layers.iter().map(|l| l.latency).collect();
+        let mut keys: Vec<Vec<usize>> = vec![Vec::new(); layers.len()];
+        for (i, node) in layers.iter_mut().enumerate() {
+            let mut feeds = Vec::new();
+            for (slot, key_id) in node.chain.sidechains() {
+                let Some(k) = ids.iter().position(|id| *id == key_id) else {
+                    warnings.push(format!(
+                        "layer `{}`: sidechain key layer `{key_id}` is not rendered (avoid-list); the compressor runs unkeyed",
+                        node.layer_id
+                    ));
+                    continue;
+                };
+                let pre = node.chain.latency_before(slot) as u64;
+                let align = key_alignment(node.latency, pre, lat[k]);
+                if align.lag > 0 {
+                    warnings.push(format!(
+                        "layer `{}`: sidechain key from `{key_id}` arrives {} samples late (latency of the effects after the compressor)",
+                        node.layer_id, align.lag
+                    ));
+                }
+                keys[i].push(k);
+                feeds.push(SidechainFeed {
+                    slot,
+                    key: k,
+                    align,
+                });
+            }
+            if !feeds.is_empty() {
+                node.sc_l = vec![0.0; max_block];
+                node.sc_r = vec![0.0; max_block];
+            }
+            node.feeds = feeds;
+        }
+        let mut taps: Vec<Option<KeyTap>> = (0..layers.len()).map(|_| None).collect();
+        for &j in keys.iter().flatten() {
+            if taps[j].is_none() {
+                taps[j] = Some(KeyTap::new(tap_capacity(lat[j], max_block)));
+            }
+        }
+        let order = processing_order(&ids, &keys)?;
+        Ok(Graph {
             layers,
+            order,
+            taps,
             master,
-            master_gain,
             mix_l: vec![0.0; max_block],
             mix_r: vec![0.0; max_block],
             max_block,
             n: 0,
-        }
+        })
     }
 
     pub fn max_block(&self) -> usize {
         self.max_block
     }
 
+    /// Every node in score order, including key-only nodes (see [`LayerNode::is_key_only`]).
     pub fn layers(&self) -> &[LayerNode] {
         &self.layers
     }
@@ -245,10 +355,27 @@ impl Graph {
         self.master.tail_samples() as u64
     }
 
-    /// Pre-rolls every latency-compensated layer. Call once before the first block.
+    /// Pre-rolls every latency-compensated layer over `[0, latency)`, keys first. Call once
+    /// before the first block.
     pub fn preroll(&mut self) {
-        for l in &mut self.layers {
-            l.preroll();
+        for oi in 0..self.order.len() {
+            let i = self.order[oi];
+            let latency = self.layers[i].latency;
+            let max = self.layers[i].out_l.len();
+            let mut t = 0u64;
+            while t < latency {
+                let n = ((latency - t) as usize).min(max);
+                let node = &mut self.layers[i];
+                node.run_instrument(t, n);
+                if let Some(tap) = self.taps[i].as_mut() {
+                    tap.write(t, &node.out_l[..n], &node.out_r[..n]);
+                }
+                node.feed_sidechains(t, n, &self.taps);
+                node.chain
+                    .process(&mut node.out_l[..n], &mut node.out_r[..n]);
+                t += n as u64;
+            }
+            self.layers[i].n = 0;
         }
     }
 
@@ -256,19 +383,30 @@ impl Graph {
     pub fn process_block(&mut self, grid_t: u64, n: usize) {
         let n = n.min(self.max_block);
         self.n = n;
+        for oi in 0..self.order.len() {
+            let i = self.order[oi];
+            let node = &mut self.layers[i];
+            node.front(grid_t, n);
+            if let Some(tap) = self.taps[i].as_mut() {
+                let m = node.n;
+                tap.write(grid_t + node.latency, &node.out_l[..m], &node.out_r[..m]);
+            }
+            node.back(grid_t, &self.taps);
+        }
         self.mix_l[..n].fill(0.0);
         self.mix_r[..n].fill(0.0);
-        for l in &mut self.layers {
-            l.process(grid_t, n);
+        for l in &self.layers {
+            if l.key_only {
+                continue;
+            }
             let (sl, sr) = l.output();
             mixer::sum_into(&mut self.mix_l[..n], &mut self.mix_r[..n], sl, sr);
         }
         self.master
             .process(&mut self.mix_l[..n], &mut self.mix_r[..n]);
-        mixer::apply_gain(&mut self.mix_l[..n], &mut self.mix_r[..n], self.master_gain);
     }
 
-    /// The last processed master block (after the master chain and gain).
+    /// The last processed master bus block (after the master chain, before gain and limiter).
     pub fn master_output(&self) -> (&[f32], &[f32]) {
         (&self.mix_l[..self.n], &self.mix_r[..self.n])
     }

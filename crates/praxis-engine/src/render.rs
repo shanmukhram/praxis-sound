@@ -3,8 +3,9 @@
 //!
 //! Pipeline: notes from `timeline::expand_notes` -> one instrument per layer -> layer effects ->
 //! layer automation -> equal-power gain/pan -> stem; stems summed in `score.layers` order -> master
-//! chain -> frozen gain. Loudness normalisation and the true-peak limiter arrive with WP-F2 (they
-//! need meters); until then the report says so in `warnings`.
+//! effects (the *bus*) -> loudness normalisation or frozen gain -> true-peak limiter (`master.rs`).
+//! Compressors keyed by another layer get that layer's instrument output (`sidechain.rs`); effect
+//! latency is compensated so stems stay on the grid (`latency.rs`).
 //!
 //! Layer selection, in this order:
 //! 1. Avoid-list (FR-3): a layer whose class, or whose preset's intrinsic class
@@ -20,14 +21,15 @@
 
 use crate::api::*;
 use crate::automation::Lane;
-use crate::effects::{BuiltinEffects, EffectBuilder, EffectChain};
+use crate::effects::{self, BuiltinEffects, EffectBuilder, EffectChain};
 use crate::graph::{Graph, LayerNode, ParamLane, ParamTarget};
 use crate::instrument::{InstrumentContext, InstrumentFactory};
 use crate::loopwrap::{self, CapturePlan};
+use crate::master::{self, MasterBus};
 use crate::seeding;
 use crate::sequencer::Sequencer;
 use praxis_dsp::StereoBuffer;
-use praxis_dsp::util::db_to_gain_f64;
+use praxis_dsp::meter::true_peak_dbtp;
 use praxis_score::params::effect_params;
 use praxis_score::timeline::{self, NoteEvent, TimeMap};
 use praxis_score::validate::{self, IssueCode};
@@ -35,8 +37,7 @@ use praxis_score::{Layer, Playback, Score};
 
 /// Engine-level settings beyond [`RenderOptions`].
 pub struct RenderConfig<'a> {
-    /// Where effect processors come from. Default: [`BuiltinEffects`] (none yet, see
-    /// `effects::build_effect`).
+    /// Where effect processors come from. Default: [`BuiltinEffects`] (`praxis_dsp::fx`).
     pub effects: &'a dyn EffectBuilder,
     /// Minimum loop warm-up cycles (the contract's `k` is raised to at least this). Default 0.
     /// Tests use it to show that the captured cycle is already in steady state.
@@ -100,11 +101,16 @@ pub fn render_offline_with(
 
     // ---- build the graph (all allocation happens here, before the first block)
     let notes = timeline::expand_notes(score, sr);
-    let mut nodes = Vec::with_capacity(render_idx.len());
+    let bpm = score.tempo.bpm as f32;
+    let keys = key_layers(score, &render_idx, &blocked);
+    let mut nodes = Vec::with_capacity(render_idx.len() + keys.len());
     let mut max_tail = 0u64;
     let mut notes_rendered = 0u64;
-    for &li in &render_idx {
-        let layer = &score.layers[li];
+    for (li, layer) in score.layers.iter().enumerate() {
+        let rendered = render_idx.contains(&li);
+        if !rendered && !keys.contains(&li) {
+            continue;
+        }
         let ctx = InstrumentContext {
             sample_rate: sr as f32,
             max_block: bs,
@@ -113,75 +119,65 @@ pub fn render_offline_with(
             seed: seeding::layer_seed(score.seed, layer.seed_offset),
         };
         let instrument = factory.create(&layer.instrument, &ctx)?;
-        let owner = format!("layer `{}`", layer.id);
-        let chain = EffectChain::build(
-            &layer.effects,
-            config.effects,
-            sr as f32,
-            bs,
-            &owner,
-            &mut warnings,
-        );
         let layer_notes: Vec<&NoteEvent> = notes.iter().filter(|n| n.layer == li).collect();
-        notes_rendered += layer_notes.len() as u64;
         let seq = Sequencer::new(&layer_notes, period, score.seed, layer.seed_offset);
-        let (gain, pan, params) =
-            build_lanes(layer, factory, &chain, &tm, period, &owner, &mut warnings);
-        let node = LayerNode::new(
-            layer.id.clone(),
-            instrument,
-            seq,
-            chain,
-            gain,
-            pan,
-            params,
-            bs,
-        );
+        let node = if rendered {
+            notes_rendered += layer_notes.len() as u64;
+            let owner = format!("layer `{}`", layer.id);
+            let chain = EffectChain::build(
+                &layer.effects,
+                config.effects,
+                sr as f32,
+                bs,
+                bpm,
+                &owner,
+                &mut warnings,
+            );
+            let (gain, pan, params) =
+                build_lanes(layer, factory, &chain, &tm, period, &owner, &mut warnings);
+            LayerNode::new(
+                layer.id.clone(),
+                instrument,
+                seq,
+                chain,
+                gain,
+                pan,
+                params,
+                bs,
+            )
+        } else {
+            warnings.push(format!(
+                "layer `{}` is not rendered but keys a sidechain; it runs as a key only (not mixed, no stem)",
+                layer.id
+            ));
+            LayerNode::key_only(layer.id.clone(), instrument, seq, bs)
+        };
         let layer_tail = node.sequencer().overhang(len) + node.tail_samples();
         max_tail = max_tail.max(layer_tail);
         nodes.push(node);
     }
 
-    let (master_chain, master_gain_db) = if opts.master {
-        let chain = EffectChain::build(
+    let master_chain = if opts.master {
+        EffectChain::build(
             &score.master.effects,
             config.effects,
             sr as f32,
             bs,
+            bpm,
             "master",
             &mut warnings,
-        );
-        let gain = match score.master.frozen_gain_db {
-            Some(g) if g.is_finite() => g,
-            Some(_) => {
-                warnings.push("master: frozen_gain_db is not finite; ignored".into());
-                0.0
-            }
-            None => {
-                if score.master.loudness.normalize {
-                    warnings.push(
-                        "master: loudness normalisation is not available yet (needs meters, WP-F2); master is unnormalised"
-                            .into(),
-                    );
-                }
-                0.0
-            }
-        };
-        warnings.push(
-            "master: true-peak limiter and loudness meters are not available yet (WP-F2); loudness and true peak were not measured"
-                .into(),
-        );
-        (chain, gain)
+        )
     } else {
-        (EffectChain::empty(), 0.0)
+        EffectChain::empty()
+    };
+    let mut master_bus = if opts.master {
+        Some(MasterBus::new(&score.master, sr, bs, &mut warnings).map_err(RenderError::Other)?)
+    } else {
+        None
     };
 
-    let mut graph = Graph::new(
-        nodes,
-        master_chain,
-        db_to_gain_f64(master_gain_db) as f32,
-        bs,
-    );
+    let mut graph = Graph::new(nodes, master_chain, bs, &mut warnings)
+        .map_err(|c| RenderError::InvalidScore(format!("sidechain cycle: {c}")))?;
     max_tail = max_tail.saturating_add(graph.master_tail());
 
     let plan: CapturePlan = if is_loop {
@@ -191,11 +187,18 @@ pub fn render_offline_with(
     };
     let master_latency = graph.master_latency();
     let cap_len = plan.len as usize;
+    // Loops also capture the first samples of the next cycle to stitch the seam (effects.rs).
+    let stitch = if is_loop {
+        effects::seam_stitch_samples(plan.len, sr)
+    } else {
+        0
+    };
+    let win = plan.len + stitch;
 
-    let mut master = StereoBuffer::silent(cap_len);
+    let mut bus = StereoBuffer::silent(win as usize);
     let mut stems: Vec<StereoBuffer> = if opts.stems {
         (0..graph.layers().len())
-            .map(|_| StereoBuffer::silent(cap_len))
+            .map(|_| StereoBuffer::silent(win as usize))
             .collect()
     } else {
         Vec::new()
@@ -203,26 +206,52 @@ pub fn render_offline_with(
 
     // ---- the block loop: no allocation from here on
     graph.preroll();
-    let grid_end = plan.end() + master_latency;
+    let grid_end = plan.start + win + master_latency;
     let master_start = plan.start + master_latency;
     let mut t = 0u64;
     while t < grid_end {
         let n = ((grid_end - t) as usize).min(bs);
         graph.process_block(t, n);
-        let (ms, me) = (master_start, master_start + plan.len);
-        copy_window(graph.master_output(), t, ms, me, &mut master);
+        let (ms, me) = (master_start, master_start + win);
+        copy_window(graph.master_output(), t, ms, me, &mut bus);
         if opts.stems {
             for (node, stem) in graph.layers().iter().zip(stems.iter_mut()) {
-                copy_window(node.output(), t, plan.start, plan.end(), stem);
+                if !node.is_key_only() {
+                    copy_window(node.output(), t, plan.start, plan.start + win, stem);
+                }
             }
         }
         t += n as u64;
     }
+    effects::stitch_loop_seam(&mut bus, cap_len);
+    for stem in &mut stems {
+        effects::stitch_loop_seam(stem, cap_len);
+    }
+
+    // ---- master: gain (frozen or measured) and the true-peak limiter
+    let (master, loudness_before, loudness, true_peak, applied_gain_db) = match &mut master_bus {
+        Some(mb) => {
+            let r = mb.finish(&bus, is_loop, &mut warnings);
+            (
+                r.audio,
+                r.loudness_before_lufs,
+                r.loudness_lufs,
+                r.true_peak_dbtp,
+                r.applied_gain_db,
+            )
+        }
+        None => {
+            let l = master::measure_lufs(&bus, sr, is_loop);
+            let tp = true_peak_dbtp(&bus.left, &bus.right, sr as f32);
+            (bus, l, l, tp, 0.0)
+        }
+    };
 
     let stems = graph
         .layers()
         .iter()
         .zip(stems)
+        .filter(|(node, _)| !node.is_key_only())
         .map(|(node, audio)| Stem {
             layer_id: node.layer_id().to_string(),
             audio,
@@ -246,10 +275,10 @@ pub fn render_offline_with(
                 timeline::tail_samples(score, sr)
             },
             is_loop,
-            loudness_before_lufs: f64::NEG_INFINITY,
-            loudness_lufs: f64::NEG_INFINITY,
-            true_peak_dbtp: f64::NEG_INFINITY,
-            applied_gain_db: master_gain_db,
+            loudness_before_lufs: loudness_before,
+            loudness_lufs: loudness,
+            true_peak_dbtp: true_peak,
+            applied_gain_db,
             warmup_cycles: plan.warmup_cycles,
             notes_rendered,
             blocked_layers: blocked,
@@ -274,6 +303,30 @@ fn copy_window(block: (&[f32], &[f32]), t: u64, start: u64, end: u64, out: &mut 
     let n = (to - from) as usize;
     out.left[dst..dst + n].copy_from_slice(&l[src..src + n]);
     out.right[dst..dst + n].copy_from_slice(&r[src..src + n]);
+}
+
+/// Indices of layers that are not rendered (and not blocked) but key a sidechain of a rendered
+/// layer, in score order.
+fn key_layers(score: &Score, render_idx: &[usize], blocked: &[String]) -> Vec<usize> {
+    let mut out = Vec::new();
+    for &li in render_idx {
+        for e in &score.layers[li].effects {
+            if e.bypass {
+                continue;
+            }
+            let Some(k) = e.sidechain.as_deref() else {
+                continue;
+            };
+            let Some(ki) = score.layers.iter().position(|l| l.id == k) else {
+                continue;
+            };
+            if !render_idx.contains(&ki) && !blocked.iter().any(|b| b == k) && !out.contains(&ki) {
+                out.push(ki);
+            }
+        }
+    }
+    out.sort_unstable();
+    out
 }
 
 /// Returns (indices of layers to render, ids of layers blocked by the avoid-list).

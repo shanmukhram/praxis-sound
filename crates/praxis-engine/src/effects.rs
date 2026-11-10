@@ -1,30 +1,58 @@
-//! Effect-chain plumbing for layers and the master bus.
+//! Effect chains for layers and the master bus (FR-23, FR-24 wiring).
 //!
-//! Effect processors themselves come from `praxis_dsp::fx` (WP-B2), which is not wired yet:
-//! [`build_effect`] returns `None` for every kind, and every effect that could not be built is
-//! listed in `RenderReport::warnings` (never silently dropped). WP-F2 replaces the body of
-//! [`build_effect`] with the real factory; nothing else in the engine changes.
+//! Processors come from `praxis_dsp::fx` (WP-B2) through [`BuiltinEffects`]; tests and later
+//! packages can inject their own through an [`EffectBuilder`]. Every effect that cannot be built
+//! is listed in `RenderReport::warnings`, never silently dropped.
 //!
-//! When a processor exists the chain honours its contract: `prepare` before the first block,
-//! initial parameters set from the score (clamped to `praxis_score::params`), `tail_samples`
-//! summed into the loop warm-up planning, and `latency_samples` summed for latency compensation.
-//! Tests and later packages can inject processors through an [`EffectBuilder`].
+//! Building one effect ([`EffectChain::build`]):
+//! 1. bypassed effects are left out;
+//! 2. `convolution_reverb` asks the builder for its impulse response ([`EffectBuilder::impulse`]);
+//!    the built-in one knows the synthetic IRs [`IMPULSE_NAMES`] (an unknown name is a warning and
+//!    the effect is skipped; no name uses [`DEFAULT_IMPULSE`]);
+//! 3. the processor is created, `prepare`d, given every parameter from the spec (defaults from
+//!    `praxis_score::params`, clamped to the spec range) and the score tempo (`set_tempo`, used by
+//!    the delay), then the impulse response, then `reset` so the first sample already runs at the
+//!    score's settings (no start-up glide from the processor's defaults).
+//!
+//! The chain reports `tail_samples` (each processor's tail capped at [`MAX_EFFECT_TAIL_SECONDS`],
+//! because a delay at high feedback can report minutes) for loop warm-up planning and
+//! `latency_samples` for latency compensation (see `latency.rs`). Compressors with a `sidechain`
+//! are listed by [`EffectChain::sidechains`]; the graph feeds their key (see `sidechain.rs`).
 
-use praxis_dsp::Processor;
+use praxis_dsp::fx;
+use praxis_dsp::rng::{Pcg32, derive};
+use praxis_dsp::{Processor, StereoBuffer};
 use praxis_score::params::{effect_param_value, effect_params};
+use praxis_score::timeline::stable_hash;
 use praxis_score::{Effect, EffectKind};
 
-/// Builds a processor for one effect spec. Returns `None` when the kind is not available.
+/// Upper bound for one effect's tail in warm-up and isolation planning.
+pub const MAX_EFFECT_TAIL_SECONDS: f64 = 30.0;
+
+/// Built-in synthetic impulse responses for `convolution_reverb`.
+pub const IMPULSE_NAMES: [&str; 3] = ["room_small", "room_medium", "hall"];
+
+/// The impulse response used when a convolution effect names none.
+pub const DEFAULT_IMPULSE: &str = "room_medium";
+
+/// Builds a processor for one effect spec.
 pub trait EffectBuilder: Send + Sync {
+    /// Returns `None` when the kind is not available.
     fn build(
         &self,
         effect: &Effect,
         sample_rate: f32,
         max_block: usize,
     ) -> Option<Box<dyn Processor>>;
+
+    /// The impulse response for a `convolution_reverb` effect: `Ok(None)` for none (other kinds),
+    /// `Err(reason)` to skip the effect with a warning. Called off the audio thread.
+    fn impulse(&self, _effect: &Effect, _sample_rate: f32) -> Result<Option<StereoBuffer>, String> {
+        Ok(None)
+    }
 }
 
-/// The engine's built-in effects: currently none (see [`build_effect`]).
+/// The engine's built-in effects: `praxis_dsp::fx` and the synthetic impulse responses.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct BuiltinEffects;
 
@@ -35,36 +63,174 @@ impl EffectBuilder for BuiltinEffects {
         sample_rate: f32,
         max_block: usize,
     ) -> Option<Box<dyn Processor>> {
-        build_effect(effect, sample_rate, max_block)
+        fx::create(kind_index(effect.kind), sample_rate, max_block)
+    }
+
+    fn impulse(&self, effect: &Effect, sample_rate: f32) -> Result<Option<StereoBuffer>, String> {
+        if effect.kind != EffectKind::ConvolutionReverb {
+            return Ok(None);
+        }
+        let name = effect.impulse.as_deref().unwrap_or(DEFAULT_IMPULSE);
+        builtin_impulse(name, sample_rate).map(Some).ok_or_else(|| {
+            format!(
+                "unknown impulse response `{name}` (built in: {})",
+                IMPULSE_NAMES.join(", ")
+            )
+        })
     }
 }
 
-/// Builds the processor for `effect`. Phase 1: `praxis_dsp::fx` (WP-B2) is not available to the
-/// engine yet, so this returns `None` for every kind and the caller reports the effect as skipped.
+/// Builds and configures the processor for `effect` with the built-in effects (parameters from
+/// the spec, tempo, impulse response). `Err` says why it could not be built.
 pub fn build_effect(
     effect: &Effect,
     sample_rate: f32,
     max_block: usize,
-) -> Option<Box<dyn Processor>> {
-    let _ = (effect, sample_rate, max_block);
-    None
+    bpm: f32,
+) -> Result<Box<dyn Processor>, String> {
+    build_with(&BuiltinEffects, effect, sample_rate, max_block, bpm)
+}
+
+fn build_with(
+    builder: &dyn EffectBuilder,
+    effect: &Effect,
+    sample_rate: f32,
+    max_block: usize,
+    bpm: f32,
+) -> Result<Box<dyn Processor>, String> {
+    let ir = builder.impulse(effect, sample_rate)?;
+    let mut p = builder
+        .build(effect, sample_rate, max_block)
+        .ok_or_else(|| "no processor is available for this kind".to_string())?;
+    p.prepare(sample_rate, max_block);
+    for (i, spec) in effect_params(effect.kind).iter().enumerate() {
+        let v =
+            effect_param_value(effect.kind, &effect.params, spec.name).clamp(spec.min, spec.max);
+        p.set_param(i, v as f32);
+    }
+    p.set_tempo(bpm);
+    if let Some(ir) = &ir {
+        p.set_impulse(ir);
+    }
+    p.reset();
+    Ok(p)
+}
+
+/// Position of `kind` in `praxis_dsp::fx` (eq = 0 .. gain = 10).
+pub fn kind_index(kind: EffectKind) -> usize {
+    match kind {
+        EffectKind::Eq => 0,
+        EffectKind::Filter => 1,
+        EffectKind::Compressor => 2,
+        EffectKind::Saturation => 3,
+        EffectKind::Delay => 4,
+        EffectKind::Reverb => 5,
+        EffectKind::ConvolutionReverb => 6,
+        EffectKind::Chorus => 7,
+        EffectKind::Width => 8,
+        EffectKind::Limiter => 9,
+        EffectKind::Gain => 10,
+    }
 }
 
 /// Score name of an effect kind, for messages.
 pub fn kind_name(kind: EffectKind) -> &'static str {
-    match kind {
-        EffectKind::Eq => "eq",
-        EffectKind::Filter => "filter",
-        EffectKind::Compressor => "compressor",
-        EffectKind::Saturation => "saturation",
-        EffectKind::Delay => "delay",
-        EffectKind::Reverb => "reverb",
-        EffectKind::ConvolutionReverb => "convolution_reverb",
-        EffectKind::Chorus => "chorus",
-        EffectKind::Width => "width",
-        EffectKind::Limiter => "limiter",
-        EffectKind::Gain => "gain",
+    fx::KIND_NAMES[kind_index(kind)]
+}
+
+/// Reverberation time (RT60, seconds) of a built-in impulse response.
+pub fn impulse_rt60(name: &str) -> Option<f64> {
+    match name {
+        "room_small" => Some(0.45),
+        "room_medium" => Some(1.1),
+        "hall" => Some(2.6),
+        _ => None,
     }
+}
+
+/// A built-in synthetic impulse response at `sample_rate`: decorrelated seeded noise per channel
+/// with an exponential decay reaching -60 dB at the RT60, high frequencies decaying faster (a
+/// one-pole low-pass closing over time), a 2 ms onset ramp, and a raised-cosine fade over the last
+/// 10 % so the truncation at 1.5 x RT60 (-90 dB) is smooth. Each channel is scaled to unit energy,
+/// so the wet signal is about as loud as the dry one. Deterministic: seeded from the name.
+pub fn builtin_impulse(name: &str, sample_rate: f32) -> Option<StereoBuffer> {
+    let rt60 = impulse_rt60(name)?;
+    let sr = sample_rate as f64;
+    let n = ((rt60 * 1.5 * sr).round() as usize).max(1);
+    let seed = stable_hash(&[b"praxis-ir", name.as_bytes()]);
+    let onset = (0.002 * sr).max(1.0);
+    let fade_from = n as f64 * 0.9;
+    let decay = -3.0 * std::f64::consts::LN_10 / (rt60 * sr); // ln(1e-3) per RT60
+    let chan = |salt: u64| -> Vec<f32> {
+        let mut rng = Pcg32::new(derive(seed, salt));
+        let mut lp = 0.0f64;
+        let mut out = Vec::with_capacity(n);
+        let mut energy = 0.0f64;
+        for i in 0..n {
+            let t = i as f64;
+            let x = rng.next_bipolar() as f64;
+            // Low-pass coefficient from bright (0.95) to dark (0.15) across the RT60.
+            let a = 0.15 + 0.8 * (-(t / (0.6 * rt60 * sr))).exp();
+            lp += a * (x - lp);
+            let mut g = (decay * t).exp();
+            if t < onset {
+                g *= t / onset;
+            }
+            if t > fade_from {
+                let f = (t - fade_from) / (n as f64 - fade_from);
+                g *= 0.5 * (1.0 + (std::f64::consts::PI * f).cos());
+            }
+            let v = lp * g;
+            energy += v * v;
+            out.push(v);
+        }
+        let k = if energy > 0.0 {
+            1.0 / energy.sqrt()
+        } else {
+            0.0
+        };
+        out.into_iter().map(|v| (v * k) as f32).collect()
+    };
+    let left = chan(1);
+    let right = chan(2);
+    Some(StereoBuffer { left, right })
+}
+
+/// Length of the loop-seam stitch ([`stitch_loop_seam`]).
+pub const SEAM_STITCH_SECONDS: f64 = 0.05;
+
+/// Samples of the next cycle a loop render captures for [`stitch_loop_seam`]: 50 ms, at most a
+/// quarter of the loop.
+pub fn seam_stitch_samples(loop_len: u64, sample_rate: u32) -> u64 {
+    let n = (SEAM_STITCH_SECONDS * sample_rate as f64).round() as u64;
+    n.min(loop_len / 4)
+}
+
+/// Makes a captured loop cycle continue exactly into its own start.
+///
+/// `audio` holds the captured cycle `[0, len)` followed by the first samples of the next cycle
+/// of the continuous render. In steady state the two are bit-identical and nothing changes.
+/// Time-varying effects (the chorus's LFO, any modulated processor) are not periodic with the loop,
+/// so the next cycle's start differs slightly from the captured start and a looping player would
+/// hear a small discontinuity at the seam. The start of the cycle is therefore cross-faded from
+/// the next cycle's samples (the exact continuation of sample `len - 1`) into the captured ones
+/// with a raised-cosine weight. Both carry the same music, so this is a splice, not a fade: the
+/// level is unchanged. Samples that are already bit-identical are left untouched, so dry or
+/// time-invariant renders stay bit-exact. Finally `audio` is truncated to `len`.
+pub fn stitch_loop_seam(audio: &mut StereoBuffer, len: usize) {
+    let n = audio.len().saturating_sub(len);
+    for i in 0..n {
+        // Weight of the captured cycle: ~0 at sample 0, 1 at the end of the stitch.
+        let w = 0.5 - 0.5 * (std::f64::consts::PI * (i as f64 + 0.5) / n as f64).cos();
+        for ch in [&mut audio.left, &mut audio.right] {
+            let (x, next) = (ch[i], ch[len + i]);
+            if x.to_bits() != next.to_bits() {
+                ch[i] = (next as f64 * (1.0 - w) + x as f64 * w) as f32;
+            }
+        }
+    }
+    audio.left.truncate(len);
+    audio.right.truncate(len);
 }
 
 /// One built effect in a chain.
@@ -72,26 +238,32 @@ pub struct ChainSlot {
     pub effect_id: String,
     pub kind: EffectKind,
     pub processor: Box<dyn Processor>,
+    /// Layer whose instrument output keys this slot (compressor sidechain).
+    pub sidechain: Option<String>,
 }
 
 /// Effects in order, processed in place.
 #[derive(Default)]
 pub struct EffectChain {
     slots: Vec<ChainSlot>,
+    /// Tail cap in samples ([`MAX_EFFECT_TAIL_SECONDS`] at the chain's sample rate).
+    tail_cap: usize,
 }
 
 impl EffectChain {
     pub fn empty() -> EffectChain {
-        EffectChain { slots: Vec::new() }
+        EffectChain::default()
     }
 
-    /// Builds the chain for `effects`. Bypassed effects are left out. Effects the builder cannot
-    /// make are skipped and reported in `warnings`, prefixed with `owner` ("layer `piano`").
+    /// Builds the chain for `effects`. Bypassed effects are left out. Effects that cannot be built
+    /// are skipped and reported in `warnings`, prefixed with `owner` ("layer `piano`").
+    /// `bpm` is the score tempo for tempo-synced effects.
     pub fn build(
         effects: &[Effect],
         builder: &dyn EffectBuilder,
         sample_rate: f32,
         max_block: usize,
+        bpm: f32,
         owner: &str,
         warnings: &mut Vec<String>,
     ) -> EffectChain {
@@ -100,32 +272,44 @@ impl EffectChain {
             if e.bypass {
                 continue;
             }
-            let Some(mut p) = builder.build(e, sample_rate, max_block) else {
+            if e.kind == EffectKind::ConvolutionReverb && e.impulse.is_none() {
                 warnings.push(format!(
-                    "{owner}: effect `{}` ({}) skipped: effect processors are not available in the engine yet (praxis_dsp::fx, WP-B2/WP-F2)",
-                    e.id,
-                    kind_name(e.kind)
-                ));
-                continue;
-            };
-            p.prepare(sample_rate, max_block);
-            for (i, spec) in effect_params(e.kind).iter().enumerate() {
-                let v = effect_param_value(e.kind, &e.params, spec.name).clamp(spec.min, spec.max);
-                p.set_param(i, v as f32);
-            }
-            if let Some(sc) = &e.sidechain {
-                warnings.push(format!(
-                    "{owner}: effect `{}` sidechain from `{sc}` is not wired yet (WP-F2); it runs unkeyed",
+                    "{owner}: effect `{}` (convolution_reverb) names no impulse response; using `{DEFAULT_IMPULSE}`",
                     e.id
                 ));
             }
+            let p = match build_with(builder, e, sample_rate, max_block, bpm) {
+                Ok(p) => p,
+                Err(why) => {
+                    warnings.push(format!(
+                        "{owner}: effect `{}` ({}) skipped: {why}",
+                        e.id,
+                        kind_name(e.kind)
+                    ));
+                    continue;
+                }
+            };
+            let sidechain = match (&e.sidechain, e.kind) {
+                (Some(sc), EffectKind::Compressor) => Some(sc.clone()),
+                (Some(sc), k) => {
+                    warnings.push(format!(
+                        "{owner}: effect `{}` ({}) cannot take a sidechain (from `{sc}`); ignored",
+                        e.id,
+                        kind_name(k)
+                    ));
+                    None
+                }
+                (None, _) => None,
+            };
             slots.push(ChainSlot {
                 effect_id: e.id.clone(),
                 kind: e.kind,
                 processor: p,
+                sidechain,
             });
         }
-        EffectChain { slots }
+        let tail_cap = (MAX_EFFECT_TAIL_SECONDS * sample_rate as f64).round() as usize;
+        EffectChain { slots, tail_cap }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -143,17 +327,23 @@ impl EffectChain {
         }
     }
 
-    /// Sum of the processors' tails.
+    /// Sum of the processors' tails, each capped at [`MAX_EFFECT_TAIL_SECONDS`].
     pub fn tail_samples(&self) -> usize {
         self.slots
             .iter()
-            .map(|s| s.processor.tail_samples())
+            .map(|s| s.processor.tail_samples().min(self.tail_cap))
             .fold(0usize, |a, b| a.saturating_add(b))
     }
 
     /// Sum of the processors' latencies.
     pub fn latency_samples(&self) -> usize {
-        self.slots
+        self.latency_before(self.slots.len())
+    }
+
+    /// Latency of the slots before `slot` (how far the signal reaching `slot` lags the chain
+    /// input).
+    pub fn latency_before(&self, slot: usize) -> usize {
+        self.slots[..slot.min(self.slots.len())]
             .iter()
             .map(|s| s.processor.latency_samples())
             .fold(0usize, |a, b| a.saturating_add(b))
@@ -168,9 +358,25 @@ impl EffectChain {
         self.slots.get(slot).map(|s| s.kind)
     }
 
+    /// (slot, key layer id) of every sidechained slot, in chain order.
+    pub fn sidechains(&self) -> Vec<(usize, String)> {
+        self.slots
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| s.sidechain.clone().map(|k| (i, k)))
+            .collect()
+    }
+
     pub fn set_param(&mut self, slot: usize, index: usize, value: f32) {
         if let Some(s) = self.slots.get_mut(slot) {
             s.processor.set_param(index, value);
+        }
+    }
+
+    /// Feeds the sidechain key of `slot` for its next `process` call.
+    pub fn set_sidechain(&mut self, slot: usize, left: &[f32], right: &[f32]) {
+        if let Some(s) = self.slots.get_mut(slot) {
+            s.processor.set_sidechain(left, right);
         }
     }
 
@@ -185,32 +391,119 @@ impl EffectChain {
 mod tests {
     use super::*;
 
+    fn effect(id: &str, kind: EffectKind) -> Effect {
+        Effect {
+            id: id.into(),
+            kind,
+            params: Default::default(),
+            bypass: false,
+            sidechain: None,
+            impulse: None,
+        }
+    }
+
     #[test]
-    fn unbuilt_effects_are_reported() {
-        let fx = vec![
-            Effect {
-                id: "room".into(),
-                kind: EffectKind::Reverb,
-                params: Default::default(),
-                bypass: false,
-                sidechain: None,
-                impulse: None,
-            },
-            Effect {
-                id: "off".into(),
-                kind: EffectKind::Eq,
-                params: Default::default(),
-                bypass: true,
-                sidechain: None,
-                impulse: None,
-            },
+    fn every_kind_builds_and_bypass_and_unknown_impulse_are_reported() {
+        let all = [
+            EffectKind::Eq,
+            EffectKind::Filter,
+            EffectKind::Compressor,
+            EffectKind::Saturation,
+            EffectKind::Delay,
+            EffectKind::Reverb,
+            EffectKind::ConvolutionReverb,
+            EffectKind::Chorus,
+            EffectKind::Width,
+            EffectKind::Limiter,
+            EffectKind::Gain,
         ];
+        for (i, k) in all.iter().enumerate() {
+            assert_eq!(kind_index(*k), i);
+            assert!(build_effect(&effect("x", *k), 48_000.0, 128, 120.0).is_ok());
+        }
+        let mut off = effect("off", EffectKind::Eq);
+        off.bypass = true;
+        let mut bad = effect("cave", EffectKind::ConvolutionReverb);
+        bad.impulse = Some("cave".into());
+        let mut hall = effect("hall", EffectKind::ConvolutionReverb);
+        hall.impulse = Some("hall".into());
+        let fx = vec![effect("room", EffectKind::Reverb), off, bad, hall];
         let mut w = Vec::new();
-        let chain = EffectChain::build(&fx, &BuiltinEffects, 48_000.0, 128, "layer `x`", &mut w);
-        assert!(chain.is_empty());
-        assert_eq!(w.len(), 1);
-        assert!(w[0].contains("`room` (reverb) skipped"));
-        assert_eq!(chain.tail_samples(), 0);
+        let chain = EffectChain::build(
+            &fx,
+            &BuiltinEffects,
+            48_000.0,
+            128,
+            120.0,
+            "layer `x`",
+            &mut w,
+        );
+        assert_eq!(chain.len(), 2);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(
+            w[0].contains("`cave` (convolution_reverb) skipped: unknown impulse response `cave`")
+        );
+        // Reverb RT60 2.2 s + hall IR 3.9 s (plus small filter ring-outs).
+        let tail = chain.tail_samples() as f64 / 48_000.0;
+        assert!(tail > 6.0 && tail < 6.5, "tail {tail}");
         assert_eq!(chain.latency_samples(), 0);
+    }
+
+    #[test]
+    fn impulses_are_deterministic_and_decay() {
+        for name in IMPULSE_NAMES {
+            let a = builtin_impulse(name, 48_000.0).unwrap();
+            let b = builtin_impulse(name, 48_000.0).unwrap();
+            assert_eq!(a, b);
+            assert_ne!(a.left, a.right, "channels are decorrelated");
+            let e: f64 = a.left.iter().map(|v| (*v as f64).powi(2)).sum();
+            assert!((e - 1.0).abs() < 1e-4);
+            let rt = impulse_rt60(name).unwrap();
+            let at = |s: f64| {
+                let i = (s * 48_000.0) as usize;
+                let w = &a.left[i..i + 2400];
+                (w.iter().map(|v| (*v as f64).powi(2)).sum::<f64>() / w.len() as f64).sqrt()
+            };
+            // About 60 dB down after one RT60 (the low-pass darkens it a little more).
+            let drop = 20.0 * (at(0.01) / at(rt)).log10();
+            assert!(drop > 55.0 && drop < 75.0, "{name}: {drop} dB");
+        }
+        assert!(builtin_impulse("nope", 48_000.0).is_none());
+    }
+
+    #[test]
+    fn seam_stitch_is_exact_when_periodic_and_continues_otherwise() {
+        let x: Vec<f32> = (0..120).map(|i| (i as f32 * 0.3).sin()).collect();
+        // Periodic: the next cycle's start equals the captured start, nothing changes.
+        let mut a = StereoBuffer {
+            left: [&x[..100], &x[..20]].concat(),
+            right: [&x[..100], &x[..20]].concat(),
+        };
+        a.right[0] = 0.25;
+        a.right[100] = 0.25;
+        stitch_loop_seam(&mut a, 100);
+        assert_eq!(a.left, x[..100].to_vec());
+        assert_eq!(a.right[0], 0.25);
+        // Not periodic: sample 0 becomes (almost exactly) the continuation of sample 99.
+        let mut b = StereoBuffer {
+            left: x.clone(),
+            right: x.clone(),
+        };
+        stitch_loop_seam(&mut b, 100);
+        assert_eq!(b.len(), 100);
+        assert!((b.left[0] - x[100]).abs() < 0.01);
+        assert_eq!(b.left[20..], x[20..100]);
+        assert_eq!(seam_stitch_samples(48_000 * 30, 48_000), 2400);
+        assert_eq!(seam_stitch_samples(400, 48_000), 100);
+    }
+
+    #[test]
+    fn delay_tails_are_capped() {
+        let mut d = effect("echo", EffectKind::Delay);
+        d.params.insert("feedback".into(), 0.95);
+        d.params.insert("time_beats".into(), 4.0);
+        let mut w = Vec::new();
+        let chain = EffectChain::build(&[d], &BuiltinEffects, 48_000.0, 128, 60.0, "m", &mut w);
+        assert!(chain.tail_samples() <= 30 * 48_000);
     }
 }

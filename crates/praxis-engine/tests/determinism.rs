@@ -38,27 +38,14 @@ fn acceptance1_bell_renders_bit_identically_and_matches_golden() {
     // Piano: 8 repeats of an 18-note 2-bar motif; kick: 8 bars x 2 hits.
     assert_eq!(r.notes_rendered, 8 * 18 + 16);
     assert!(r.blocked_layers.is_empty());
-    assert!(r.loudness_lufs == f64::NEG_INFINITY && r.true_peak_dbtp == f64::NEG_INFINITY);
-    for want in [
-        "`room` (reverb) skipped",
-        "`tone` (eq) skipped",
-        "normalisation",
-    ] {
-        assert!(
-            r.warnings.iter().any(|w| w.contains(want)),
-            "missing warning {want}: {:?}",
-            r.warnings
-        );
-    }
+    // The mix bus (WP-F2) builds every effect and normalises the master.
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    assert!((r.loudness_lufs - score.master.loudness.target_lufs).abs() <= 0.5);
+    assert!(r.true_peak_dbtp <= score.master.loudness.true_peak_dbtp + 0.05);
     // Not silent, not clipping.
     let peak = a.master.peak_abs();
     assert!(peak > 0.05 && peak < 1.0, "peak {peak}");
-    let outcome = check(
-        "engine_acceptance1_bell",
-        &a.master,
-        SR,
-        &Tolerance::default(),
-    );
+    let outcome = check("mix_acceptance1_bell", &a.master, SR, &Tolerance::default());
     assert!(matches!(
         outcome,
         Outcome::Identical | Outcome::FeaturesMatch | Outcome::Blessed

@@ -20,6 +20,11 @@ pub mod seeding;
 pub mod sequencer;
 pub mod testing;
 
+// ---- WP-F2 engine mix bus modules ----
+pub mod latency;
+pub mod master;
+pub mod sidechain;
+
 pub use render::{RenderConfig, render_offline_with};
 
 pub use api::{RenderError, RenderOptions, RenderOutput, RenderReport, Stem};
