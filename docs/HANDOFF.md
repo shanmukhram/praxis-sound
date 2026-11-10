@@ -103,7 +103,10 @@ The soft kick layer is skipped until WP-C2 lands (the test says so and tightens 
 
 Test totals at handoff: 386 Rust tests pass in release; app: 140 unit tests on the WP-U2 branch.
 
-## 5. In flight (updated 2026-11-11: WP-K merged; C2, F2, P2 still being finished by sub-agents)
+## 5. In flight (updated 2026-11-11: WP-K, WP-P2, WP-C2 merged; WP-F2 mix bus and WP-X MCP server running as sub-agents)
+
+Running: WP-F2 in worktree `clever-cori-d1bc75` (branch `wp/f2-mix-bus`); WP-X MCP server in an
+agent worktree under `.claude/worktrees/` (branch `wp/x-agents`). Next after WP-X merges: WP-U3.
 
 WP-K CLI is merged (`670353e`): `praxis_cli::ops` is the shared command layer for the app (WP-U3)
 and the MCP server (WP-X).
@@ -169,16 +172,16 @@ owner to open sessions, and take screenshots with headless Edge (section 8).
 
 1. **WP-U2**: done and merged. Next UI step (later): a Tauri adapter that fills takes from the
    CLI command layer, plus the MCP take/view hooks.
-2. **WP-C2 synth + drums** (stopped mid-work, resume it: section 5): gives `bell` and `soft_kick`; then
+2. **WP-C2 synth + drums** (merged): gives `bell` and `soft_kick`; then
    acceptance test 1 renders with the kick.
-3. **WP-F2 mix bus** (stopped mid-work, resume it: section 5): effect chains, sidechain, master loudness to
+3. **WP-F2 mix bus** (running): effect chains, sidechain, master loudness to
    -16 LUFS and the true-peak limiter inside the loop wrap. Also must give the dry piano a room
    (earshot rated the dry render's realness 0.46 because there was no room sound).
 4. **Phase 2 exit**: render acceptance test 1 with felt piano + soft kick mixed, write
    `demos/phase-2/` with a README, ask the owner for listening sign-off (NEEDS_OWNER item 2).
 5. **WP-K CLI** (merged), then **WP-U3 real adapter + Tauri shell** (`docs/briefs/WP-U3-real-adapter.md`, starts when WP-K merges) and **WP-X MCP server** (ADR-0010; rmcp 3.9 is already in the workspace deps;
    tools share the CLI's command layer; agent can write the plan; renders return verify reports).
-6. **WP-P2 edits + variations** (stopped mid-work, resume it: section 5) (Phase 4 exit: "change the last four bars" leaves bars 1-12
+6. **WP-P2 edits + variations** (merged; live Claude smoke test still needs the API key) (Phase 4 exit: "change the last four bars" leaves bars 1-12
    sample-identical). Ask the owner for the API key when a live Claude smoke test is next.
 7. Then Phases 3 (real-time + Tauri shell), 5 (reference analysis), 6 (match + SFX patches),
    7 (scoring depth), 8 (performance + release) per `docs/PLAN.md`.

@@ -296,15 +296,25 @@ fn render_errors() {
         "render",
         "pack_missing",
     );
-    // The bell fixture's presets are not built yet: render_failed, not a crash.
-    err(
+    // The bell fixture's synth presets exist now (WP-C2): it renders.
+    ok(
         &run(&[
             "--json",
             "render",
             s(&fixture("acceptance1_bell.score.json")),
             "-o",
-            s(&out),
+            s(&dir.join("bell_ok.wav")),
         ]),
+        "render",
+    );
+    // A preset no registry knows is a render_failed error, not a crash.
+    let unknown = dir.join("unknown_preset.score.json");
+    let text = std::fs::read_to_string(fixture("acceptance1_bell.score.json"))
+        .unwrap()
+        .replace("\"preset\": \"bell\"", "\"preset\": \"no_such_preset\"");
+    std::fs::write(&unknown, text).unwrap();
+    err(
+        &run(&["--json", "render", s(&unknown), "-o", s(&out)]),
         "render",
         "render_failed",
     );
