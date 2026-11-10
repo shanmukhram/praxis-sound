@@ -138,10 +138,7 @@ fn find_cycle(ids: &[String], deps: &[Vec<usize>], done: &[bool]) -> Cycle {
     let start = (0..deps.len()).find(|&i| !done[i]).unwrap_or(0);
     let mut path = vec![start];
     let mut cur = start;
-    loop {
-        let Some(&next) = deps[cur].iter().find(|&&j| !done[j]) else {
-            break;
-        };
+    while let Some(&next) = deps[cur].iter().find(|&&j| !done[j]) {
         if let Some(pos) = path.iter().position(|&p| p == next) {
             let mut cyc: Vec<String> = path[pos..].iter().map(|&i| ids[i].clone()).collect();
             cyc.push(ids[next].clone());

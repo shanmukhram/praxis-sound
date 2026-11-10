@@ -21,7 +21,7 @@
 
 use crate::api::*;
 use crate::automation::Lane;
-use crate::effects::{BuiltinEffects, EffectBuilder, EffectChain};
+use crate::effects::{self, BuiltinEffects, EffectBuilder, EffectChain};
 use crate::graph::{Graph, LayerNode, ParamLane, ParamTarget};
 use crate::instrument::{InstrumentContext, InstrumentFactory};
 use crate::loopwrap::{self, CapturePlan};
@@ -187,11 +187,18 @@ pub fn render_offline_with(
     };
     let master_latency = graph.master_latency();
     let cap_len = plan.len as usize;
+    // Loops also capture the first samples of the next cycle to stitch the seam (effects.rs).
+    let stitch = if is_loop {
+        effects::seam_stitch_samples(plan.len, sr)
+    } else {
+        0
+    };
+    let win = plan.len + stitch;
 
-    let mut bus = StereoBuffer::silent(cap_len);
+    let mut bus = StereoBuffer::silent(win as usize);
     let mut stems: Vec<StereoBuffer> = if opts.stems {
         (0..graph.layers().len())
-            .map(|_| StereoBuffer::silent(cap_len))
+            .map(|_| StereoBuffer::silent(win as usize))
             .collect()
     } else {
         Vec::new()
@@ -199,22 +206,26 @@ pub fn render_offline_with(
 
     // ---- the block loop: no allocation from here on
     graph.preroll();
-    let grid_end = plan.end() + master_latency;
+    let grid_end = plan.start + win + master_latency;
     let master_start = plan.start + master_latency;
     let mut t = 0u64;
     while t < grid_end {
         let n = ((grid_end - t) as usize).min(bs);
         graph.process_block(t, n);
-        let (ms, me) = (master_start, master_start + plan.len);
+        let (ms, me) = (master_start, master_start + win);
         copy_window(graph.master_output(), t, ms, me, &mut bus);
         if opts.stems {
             for (node, stem) in graph.layers().iter().zip(stems.iter_mut()) {
                 if !node.is_key_only() {
-                    copy_window(node.output(), t, plan.start, plan.end(), stem);
+                    copy_window(node.output(), t, plan.start, plan.start + win, stem);
                 }
             }
         }
         t += n as u64;
+    }
+    effects::stitch_loop_seam(&mut bus, cap_len);
+    for stem in &mut stems {
+        effects::stitch_loop_seam(stem, cap_len);
     }
 
     // ---- master: gain (frozen or measured) and the true-peak limiter

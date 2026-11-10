@@ -124,9 +124,11 @@ fn mute_solo_and_only_layers() {
     assert_eq!(none.master.peak_abs(), 0.0);
     assert!(none.report.warnings.iter().any(|w| w.contains("`nope`")));
 
-    // Master equals the ordered sum of the stems.
+    // Master equals the ordered sum of the stems (after the loop-seam stitch, where the stems
+    // and the bus are each cross-faded into their continuation and round differently).
     let (p, k) = (stem(&all, "piano"), stem(&all, "kick"));
-    for i in (0..all.master.len()).step_by(997) {
+    let stitch = praxis_engine::effects::seam_stitch_samples(all.master.len() as u64, SR) as usize;
+    for i in (stitch..all.master.len()).step_by(997) {
         assert_eq!(
             all.master.left[i].to_bits(),
             (p.left[i] + k.left[i]).to_bits()

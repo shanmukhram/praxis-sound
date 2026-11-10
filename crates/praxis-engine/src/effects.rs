@@ -196,6 +196,43 @@ pub fn builtin_impulse(name: &str, sample_rate: f32) -> Option<StereoBuffer> {
     Some(StereoBuffer { left, right })
 }
 
+/// Length of the loop-seam stitch ([`stitch_loop_seam`]).
+pub const SEAM_STITCH_SECONDS: f64 = 0.05;
+
+/// Samples of the next cycle a loop render captures for [`stitch_loop_seam`]: 50 ms, at most a
+/// quarter of the loop.
+pub fn seam_stitch_samples(loop_len: u64, sample_rate: u32) -> u64 {
+    let n = (SEAM_STITCH_SECONDS * sample_rate as f64).round() as u64;
+    n.min(loop_len / 4)
+}
+
+/// Makes a captured loop cycle continue exactly into its own start.
+///
+/// `audio` holds the captured cycle `[0, len)` followed by the first samples of the next cycle
+/// of the continuous render. In steady state the two are bit-identical and nothing changes.
+/// Time-varying effects (the reverb's delay modulation, chorus) are not periodic with the loop,
+/// so the next cycle's start differs slightly from the captured start and a looping player would
+/// hear a small discontinuity at the seam. The start of the cycle is therefore cross-faded from
+/// the next cycle's samples (the exact continuation of sample `len - 1`) into the captured ones
+/// with a raised-cosine weight. Both carry the same music, so this is a splice, not a fade: the
+/// level is unchanged. Samples that are already bit-identical are left untouched, so dry or
+/// time-invariant renders stay bit-exact. Finally `audio` is truncated to `len`.
+pub fn stitch_loop_seam(audio: &mut StereoBuffer, len: usize) {
+    let n = audio.len().saturating_sub(len);
+    for i in 0..n {
+        // Weight of the captured cycle: ~0 at sample 0, 1 at the end of the stitch.
+        let w = 0.5 - 0.5 * (std::f64::consts::PI * (i as f64 + 0.5) / n as f64).cos();
+        for ch in [&mut audio.left, &mut audio.right] {
+            let (x, next) = (ch[i], ch[len + i]);
+            if x.to_bits() != next.to_bits() {
+                ch[i] = (next as f64 * (1.0 - w) + x as f64 * w) as f32;
+            }
+        }
+    }
+    audio.left.truncate(len);
+    audio.right.truncate(len);
+}
+
 /// One built effect in a chain.
 pub struct ChainSlot {
     pub effect_id: String,
@@ -432,6 +469,32 @@ mod tests {
             assert!(drop > 55.0 && drop < 75.0, "{name}: {drop} dB");
         }
         assert!(builtin_impulse("nope", 48_000.0).is_none());
+    }
+
+    #[test]
+    fn seam_stitch_is_exact_when_periodic_and_continues_otherwise() {
+        let x: Vec<f32> = (0..120).map(|i| (i as f32 * 0.3).sin()).collect();
+        // Periodic: the next cycle's start equals the captured start, nothing changes.
+        let mut a = StereoBuffer {
+            left: [&x[..100], &x[..20]].concat(),
+            right: [&x[..100], &x[..20]].concat(),
+        };
+        a.right[0] = 0.25;
+        a.right[100] = 0.25;
+        stitch_loop_seam(&mut a, 100);
+        assert_eq!(a.left, x[..100].to_vec());
+        assert_eq!(a.right[0], 0.25);
+        // Not periodic: sample 0 becomes (almost exactly) the continuation of sample 99.
+        let mut b = StereoBuffer {
+            left: x.clone(),
+            right: x.clone(),
+        };
+        stitch_loop_seam(&mut b, 100);
+        assert_eq!(b.len(), 100);
+        assert!((b.left[0] - x[100]).abs() < 0.01);
+        assert_eq!(b.left[20..], x[20..100]);
+        assert_eq!(seam_stitch_samples(48_000 * 30, 48_000), 2400);
+        assert_eq!(seam_stitch_samples(400, 48_000), 100);
     }
 
     #[test]
