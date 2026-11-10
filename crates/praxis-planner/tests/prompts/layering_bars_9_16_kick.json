@@ -1,0 +1,40 @@
+{
+  "brief": "Felt piano motif in A minor, 16 bars at 110 bpm, loop. Bars 9-16 add a kick.",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "A",
+      "mode": "minor"
+    },
+    "bpm": 110,
+    "bars": 16,
+    "playback": "loop",
+    "layer_count": 2,
+    "sections": 2,
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          16
+        ]
+      },
+      {
+        "preset": "kick",
+        "bars": [
+          9,
+          16
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

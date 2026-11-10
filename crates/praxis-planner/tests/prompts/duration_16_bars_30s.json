@@ -1,0 +1,31 @@
+{
+  "brief": "16 bars in 30 seconds, C major, gentle mallet loop",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "C",
+      "mode": "major"
+    },
+    "bpm": 128,
+    "bars": 16,
+    "playback": "loop",
+    "layers": [
+      {
+        "preset": "mallet",
+        "bars": [
+          1,
+          16
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

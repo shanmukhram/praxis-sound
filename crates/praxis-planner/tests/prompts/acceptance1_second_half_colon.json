@@ -1,0 +1,52 @@
+{
+  "brief": "Loop, 16 bars of 4/4 in A minor lasting 30 seconds: felt piano motif in eighths, accented, with sustain that overlaps. Second half: same piano, plus a soft muted kick underneath. No new melody, no fills, no risers, no sweeps, no impacts, no pads.",
+  "seed": 0,
+  "expect": {
+    "acceptance1": true,
+    "key": {
+      "tonic": "A",
+      "mode": "minor"
+    },
+    "bpm": 128,
+    "bars": 16,
+    "time_signature": [
+      4,
+      4
+    ],
+    "playback": "loop",
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          16
+        ],
+        "grid": "eighth"
+      },
+      {
+        "preset": "soft_kick",
+        "bars": [
+          9,
+          16
+        ]
+      }
+    ],
+    "layer_count": 2,
+    "sections": 2,
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ],
+    "avoid_contains": [
+      "riser",
+      "sweep",
+      "impact",
+      "pad"
+    ]
+  }
+}

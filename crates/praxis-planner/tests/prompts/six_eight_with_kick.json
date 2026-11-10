@@ -1,0 +1,42 @@
+{
+  "brief": "6/8 nostalgic mallet loop in A minor, 8 bars at 70 bpm with a soft kick",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "A",
+      "mode": "minor"
+    },
+    "time_signature": [
+      6,
+      8
+    ],
+    "bars": 8,
+    "bpm": 70,
+    "layer_count": 2,
+    "layers": [
+      {
+        "preset": "mallet",
+        "bars": [
+          1,
+          8
+        ]
+      },
+      {
+        "preset": "soft_kick",
+        "bars": [
+          1,
+          8
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "brief": "suspenseful cinematic bells in D minor, 12 bars at 90 bpm",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "D",
+      "mode": "minor"
+    },
+    "bpm": 90,
+    "bars": 12,
+    "emotion": "tense",
+    "layer_count": 1,
+    "layers": [
+      {
+        "preset": "bell",
+        "bars": [
+          1,
+          12
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ],
+    "avoid_contains": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

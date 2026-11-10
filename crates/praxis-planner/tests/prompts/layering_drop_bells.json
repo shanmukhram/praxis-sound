@@ -1,0 +1,37 @@
+{
+  "brief": "Mallet loop in D minor, 8 bars at 90 bpm with bells from bar 3. Bars 7-8: drop the bells.",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "D",
+      "mode": "minor"
+    },
+    "bars": 8,
+    "layer_count": 2,
+    "layers": [
+      {
+        "preset": "mallet",
+        "bars": [
+          1,
+          8
+        ]
+      },
+      {
+        "preset": "bell",
+        "bars": [
+          3,
+          6
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

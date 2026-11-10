@@ -1,0 +1,31 @@
+{
+  "brief": "60 seconds at 90 BPM, warm piano in F major",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "F",
+      "mode": "major"
+    },
+    "bpm": 90,
+    "bars": 23,
+    "playback": "one_shot",
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          23
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

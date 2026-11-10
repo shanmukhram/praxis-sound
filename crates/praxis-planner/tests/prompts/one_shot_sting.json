@@ -1,0 +1,15 @@
+{
+  "brief": "A hopeful 4-bar one-shot sting on bells in C major at 100 bpm, not a loop",
+  "seed": 0,
+  "expect": {
+    "key": { "tonic": "C", "mode": "major" },
+    "bpm": 100,
+    "bars": 4,
+    "playback": "one_shot",
+    "emotion": "hopeful",
+    "layer_count": 1,
+    "layers": [{ "preset": "bell", "bars": [1, 4] }],
+    "absent_classes": ["riser", "sweep", "impact", "boom", "pad", "whoosh", "fill"],
+    "avoid_contains": ["riser", "sweep", "impact", "boom", "pad", "whoosh", "fill"]
+  }
+}

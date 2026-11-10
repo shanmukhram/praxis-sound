@@ -1,0 +1,36 @@
+{
+  "brief": "an epic cinematic trailer-style intro with a dark felt piano, 8 bars",
+  "seed": 0,
+  "expect": {
+    "bars": 8,
+    "emotion": "dark",
+    "layer_count": 1,
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          8
+        ]
+      }
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ],
+    "avoid_contains": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

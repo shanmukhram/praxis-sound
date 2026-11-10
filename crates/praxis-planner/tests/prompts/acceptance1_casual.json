@@ -1,0 +1,52 @@
+{
+  "brief": "make me a calm A minor felt piano loop, 16 bars, 30 seconds, eighth notes. bars 9-16 keep the piano exactly the same and add a muted kick under it. no pads, risers, sweeps or impacts",
+  "seed": 0,
+  "expect": {
+    "acceptance1": true,
+    "key": {
+      "tonic": "A",
+      "mode": "minor"
+    },
+    "bpm": 128,
+    "bars": 16,
+    "time_signature": [
+      4,
+      4
+    ],
+    "playback": "loop",
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          16
+        ],
+        "grid": "eighth"
+      },
+      {
+        "preset": "soft_kick",
+        "bars": [
+          9,
+          16
+        ]
+      }
+    ],
+    "layer_count": 2,
+    "sections": 2,
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ],
+    "avoid_contains": [
+      "riser",
+      "sweep",
+      "impact",
+      "pad"
+    ]
+  }
+}

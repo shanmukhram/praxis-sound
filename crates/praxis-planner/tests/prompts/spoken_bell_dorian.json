@@ -1,0 +1,34 @@
+{
+  "brief": "a calm bell motif \"DON din DON don TIN\" in D dorian at 90 BPM, 8 bars",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "D",
+      "mode": "dorian"
+    },
+    "bpm": 90,
+    "bars": 8,
+    "layer_count": 1,
+    "layers": [
+      {
+        "preset": "bell",
+        "bars": [
+          1,
+          8
+        ]
+      }
+    ],
+    "spoken": {
+      "bell": "DON din DON don TIN"
+    },
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

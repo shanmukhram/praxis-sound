@@ -1,0 +1,26 @@
+{
+  "id": "msg_01TextOnly",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-opus-5-5",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "",
+      "signature": "EqQBCkYIARgCKkBfixture2"
+    },
+    {
+      "type": "text",
+      "text": "A calm A minor loop with a felt piano and a soft kick in the second half."
+    }
+  ],
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "stop_details": null,
+  "usage": {
+    "input_tokens": 4210,
+    "output_tokens": 1388,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0
+  }
+}

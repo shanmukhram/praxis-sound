@@ -1,0 +1,52 @@
+{
+  "brief": "A seamless 16-bar loop in A minor, 4/4, 30 seconds long. A soft felt piano plays a repeating eighth-note motif with accents and overlapping sustain; add a soft muted kick in the second half. No risers, sweeps, impacts or pads.",
+  "seed": 0,
+  "expect": {
+    "acceptance1": true,
+    "key": {
+      "tonic": "A",
+      "mode": "minor"
+    },
+    "bpm": 128,
+    "bars": 16,
+    "time_signature": [
+      4,
+      4
+    ],
+    "playback": "loop",
+    "layers": [
+      {
+        "preset": "felt_piano",
+        "bars": [
+          1,
+          16
+        ],
+        "grid": "eighth"
+      },
+      {
+        "preset": "soft_kick",
+        "bars": [
+          9,
+          16
+        ]
+      }
+    ],
+    "layer_count": 2,
+    "sections": 2,
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ],
+    "avoid_contains": [
+      "riser",
+      "sweep",
+      "impact",
+      "pad"
+    ]
+  }
+}
