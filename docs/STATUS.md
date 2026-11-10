@@ -37,6 +37,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 
 ## Log
 
+- Owner stopped all four wave-2 sessions mid-work; their work is uncommitted in their worktrees (exact files and how to resume: docs/HANDOFF.md section 5).
+
 - Orchestration paused to continue in the terminal; four wave-2 sessions still running in the desktop app (see docs/HANDOFF.md section 5). WP-U3 adapter brief written.
 
 - Wave 2 started as sessions: WP-C2 synth + drums, WP-F2 mix bus, WP-K CLI, WP-P2 edits + variations (details and session ids in docs/HANDOFF.md section 5).

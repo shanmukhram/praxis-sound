@@ -1,4 +1,4 @@
-# Handoff: Praxis Sound build (kept current; last updated 2026-11-11 03:00 IST, paused for the terminal)
+# Handoff: Praxis Sound build (kept current; last updated 2026-11-11 03:10 IST: paused, all sessions stopped)
 
 Paste the block below into a new Claude Code session opened in
 `C:\Users\admin\Desktop\praxis sound`. Everything else in this file is the detail it points to.
@@ -103,32 +103,37 @@ The soft kick layer is skipped until WP-C2 lands (the test says so and tightens 
 
 Test totals at handoff: 386 Rust tests pass in release; app: 140 unit tests on the WP-U2 branch.
 
-## 5. In flight (updated 2026-11-11 03:00 IST, paused to continue in the terminal)
+## 5. In flight (updated 2026-11-11 03:10 IST: all sessions stopped by the owner)
 
-Four wave-2 sessions were started from the Claude desktop app and are **still running there**
-(they keep going after this session moves to the terminal). Each works in its own worktree cut
-from `build/integration` and commits to its own `wp/...` branch. Notifications from them only
-reach the desktop app, so from the terminal check them with git:
+The four wave-2 sessions were **stopped** at the owner's request, mid-work. None had committed:
+all their work is **uncommitted** in their worktrees (safe there; worktrees with changes are not
+cleaned up). Nothing from them is in `build/integration`.
 
-| Session (desktop app) | Package | Brief | Worktree (`.claude/worktrees/...`) | Branch it commits to |
+| Package | Brief | Worktree (`.claude/worktrees/...`) | Branch | Work in progress (uncommitted) |
 | --- | --- | --- | --- | --- |
-| `local_88556cd4-0270-499a-b444-4c1fc9d711da` | WP-C2 synth presets + drums (`bell`, `soft_kick`, kit) | `docs/briefs/WP-C2-synth-drums.md` | `agitated-haibt-f5dfb9` | `wp/c2-synth-drums` |
-| `local_2cf5992e-16b3-4e4a-a236-095886095a12` | WP-F2 engine mix bus + loudness + limiter | `docs/briefs/WP-F2-mix-bus.md` | `clever-cori-d1bc75` | `wp/f2-mix-bus` |
-| `local_3900e1de-15d0-4166-8489-aa53b502c0e9` | WP-K CLI + shared command layer | `docs/briefs/WP-K-cli.md` | `mystifying-taussig-49d229` | `wp/k-cli` |
-| `local_ebed52bd-b685-42a4-b0b3-99f60f5f8c91` | WP-P2 planner edits + variations | `docs/briefs/WP-P2-edits-variations.md` | `charming-shirley-e77b69` | `wp/p2-edits` |
+| WP-C2 synth presets + drums | `docs/briefs/WP-C2-synth-drums.md` | `agitated-haibt-f5dfb9` | `wp/c2-synth-drums` | `crates/praxis-instruments/src/synth.rs` (+53 lines) and a new `src/synth/` directory (3 files). Drums not started |
+| WP-F2 engine mix bus | `docs/briefs/WP-F2-mix-bus.md` | `clever-cori-d1bc75` | `wp/f2-mix-bus` | `effects.rs`, `graph.rs`, `lib.rs`, `render.rs` (+575/-175) and new `latency.rs`, `master.rs`, `sidechain.rs` in `crates/praxis-engine/src/` |
+| WP-K CLI + command layer | `docs/briefs/WP-K-cli.md` | `mystifying-taussig-49d229` | `wp/k-cli` | `Cargo.toml` gains a `[lib] praxis_cli` target (approved: the shared command layer), `main.rs` reworked, `commands.rs` deleted, new `lib.rs`, `error.rs`, `output.rs`, `ops/` (14 new files) |
+| WP-P2 planner edits | `docs/briefs/WP-P2-edits-variations.md` | `charming-shirley-e77b69` | `wp/p2-edits` | new `crates/praxis-planner/src/edit/` (4 files); `edit.rs`/`variations.rs` not yet changed |
 
-How to check them from a terminal:
+**To resume a package**, pick one:
+- In the desktop app, open its session and send "continue your work package". It still has its
+  context. (Session ids: C2 `local_88556cd4-0270-499a-b444-4c1fc9d711da`, F2
+  `local_2cf5992e-16b3-4e4a-a236-095886095a12`, K `local_3900e1de-15d0-4166-8489-aa53b502c0e9`,
+  P2 `local_ebed52bd-b685-42a4-b0b3-99f60f5f8c91`.)
+- Or from a terminal: `cd ".claude/worktrees/<worktree>"`, run `claude`, and tell it: "You are
+  continuing work package <WP>. Read docs/BRIEFING.md and <brief>, inspect the uncommitted work
+  in this worktree with git status and git diff, then finish the package on branch <branch>,
+  following all rules in the brief, and report."
+- Or, as orchestrator, run each as a sub-agent in that worktree with the same instruction.
+
+Check progress at any time with git:
 
 ```
-git branch --list "wp/*"                                   # their branches appear as they commit
-git log --oneline build/integration..wp/c2-synth-drums     # what a package has committed
-git worktree list                                          # every worktree and its branch
-git -C ".claude/worktrees/<name>" status --short           # uncommitted work in progress
+git worktree list
+git -C ".claude/worktrees/<worktree>" status --short
+git log --oneline build/integration..<branch>
 ```
-
-A package is ready to review when its branch has its final commit and its worktree is clean
-(the session's last message in the desktop app is its report). If a session stopped (usage
-limit), resume it in the desktop app or start a new session on the same brief and worktree.
 
 Done since the first handoff: WP-U2 conversation UI merged (`12c9e8e`). Run the app with
 `npm --prefix app run dev -- --port 5174` (or `praxis-app` in `.claude/launch.json`); it uses the
@@ -153,16 +158,16 @@ owner to open sessions, and take screenshots with headless Edge (section 8).
 
 1. **WP-U2**: done and merged. Next UI step (later): a Tauri adapter that fills takes from the
    CLI command layer, plus the MCP take/view hooks.
-2. **WP-C2 synth + drums** (running, see section 5): gives `bell` and `soft_kick`; then
+2. **WP-C2 synth + drums** (stopped mid-work, resume it: section 5): gives `bell` and `soft_kick`; then
    acceptance test 1 renders with the kick.
-3. **WP-F2 mix bus** (running, see section 5): effect chains, sidechain, master loudness to
+3. **WP-F2 mix bus** (stopped mid-work, resume it: section 5): effect chains, sidechain, master loudness to
    -16 LUFS and the true-peak limiter inside the loop wrap. Also must give the dry piano a room
    (earshot rated the dry render's realness 0.46 because there was no room sound).
 4. **Phase 2 exit**: render acceptance test 1 with felt piano + soft kick mixed, write
    `demos/phase-2/` with a README, ask the owner for listening sign-off (NEEDS_OWNER item 2).
-5. **WP-K CLI** (running), then **WP-U3 real adapter + Tauri shell** (`docs/briefs/WP-U3-real-adapter.md`, starts when WP-K merges) and **WP-X MCP server** (ADR-0010; rmcp 3.9 is already in the workspace deps;
+5. **WP-K CLI** (stopped mid-work, resume it: section 5), then **WP-U3 real adapter + Tauri shell** (`docs/briefs/WP-U3-real-adapter.md`, starts when WP-K merges) and **WP-X MCP server** (ADR-0010; rmcp 3.9 is already in the workspace deps;
    tools share the CLI's command layer; agent can write the plan; renders return verify reports).
-6. **WP-P2 edits + variations** (running) (Phase 4 exit: "change the last four bars" leaves bars 1-12
+6. **WP-P2 edits + variations** (stopped mid-work, resume it: section 5) (Phase 4 exit: "change the last four bars" leaves bars 1-12
    sample-identical). Ask the owner for the API key when a live Claude smoke test is next.
 7. Then Phases 3 (real-time + Tauri shell), 5 (reference analysis), 6 (match + SFX patches),
    7 (scoring depth), 8 (performance + release) per `docs/PLAN.md`.
