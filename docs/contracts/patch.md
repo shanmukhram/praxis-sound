@@ -33,8 +33,10 @@ Every change to a Score, by a person or the model, is a `ScorePatch`: a list of 
 
 Rendering a patched score scoped to bars B of layer X:
 - every other layer's stem is bit-identical over the whole render;
-- layer X's stem is bit-identical outside `[start(B), end(B) + tail(X))`, where `tail(X)` is the
-  instrument release plus the layer's effect tail;
+- layer X's stem is bit-identical outside `[start(B), end(B) + overhang(B) + tail(X))`, where
+  `overhang(B)` is how far notes starting in B (before or after the edit) sound past end(B) and
+  `tail(X)` is the instrument release plus the layer's effect tail; for loops the part past the
+  loop length wraps to `[0, ...)`;
 - with `master.frozen_gain_db` set, the master is bit-identical outside the same window, widened
   by the master chain's tail and limiter lookahead/release.
 

@@ -144,7 +144,9 @@ pub fn expand_notes(score: &Score, sample_rate: u32) -> Vec<NoteEvent> {
             let clip_steps = (last - first + 1) as u64 * spb as u64;
             let len = pat.length_steps as u64;
             let offset = clip.pattern_offset_steps as u64 % len;
-            let clip_start_s = tm.bar_pos_to_s(first as f64);
+            // Absolute step index of the clip's first step, so note times are computed from one
+            // integer step count and splitting a clip cannot change their last bits.
+            let clip_first_step = (first as u64 - 1) * spb as u64;
             // Clip-relative step `rel` plays pattern step `(rel + offset) % len`. Walk pattern
             // repetitions starting at -offset so the notes of the partial first cycle are included.
             let mut cycle_start: i64 = -(offset as i64);
@@ -161,7 +163,7 @@ pub fn expand_notes(score: &Score, sample_rate: u32) -> Vec<NoteEvent> {
                     let bar = first + (abs_step / spb as u64) as u32;
                     let step_in_bar = (abs_step % spb as u64) as u32;
                     let start_s =
-                        (clip_start_s + (abs_step as f64 + n.offset as f64) * step_s).max(0.0);
+                        (((clip_first_step + abs_step) as f64 + n.offset as f64) * step_s).max(0.0);
                     let length_s = n.length as f64 * step_s;
                     let pitch = (n.pitch as i32 + clip.transpose as i32).clamp(0, 127) as u8;
                     let velocity = (n.velocity * clip.velocity_scale * accent_velocity(n.accent))
