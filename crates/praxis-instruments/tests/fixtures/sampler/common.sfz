@@ -1,0 +1,2 @@
+// Included by synth_piano.sfz: defines carry over to the including file.
+#define $REL_VOL -3

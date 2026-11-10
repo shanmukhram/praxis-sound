@@ -1,0 +1,32 @@
+// Synthetic test piano for the sampler tests. The tests generate every sample it names and
+// load it from an in-memory pack (`Packs::insert`) as `<pack>/sfz/synth_piano.sfz`.
+/* A block comment
+   spanning two lines */
+#define $SOFT_TOP 64
+#define $HARD_BOTTOM 65
+#include "common.sfz"
+
+<control>
+default_path=../samples/
+
+<global>
+ampeg_release=0.3 amp_veltrack=100
+
+// Two velocity layers on A3: soft (mono, 3 partials) and hard (stereo, 10 partials).
+<group> lokey=c3 hikey=d4 pitch_keycenter=a3
+<region> sample=soft_a3.wav hivel=$SOFT_TOP
+<region> sample=hard_a3.wav lovel=$HARD_BOTTOM volume=-1
+
+// A steady A4 that loops (44 kHz sample, 100 frames per period, loop of 440 periods).
+<group> lokey=d#4 hikey=a#4 pitch_keycenter=69
+ loop_mode=loop_continuous loop_start=44000 loop_end=87999
+<region> sample=a4_loop.wav
+
+// Two round-robin samples on C5.
+<group> key=c5 seq_length=2
+<region> sample=rr1_c5.wav seq_position=1
+<region> sample=rr2_c5.wav seq_position=2
+
+// Release samples for the A3 zone, 6 dB quieter per second held.
+<group> trigger=release lokey=48 hikey=62 rt_decay=6 ampeg_release=0.2
+<region> sample=release.wav pitch_keycenter=57 volume=$REL_VOL
