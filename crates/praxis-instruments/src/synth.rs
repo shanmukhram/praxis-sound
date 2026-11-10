@@ -31,9 +31,29 @@ use crate::registry::PresetEntry;
 pub mod common;
 pub mod poly;
 
+pub mod bass;
 pub mod bell;
+pub mod fm;
+pub mod glass;
+pub mod granular;
+pub mod mallet;
+pub mod noise_bed;
+pub mod pad;
+pub mod pluck;
 
 /// Presets this family provides.
 pub fn presets() -> Vec<PresetEntry> {
-    vec![poly::entry::<bell::Bell>()]
+    vec![
+        poly::entry::<bell::Bell>(),
+        poly::entry::<fm::SoftKeys>(),
+        poly::entry::<pluck::Pluck>(),
+        poly::entry::<mallet::Mallet>(),
+        poly::entry::<bass::SubBass>(),
+        poly::entry::<bass::WarmBass>(),
+        poly::entry::<fm::FmKeys>(),
+        poly::entry::<glass::Glass>(),
+        poly::entry::<granular::GranularTexture>(),
+        poly::entry::<noise_bed::NoiseBed>(),
+        poly::entry::<pad::WarmPad>(),
+    ]
 }

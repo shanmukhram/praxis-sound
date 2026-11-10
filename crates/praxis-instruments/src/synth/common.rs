@@ -266,6 +266,40 @@ impl OneShot {
     }
 }
 
+/// Held-note contour: a linear attack, then an exponential fall from 1 towards `sustain`
+/// (60 dB of the excess in `decay_s`). Pair it with [`Release`] for the note-off.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Swell {
+    ramp: Ramp,
+    excess: f64,
+    coeff: f64,
+    sustain: f64,
+}
+
+impl Swell {
+    pub fn start(&mut self, attack_s: f32, decay_s: f32, sustain: f32, sr: f64) {
+        self.ramp.start(attack_s, sr);
+        self.excess = 1.0;
+        self.coeff = t60_coeff(decay_s.max(1e-3) as f64, sr);
+        self.sustain = sustain.clamp(0.0, 1.0) as f64;
+    }
+
+    #[inline]
+    pub fn next(&mut self) -> f32 {
+        let a = self.ramp.next() as f64;
+        let v = a * (self.sustain + (1.0 - self.sustain) * self.excess);
+        if self.ramp.is_done() {
+            self.excess *= self.coeff;
+        }
+        v as f32
+    }
+
+    /// Attack finished.
+    pub fn attacked(&self) -> bool {
+        self.ramp.is_done()
+    }
+}
+
 /// A decaying sine partial computed as a rotating phasor in `f64` (exact frequency, no table).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Partial {
