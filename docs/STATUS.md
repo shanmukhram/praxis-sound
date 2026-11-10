@@ -37,6 +37,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 
 ## Log
 
+- Wave 2 started as sessions: WP-C2 synth + drums, WP-F2 mix bus, WP-K CLI, WP-P2 edits + variations (details and session ids in docs/HANDOFF.md section 5).
+
 - Merged WP-U2 (12c9e8e): `npm run dev` in app/ opens the approved conversation-first workstation (mock engine). 138 unit + 8 Playwright tests at 1440/390 rerun and passing; screenshots in app/screenshots/ match docs/design/. Next for the UI: Tauri adapter filling takes from praxis generate|edit|check, and MCP praxis_takes/praxis_open_view.
 
 - WP-U2 conversation UI: engine side committed (27cd5be on wp/u2-conversation-ui); visible screen uncommitted in worktree funny-elion-3d4d1d; session paused on the account usage limit. Handoff written: docs/HANDOFF.md.
