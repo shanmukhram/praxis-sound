@@ -2,11 +2,15 @@
 
 Updated after every merge. Newest first. Branch: `build/integration` (pushed to `origin`).
 
-## Current phase: 0 -> 1
+## Current phase: 1 (Phase 0 exit passed)
+
+Wave 1 (WP-A, B1, B2, C1, D1, E, F, P) runs as background agents in worktrees. From wave 2 on,
+work packages run as visible sessions (owner's choice), briefed from `docs/briefs/`. WP-X (MCP
+server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 
 | WP | Status | Branch | Notes |
 | --- | --- | --- | --- |
-| WP-0 foundations | done locally; CI on 3 OSes pending first push | build/integration | tests, clippy -D warnings, fmt, wasm32 build pass on Windows; empty score renders a silent 12 s WAV |
+| WP-0 foundations | **done**: CI green on Windows, macOS, Linux and wasm32 (run 42868034466) | build/integration | empty score renders a silent 12 s WAV |
 | WP-A score-ops | next | wp/a-score-ops | |
 | WP-B1 dsp-core | next | wp/b1-dsp-core | |
 | WP-B2 dsp-effects | next | wp/b2-dsp-effects | |
@@ -31,5 +35,7 @@ Updated after every merge. Newest first. Branch: `build/integration` (pushed to 
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- Phase 0 exit: CI green on all three OSes. ADR-0010: agents are first-class users (MCP server).
 
 - Phase 0 foundations written: workspace, contracts, CI, ADRs, docs.
