@@ -32,3 +32,4 @@ pub use edit::{
 pub use offline::RuleProvider;
 pub use plan::{ScorePlan, plan_schema};
 pub use repair::{PlanError, Repair};
+pub use variations::{Variation, variations, variations_with};
