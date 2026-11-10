@@ -34,6 +34,7 @@ fn edit_files() -> Vec<PathBuf> {
             p.extension().is_some_and(|x| x == "json")
                 && p.file_name()
                     .is_some_and(|n| n.to_string_lossy().starts_with("edit_"))
+                && !p.to_string_lossy().ends_with(".plan.json")
         })
         .collect();
     files.sort();
