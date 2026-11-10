@@ -103,7 +103,10 @@ The soft kick layer is skipped until WP-C2 lands (the test says so and tightens 
 
 Test totals at handoff: 386 Rust tests pass in release; app: 140 unit tests on the WP-U2 branch.
 
-## 5. In flight (updated 2026-11-11: resumed from the terminal)
+## 5. In flight (updated 2026-11-11: WP-K merged; C2, F2, P2 still being finished by sub-agents)
+
+WP-K CLI is merged (`670353e`): `praxis_cli::ops` is the shared command layer for the app (WP-U3)
+and the MCP server (WP-X).
 
 The orchestrator resumed in a terminal session and started four background sub-agents, one per
 worktree below, each finishing its package from the uncommitted work and committing to its
@@ -173,7 +176,7 @@ owner to open sessions, and take screenshots with headless Edge (section 8).
    (earshot rated the dry render's realness 0.46 because there was no room sound).
 4. **Phase 2 exit**: render acceptance test 1 with felt piano + soft kick mixed, write
    `demos/phase-2/` with a README, ask the owner for listening sign-off (NEEDS_OWNER item 2).
-5. **WP-K CLI** (stopped mid-work, resume it: section 5), then **WP-U3 real adapter + Tauri shell** (`docs/briefs/WP-U3-real-adapter.md`, starts when WP-K merges) and **WP-X MCP server** (ADR-0010; rmcp 3.9 is already in the workspace deps;
+5. **WP-K CLI** (merged), then **WP-U3 real adapter + Tauri shell** (`docs/briefs/WP-U3-real-adapter.md`, starts when WP-K merges) and **WP-X MCP server** (ADR-0010; rmcp 3.9 is already in the workspace deps;
    tools share the CLI's command layer; agent can write the plan; renders return verify reports).
 6. **WP-P2 edits + variations** (stopped mid-work, resume it: section 5) (Phase 4 exit: "change the last four bars" leaves bars 1-12
    sample-identical). Ask the owner for the API key when a live Claude smoke test is next.

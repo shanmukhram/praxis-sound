@@ -37,6 +37,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 
 ## Log
 
+- Merged WP-K CLI (670353e): shared command layer praxis_cli::ops; render (+flac, checks in payload), validate, schema, check, generate (offline/claude/--plan), analyze, export-midi, packs, key, presets; 16 binary tests. 403 release tests pass; acceptance 1 passes all checks. Note: the hand-written fixtures/acceptance1.score.json render fails grid (87%) and loudness until WP-F2.
+
 - Owner stopped all four wave-2 sessions mid-work; their work is uncommitted in their worktrees (exact files and how to resume: docs/HANDOFF.md section 5).
 
 - Orchestration paused to continue in the terminal; four wave-2 sessions still running in the desktop app (see docs/HANDOFF.md section 5). WP-U3 adapter brief written.
