@@ -10,6 +10,18 @@ pub mod instrument;
 // ---- WP-F engine: implementation modules (owned by that package) ----
 pub mod render;
 
+// ---- WP-F engine-core modules ----
+pub mod automation;
+pub mod effects;
+pub mod graph;
+pub mod loopwrap;
+pub mod mixer;
+pub mod seeding;
+pub mod sequencer;
+pub mod testing;
+
+pub use render::{RenderConfig, render_offline_with};
+
 pub use api::{RenderError, RenderOptions, RenderOutput, RenderReport, Stem};
 pub use instrument::{
     Instrument, InstrumentContext, InstrumentError, InstrumentFactory, NoteOn, PresetInfo,
