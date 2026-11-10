@@ -10,6 +10,7 @@ members = [
     "crates/praxis-match",
     "crates/praxis-planner",
     "crates/praxis-cli",
+    "crates/praxis-mcp",
     "crates/praxis-wasm",
     "crates/praxis-testkit",
 ]
@@ -23,6 +24,7 @@ default-members = [
     "crates/praxis-match",
     "crates/praxis-planner",
     "crates/praxis-cli",
+    "crates/praxis-mcp",
     "crates/praxis-testkit",
 ]
 
@@ -44,6 +46,7 @@ praxis-analyze = { path = "crates/praxis-analyze" }
 praxis-match = { path = "crates/praxis-match" }
 praxis-planner = { path = "crates/praxis-planner" }
 praxis-testkit = { path = "crates/praxis-testkit" }
+praxis-mcp = { path = "crates/praxis-mcp" }
 
 # third party: every entry is audited in THIRD_PARTY.md before use
 serde = { version = "1.0.229", features = ["derive"] }

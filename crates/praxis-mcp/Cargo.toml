@@ -1,0 +1,25 @@
+[package]
+name = "praxis-mcp"
+description = "MCP server (stdio) exposing the praxis command layer to AI agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "praxis-mcp"
+path = "src/main.rs"
+
+[dependencies]
+praxis-cli = { path = "../praxis-cli" }
+rmcp.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# rmcp runs on tokio and does not re-export it; this names the same tokio rmcp already pulls in
+# (1.54.1 in Cargo.lock, MIT) so the binary can start a runtime. No new crate enters the build.
+tokio = { version = "1.54.1", default-features = false, features = ["rt"] }
+
+[lints]
+workspace = true
