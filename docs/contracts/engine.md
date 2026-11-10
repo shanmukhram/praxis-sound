@@ -41,6 +41,11 @@ tails of the previous one, so sample `L-1` flows into sample `0` exactly as it w
 player. Effect and compressor state is also in steady state. Loudness is measured on the captured
 cycle, and the limiter runs in the same warm-up manner. `report.warmup_cycles = k`.
 
+Time-varying effects need not be periodic with L, so the first min(50 ms, L/4) of the captured
+cycle is cross-faded from the continuation of sample L-1 (the next cycle's start); samples that
+are already bit-identical are left unchanged. The FDN reverb is time-invariant (no modulation), so
+it is exactly periodic in loops.
+
 Verification: `praxis_analyze::verify` checks the seam; a click at the loop point is a failure.
 
 ## Instruments

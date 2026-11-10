@@ -48,7 +48,9 @@ Rendering a patched score scoped to bars B of layer X:
 - with `master.frozen_gain_db` set, the master is bit-identical outside the same window, widened
   by the master chain's tail and limiter lookahead/release.
 
-"Effect tails aside" in the PRD means exactly that window.
+"Effect tails aside" in the PRD means exactly that window. Recirculating effects (FDN reverb,
+feedback delay) may leave float-rounding differences below -120 dBFS outside the window;
+finite-memory chains are bit-identical.
 
 ## Projects (`.praxis`, FR-31)
 

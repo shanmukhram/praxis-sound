@@ -1,0 +1,435 @@
+{
+  "schema_version": 1,
+  "title": "Calm felt piano loop",
+  "seed": 1,
+  "meta": {
+    "brief": "16 bars, 4/4, A minor, 30 seconds, seamless loop. Bars 1-8: one soft felt piano playing a repeating rhythmic motif on an eighth-note grid, with accents and overlapping sustain. Bars 9-16: the identical piano part, plus a soft muted kick layered underneath. No new melody, no fills. No risers, sweeps, impacts or pads anywhere.",
+    "emotion": "calm",
+    "intensity": 0.35,
+    "tags": [
+      "planned"
+    ],
+    "reference_profiles": [],
+    "provenance": {
+      "attempts": "1",
+      "planner": "praxis-planner plan-v1",
+      "planner_notes": "no emotion word found; used \"calm\"",
+      "provider": "offline-rules",
+      "repairs": "0",
+      "seed": "1"
+    }
+  },
+  "tempo": {
+    "bpm": 128.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "bars": 16,
+  "playback": {
+    "mode": "loop"
+  },
+  "constraints": {
+    "avoid": [
+      "pad",
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "whoosh",
+      "fill"
+    ]
+  },
+  "sections": [
+    {
+      "id": "felt-piano-alone",
+      "name": "Felt piano alone",
+      "bars": {
+        "start": 1,
+        "end": 8
+      },
+      "role": "intro",
+      "intensity": 0.3
+    },
+    {
+      "id": "felt-piano-and-soft-kick",
+      "name": "Felt piano and soft kick",
+      "bars": {
+        "start": 9,
+        "end": 16
+      },
+      "role": "main",
+      "intensity": 0.4
+    }
+  ],
+  "patterns": [
+    {
+      "id": "piano_motif",
+      "grid": "eighth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 57,
+          "velocity": 0.68,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 1,
+          "pitch": 60,
+          "velocity": 0.468,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 2,
+          "pitch": 64,
+          "velocity": 0.553,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 3,
+          "pitch": 69,
+          "velocity": 0.468,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 4,
+          "pitch": 64,
+          "velocity": 0.595,
+          "accent": "bright",
+          "length": 1.6
+        },
+        {
+          "step": 5,
+          "pitch": 60,
+          "velocity": 0.468,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 6,
+          "pitch": 64,
+          "velocity": 0.553,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 7,
+          "pitch": 60,
+          "velocity": 0.468,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 8,
+          "pitch": 53,
+          "velocity": 0.68,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 9,
+          "pitch": 57,
+          "velocity": 0.468,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 10,
+          "pitch": 60,
+          "velocity": 0.553,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 11,
+          "pitch": 65,
+          "velocity": 0.468,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 12,
+          "pitch": 60,
+          "velocity": 0.595,
+          "accent": "bright",
+          "length": 1.6
+        },
+        {
+          "step": 13,
+          "pitch": 57,
+          "velocity": 0.468,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 14,
+          "pitch": 60,
+          "velocity": 0.553,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 15,
+          "pitch": 57,
+          "velocity": 0.468,
+          "accent": "soft",
+          "length": 1.6
+        }
+      ],
+      "spoken": "DON din don din TIN din don din"
+    },
+    {
+      "id": "kick_motif",
+      "grid": "eighth",
+      "length_steps": 8,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 36,
+          "velocity": 0.68,
+          "accent": "strong",
+          "length": 1.0
+        },
+        {
+          "step": 4,
+          "pitch": 36,
+          "velocity": 0.553,
+          "accent": "normal",
+          "length": 1.0
+        }
+      ],
+      "spoken": "DON - - - don - - -"
+    }
+  ],
+  "layers": [
+    {
+      "id": "piano",
+      "name": "Felt piano",
+      "class": "motif",
+      "instrument": {
+        "kind": "sampler",
+        "preset": "felt_piano",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 16
+          },
+          "pattern": "piano_motif",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": -1.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "room",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 1.8,
+            "mix": 0.18,
+            "predelay_ms": 12.0,
+            "size": 0.35
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "kick",
+      "name": "Soft kick",
+      "class": "drums",
+      "instrument": {
+        "kind": "drum",
+        "preset": "soft_kick",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 9,
+            "end": 16
+          },
+          "pattern": "kick_motif",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": -5.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "tone",
+          "kind": "eq",
+          "params": {
+            "hp_hz": 30.0,
+            "lp_hz": 2500.0
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -16.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": [
+    {
+      "bars": {
+        "start": 1,
+        "end": 1
+      },
+      "beat": 0.0,
+      "symbol": "Am"
+    },
+    {
+      "bars": {
+        "start": 2,
+        "end": 2
+      },
+      "beat": 0.0,
+      "symbol": "F"
+    },
+    {
+      "bars": {
+        "start": 3,
+        "end": 3
+      },
+      "beat": 0.0,
+      "symbol": "Am"
+    },
+    {
+      "bars": {
+        "start": 4,
+        "end": 4
+      },
+      "beat": 0.0,
+      "symbol": "F"
+    },
+    {
+      "bars": {
+        "start": 5,
+        "end": 5
+      },
+      "beat": 0.0,
+      "symbol": "Am"
+    },
+    {
+      "bars": {
+        "start": 6,
+        "end": 6
+      },
+      "beat": 0.0,
+      "symbol": "F"
+    },
+    {
+      "bars": {
+        "start": 7,
+        "end": 7
+      },
+      "beat": 0.0,
+      "symbol": "Am"
+    },
+    {
+      "bars": {
+        "start": 8,
+        "end": 8
+      },
+      "beat": 0.0,
+      "symbol": "F"
+    },
+    {
+      "bars": {
+        "start": 9,
+        "end": 9
+      },
+      "beat": 0.0,
+      "symbol": "Am"
+    },
+    {
+      "bars": {
+        "start": 10,
+        "end": 10
+      },
+      "beat": 0.0,
+      "symbol": "F"
+    },
+    {
+      "bars": {
+        "start": 11,
+        "end": 11
+      },
+      "beat": 0.0,
+      "symbol": "Am"
+    },
+    {
+      "bars": {
+        "start": 12,
+        "end": 12
+      },
+      "beat": 0.0,
+      "symbol": "F"
+    },
+    {
+      "bars": {
+        "start": 13,
+        "end": 13
+      },
+      "beat": 0.0,
+      "symbol": "Am"
+    },
+    {
+      "bars": {
+        "start": 14,
+        "end": 14
+      },
+      "beat": 0.0,
+      "symbol": "F"
+    },
+    {
+      "bars": {
+        "start": 15,
+        "end": 15
+      },
+      "beat": 0.0,
+      "symbol": "Am"
+    },
+    {
+      "bars": {
+        "start": 16,
+        "end": 16
+      },
+      "beat": 0.0,
+      "symbol": "F"
+    }
+  ]
+}

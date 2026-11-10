@@ -5,7 +5,7 @@ Only things the owner can give. Work continues on everything they do not block.
 | # | Item | Blocks | Status |
 | --- | --- | --- | --- |
 | 1 | **Anthropic API key** for the Claude planner. Owner will provide it when asked; ask only when live Claude planning is the next step. The offline rule planner covers CI and acceptance test 1 meanwhile. | Live Claude planning and its prompt-suite run | ask when needed |
-| 2 | **Listening sign-off, Phase 2**: acceptance test 1 with the felt piano and soft kick (`demos/phase-2/`). | Phase 2 exit (not the next phases) | pending demos |
+| 2 | **Listening sign-off, Phase 2**: listen to `demos/phase-2/acceptance1_mixed_loop.flac` (and the x3 file for the seam); the README says what to listen for. | Phase 2 exit (not the next phases) | **ready to listen** |
 | 3 | **Real-hardware check** of real-time playback on Windows at Phase 3 exit. | Phase 3 sign-off | later |
 | 4 | **Labelled reference clips** you own with known tempo/key (optional; we self-make the test set). | Nothing | optional |
 
