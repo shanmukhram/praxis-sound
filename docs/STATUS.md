@@ -37,6 +37,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 
 ## Log
 
+- Merged WP-X MCP server (06a1d05): `praxis-mcp` stdio binary with praxis_plan_schema, presets, compose, generate, render, check, analyze, export, validate (all via praxis_cli::ops); agent guide docs/agents/praxis-skill/SKILL.md and docs/agents/mcp.json.example. tokio + praxis-cli moved into workspace deps. 456 release tests pass. Pending tools: praxis_edit, praxis_variations (wire to WP-P2), praxis_takes / praxis_open_view (with WP-U3).
+
 - Merged WP-P2 edits + variations (331acac): plan_edit / compose_edit / plan_project_edit, EditPlan schema, locked layers refused out loud, repairs never widen scope, variations with own seeds; 15/15 edit prompt cases; bars 1-12 identical after "change the last four bars" (note level). Follow-ups noted: RuleProvider routing of edit tool, prompt_suite filter, planner dev-dep on praxis-engine for render-level isolation.
 - Merged WP-C2 synth + drums (394cb94): 11 synth presets + 11 drum presets + GM kit; pitch within 0.01 cent (warm_bass -3.5 c, warm_pad +2.7 c), soft_kick 100% energy < 150 Hz, -40 dB in 230 ms, 0 allocations. Acceptance 1 now renders the kick and passes all 8 checks (-15.54 LUFS, 93% on grid). CLI test updated: bell fixture now renders. 452 release tests pass.
 

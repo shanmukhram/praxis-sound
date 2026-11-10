@@ -103,7 +103,11 @@ The soft kick layer is skipped until WP-C2 lands (the test says so and tightens 
 
 Test totals at handoff: 386 Rust tests pass in release; app: 140 unit tests on the WP-U2 branch.
 
-## 5. In flight (updated 2026-11-11: WP-K, WP-P2, WP-C2 merged; WP-F2 mix bus and WP-X MCP server running as sub-agents)
+## 5. In flight (updated 2026-11-11: WP-K, WP-P2, WP-C2, WP-X merged; WP-F2 mix bus finishing its reverb fix)
+
+WP-F2 (worktree `clever-cori-d1bc75`, branch `wp/f2-mix-bus`): mix bus built; it is adding early
+reflections to the FDN reverb because the abrupt 40 ms wet entry broke the grid check (85%). Merge
+when acceptance test 1 passes all checks with the reverb on. Next: Phase 2 demo, then WP-U3.
 
 Running: WP-F2 in worktree `clever-cori-d1bc75` (branch `wp/f2-mix-bus`); WP-X MCP server in an
 agent worktree under `.claude/worktrees/` (branch `wp/x-agents`). Next after WP-X merges: WP-U3.

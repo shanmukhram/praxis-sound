@@ -5,7 +5,8 @@ Status: accepted (owner, 2026-11-10)
 The owner builds Praxis Sound so that their AI agents, as well as people, produce sounds with it.
 Agents cannot listen and are themselves language models. Decisions:
 
-1. **MCP server.** A new crate `praxis-mcp` (binary entry `praxis mcp`, stdio transport) built on
+1. **MCP server.** A new crate `praxis-mcp` (binary `praxis-mcp`, stdio transport; not a `praxis mcp` subcommand,
+   because praxis-mcp depends on praxis-cli and the reverse would be a cycle) built on
    `rmcp` 3.9 (the official Rust MCP SDK, Apache-2.0, released 2026-11-05) exposes the product as
    tools: `praxis_plan_schema`, `praxis_presets`, `praxis_compose` (plan in -> project + render),
    `praxis_generate` (brief in, using the offline planner or Claude when a key exists),
