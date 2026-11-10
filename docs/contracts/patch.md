@@ -26,7 +26,10 @@ Every change to a Score, by a person or the model, is a `ScorePatch`: a list of 
 6. **Isolation.** For any patch scoped to bars B and layers L: every layer not in L is
    structurally identical, and every bar outside B of a layer in L expands (via
    `timeline::expand_notes`) to exactly the same note events. Property-tested.
-7. **Deterministic ids.** New pattern ids created by splitting are derived from
+7. **Insert positions and seed.** `add_pattern`, `add_layer`, `add_section` and `add_marker` take an
+   optional `index` (None appends); inverses of removals re-insert at the old index in one op.
+   `set_seed` is a global op.
+8. **Deterministic ids.** New pattern ids created by splitting are derived from
    (layer id, bar range), e.g. `piano_b13-16`, with a numeric suffix on collision.
 
 ## Audio-level isolation (engine, tested in WP-F)

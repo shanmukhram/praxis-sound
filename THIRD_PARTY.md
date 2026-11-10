@@ -40,7 +40,7 @@ Rejected: symphonia 0.6.1 (MPL-2.0, weak copyleft; ADR-0004). fundsp 0.23 (not n
 
 | Pack | Licence | Source | Size | Used for |
 | --- | --- | --- | --- | --- |
-| Upright Piano KW (FreePats), SFZ+FLAC 2022-02-21 | CC0-1.0 | https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html | 32 MiB | `felt_piano`, `upright_piano` (to be installed by WP-C1) |
+| Upright Piano KW (FreePats), SFZ+FLAC 2022-02-21 | CC0-1.0 | https://freepats.zenvoid.org/Piano/acoustic-grand-piano.html | 33,294,287 bytes, blake3 `1ae0bd73dc5618682bc7d06c9c9d4dfc72458a76d504657e7125b5365a5cc3d1` | `felt_piano`, `upright_piano`; installed by `praxis packs install upright-piano-kw` (CC0 text in the pack's `cc0.txt`) |
 
 ## External programs (not shipped, optional)
 

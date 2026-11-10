@@ -30,7 +30,8 @@ lands (append a section; do not change the provider types).
 - `offline::RuleProvider`: a deterministic brief parser (keys, tempo, bars, durations, emotion
   words, instruments, "no X" lists, spoken rhythm in quotes, section phrases like "bars 9-16 add
   a soft kick"). Used in CI and when no key is configured. It must pass acceptance test 1.
-- `claude::ClaudeProvider`: Claude Messages API with a forced tool call; model id configurable,
+- `claude::ClaudeProvider`: Claude Messages API with one strict tool call (`tool_choice: auto` plus a
+  check on models that reject forced tool use, such as claude-opus-5-5); model id configurable,
   default `claude-opus-5-5`; key from `ANTHROPIC_API_KEY` or the OS keychain (`keyring`).
   Recorded/replayed fixtures make its tests run offline.
 
