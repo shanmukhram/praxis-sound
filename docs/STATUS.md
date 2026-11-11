@@ -2,7 +2,7 @@
 
 Updated after every merge. Newest first. Branch: `build/integration` (pushed to `origin`).
 
-## Current phase: 2 exit pending owner sign-off (demos/phase-2/acceptance1_mixed_loop.flac)
+## Current phase: 3 (desktop app and real-time engine merged; Phase 2 sign-off still pending: demos/phase-2/acceptance1_mixed_loop.flac)
 
 Wave 1 (WP-A, B1, B2, C1, D1, E, F, P) runs as background agents in worktrees. From wave 2 on,
 work packages run as visible sessions (owner's choice), briefed from `docs/briefs/`. WP-X (MCP
@@ -36,6 +36,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- Merged WP-U3 desktop app (1ef3c5f + review fix e5d6bc6): Tauri 2.12.5 shell `crates/praxis-app` (workspace member, not default) and `TauriEngine` adapter; take commands are thin wrappers over `praxis_cli::ops` (one take history shared with agents via `takes.json` revision polling); `<audio>` playback through the asset protocol, which serves only a real sound folder's `takes/`, `variations/`, `live/` (review fix: it first allowed any folder the front end named). Release exe 22 MB: "a calm 30-second felt piano loop in A minor" made take 1 in 3.0 s with 8/8 checks; an agent's take (`praxis ask --who cut-assistant`) appeared live. Rerun here: fmt, clippy, praxis-app 6/6, tsc, Vitest 146/146. Run it: `cd app && npm run tauri -- dev`. Follow-ups: real-time engine for transport and meters (Phase 3 exit), shell re-reads connected agents, NSIS installer, undo/redo into `praxis_cli::ops` (app has its own today), planner solves "30-second" to 31.4 s (11 bars at 84 BPM).
 
 - Merged WP-R real-time engine (1261d59) and WP-K2 edits/variations/takes (c84b212). WP-R: RealtimeEngine (rtrb queues, transport, live mute/solo, graph swap with crossfade) bit-identical to the offline render in 256- and 97-frame callbacks, 0 allocations on the audio thread, cpal device output, `play` example: 0 xruns on the Realtek speakers (Windows shared mode calls back every 480 frames whatever is requested; true 256-frame callbacks would need exclusive mode or ASIO). WP-K2: `ops::{edit, variations, ask, takes, restore, keep_variation, open_view}` + CLI subcommands + MCP tools over a sound folder (`takes.json` with revision), gain frozen after take 1 (edit of bars 13-16 keeps bars 4-12 of the master bit-identical; bars 1-3 hold the wrapped reverb tail, as patch.md allows), CLI and planner tidy-ups. Review rerun: fmt, workspace clippy, tests of engine/audio-io/cli/mcp/planner, acceptance 1 (all 8 checks, grid 100%), wasm build. The soak tests' "no callback ever over budget" check failed once under build load (wall-clock); changed to at most 0.1% over budget, p99 bound kept. Follow-ups: planner `matches_layer` should prefer an exact layer id (K2 worked around it), undo/redo ops for the app, cpal `realtime` thread-priority feature.
 
