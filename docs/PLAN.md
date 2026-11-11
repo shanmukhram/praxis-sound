@@ -191,6 +191,12 @@ tests, `docs/agents/**`. Depends: WP-AG, WP-U5, WP-D1c. Brief: `docs/briefs/WP-A
 Done: no-take turns are replies, short titles, reverb-aware wording, locks without takes,
 bar-limited tone edits through the app's scope, live steps in the app, loopback-only API override.
 
+### WP-P4 live planner quality (closes Phase 4)
+Owns: `crates/praxis-planner/**`, planner sections of contracts/planner.md. Depends: WP-P2b and the
+live fix efbdedd. Brief: `docs/briefs/WP-P4-live-planner-quality.md`. Done: quality lints in the
+model repair loop, restraint in the prompt, fair suite expectations; live brief suite 27/27 and
+edit suite 20/20 through Claude (at most three live runs, under US$4).
+
 ### WP-K cli
 FR-33. Owns: `crates/praxis-cli/**`. Depends: grows with P, D, E, M. Done: every command in
 contracts/cli.md, JSON payload tests (`assert_cmd`-style via std::process).
