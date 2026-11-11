@@ -279,6 +279,40 @@ pub enum PlanIssueCode {
     InactiveLayer,
     Intensity,
     Chord,
+    // Quality issues (model providers only, `brief::quality_issues`): the plan is valid, but the
+    // brief or the arranged Score's lints say it breaks the owner's taste. They go back to the
+    // model in a repair round; nothing rejects a plan for them.
+    /// A layer plays an instrument the brief does not name (restraint).
+    UnrequestedLayer,
+    /// A layer enters late or leaves early although the brief never says when.
+    LayerBars,
+    /// Lint `isolated_notes` on the arranged Score.
+    IsolatedNotes,
+    /// Lint `no_motif_repetition`.
+    NoMotifRepetition,
+    /// Lint `missing_sustain_overlap`.
+    MissingSustainOverlap,
+    /// Lint `too_many_elements`.
+    TooManyElements,
+    /// Lint `unrequested_effect_class`.
+    UnrequestedEffectClass,
+}
+
+impl PlanIssueCode {
+    /// Quality issues are advice for a model: a plan with only these is valid.
+    pub fn is_quality(self) -> bool {
+        use PlanIssueCode::*;
+        matches!(
+            self,
+            UnrequestedLayer
+                | LayerBars
+                | IsolatedNotes
+                | NoMotifRepetition
+                | MissingSustainOverlap
+                | TooManyElements
+                | UnrequestedEffectClass
+        )
+    }
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]

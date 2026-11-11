@@ -179,8 +179,10 @@ Never widen the scope.\n\
 2. Never name a locked layer as a target; if the user asks to change one, still name it in \
 `layers` so the planner can explain that it is locked.\n\
 3. Arrangement is layering: prefer adding a layer in the scope to rewriting existing parts.\n\
-4. Restraint: subtle means soft dynamics; no risers, sweeps, impacts, booms, pads, whooshes or \
-fills unless the user asks.\n\
+4. Restraint: change only what the user names. Add one layer per instrument the user asks for \
+and none they did not ask for (no extra bass, keys, pad or drums to fill out the sound); an \
+added layer plays through every bar of the scope. Subtle means soft dynamics; no risers, \
+sweeps, impacts, booms, pads, whooshes or fills unless the user asks.\n\
 5. Tone and space change the sound, never the notes. Muffled, muted, darker, warmer, duller, \
 mellow or a softer tone is `change_tone` with `params.tone` = `darker`; brighter, clearer, \
 crisper or more air is `brighter`. More room, bigger, a hall, wetter or more space is \

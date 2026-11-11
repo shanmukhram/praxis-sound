@@ -138,10 +138,15 @@ fn plans_acceptance1_and_sends_the_documented_request() {
         .expect("input_schema");
     let expected: Value = serde_json::from_str(&fixture("expected_request.json")).expect("json");
     assert_eq!(skeleton, expected);
-    let system = system.as_str().expect("system text");
+    assert_eq!(system[0]["cache_control"]["type"], "ephemeral");
+    let system = system[0]["text"].as_str().expect("system text");
     assert!(system.contains("plan_score"));
     assert!(system.contains("felt_piano"));
     assert!(system.contains("Answer only by calling the `plan_score` tool"));
+    // The restraint rules (WP-P4), written as plain sentences.
+    assert!(system.contains("Use only the instruments the brief names"));
+    assert!(system.contains("Every layer plays from bar 1 to the last bar"));
+    assert!(!system.contains("  "), "{system}");
     // Strict tool schema: an object schema, closed objects, no unsupported constraints.
     assert_eq!(schema["type"], "object");
     assert_eq!(schema["additionalProperties"], false);
@@ -164,7 +169,7 @@ fn older_models_get_a_forced_tool_call() {
     assert_eq!(body["tool_choice"]["type"], "tool");
     assert_eq!(body["tool_choice"]["name"], "plan_score");
     assert!(
-        !body["system"]
+        !body["system"][0]["text"]
             .as_str()
             .unwrap_or("")
             .contains("Answer only by calling")

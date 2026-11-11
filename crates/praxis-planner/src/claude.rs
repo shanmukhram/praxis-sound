@@ -16,9 +16,15 @@
 //!   user `anthropic`). It is only ever placed in the `x-api-key` header; it is never logged,
 //!   never included in errors and never shown by `Debug`.
 //! - The HTTP layer is a [`Transport`] so tests replay recorded responses offline.
+//! - Prompt caching: explicit `cache_control` breakpoints on the tool definition (the schema is
+//!   the same for every request) and on the system prompt (the same for every brief; repair
+//!   rounds resend it). Cache reads cost a twentieth of fresh input on Claude Opus 5.5.
+//! - Every response's `usage` is added up ([`ClaudeProvider::usage`], [`Usage::cost_usd`]), so
+//!   live runs report what they cost.
 
 use crate::provider::{Message, Provider, ProviderError, Role, ToolRequest};
 use serde_json::{Value, json};
+use std::sync::Mutex;
 use std::time::Duration;
 
 pub const DEFAULT_MODEL: &str = "claude-opus-5-5";
@@ -241,11 +247,93 @@ pub fn strict_schema(schema: &Value) -> Value {
     s
 }
 
+/// Token usage added up over the responses a provider received (`usage` in each response).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Usage {
+    /// Successful API responses counted.
+    pub requests: u32,
+    /// Fresh (uncached) input tokens.
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    /// Input tokens written to the prompt cache.
+    pub cache_creation_input_tokens: u64,
+    /// Input tokens read from the prompt cache.
+    pub cache_read_input_tokens: u64,
+}
+
+/// US$ per million tokens: (input, output, cache read, 5-minute cache write).
+pub fn price_per_mtok(model: &str) -> Option<(f64, f64, f64, f64)> {
+    // Anthropic first-party rates (2026-11); a cache write costs 1.25x input.
+    let p = |i: f64, o: f64, r: f64| Some((i, o, r, i * 1.25));
+    match model {
+        m if m.starts_with("claude-opus-5-5") => p(4.0, 20.0, 0.20),
+        m if m.starts_with("claude-sonnet-5-5") => p(2.0, 10.0, 0.10),
+        m if m.starts_with("claude-fable-5-2") => p(8.0, 40.0, 0.20),
+        m if m.starts_with("claude-haiku-5-5") => p(0.10, 0.50, 0.01),
+        _ => None,
+    }
+}
+
+impl Usage {
+    /// Adds one response's `usage` object.
+    pub fn add_response(&mut self, resp: &Value) {
+        let u = &resp["usage"];
+        let n = |k: &str| u[k].as_u64().unwrap_or(0);
+        self.requests += 1;
+        self.input_tokens += n("input_tokens");
+        self.output_tokens += n("output_tokens");
+        self.cache_creation_input_tokens += n("cache_creation_input_tokens");
+        self.cache_read_input_tokens += n("cache_read_input_tokens");
+    }
+
+    /// The difference `self - earlier` (usage of the calls made since `earlier`).
+    pub fn since(&self, earlier: &Usage) -> Usage {
+        Usage {
+            requests: self.requests.saturating_sub(earlier.requests),
+            input_tokens: self.input_tokens.saturating_sub(earlier.input_tokens),
+            output_tokens: self.output_tokens.saturating_sub(earlier.output_tokens),
+            cache_creation_input_tokens: self
+                .cache_creation_input_tokens
+                .saturating_sub(earlier.cache_creation_input_tokens),
+            cache_read_input_tokens: self
+                .cache_read_input_tokens
+                .saturating_sub(earlier.cache_read_input_tokens),
+        }
+    }
+
+    /// Cost in US$ at the model's list price, if the model's price is known.
+    pub fn cost_usd(&self, model: &str) -> Option<f64> {
+        let (i, o, r, w) = price_per_mtok(model)?;
+        Some(
+            (self.input_tokens as f64 * i
+                + self.output_tokens as f64 * o
+                + self.cache_read_input_tokens as f64 * r
+                + self.cache_creation_input_tokens as f64 * w)
+                / 1e6,
+        )
+    }
+}
+
+impl std::fmt::Display for Usage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} requests, {} input + {} cache write + {} cache read, {} output tokens",
+            self.requests,
+            self.input_tokens,
+            self.cache_creation_input_tokens,
+            self.cache_read_input_tokens,
+            self.output_tokens
+        )
+    }
+}
+
 /// Claude Messages API provider.
 pub struct ClaudeProvider {
     config: ClaudeConfig,
     transport: Box<dyn Transport>,
     key: KeySource,
+    usage: Mutex<Usage>,
 }
 
 impl std::fmt::Debug for ClaudeProvider {
@@ -288,6 +376,7 @@ impl ClaudeProvider {
             config,
             transport,
             key,
+            usage: Mutex::new(Usage::default()),
         }
     }
 
@@ -295,10 +384,15 @@ impl ClaudeProvider {
         &self.config
     }
 
+    /// Token usage of every successful response so far.
+    pub fn usage(&self) -> Usage {
+        self.usage.lock().map(|u| *u).unwrap_or_default()
+    }
+
     /// The Messages API request body for a tool request.
     pub fn request_body(&self, req: &ToolRequest) -> Value {
         let forced = supports_forced_tool_choice(&self.config.model);
-        let system = if forced {
+        let system_text = if forced {
             req.system.clone()
         } else {
             format!(
@@ -324,12 +418,17 @@ impl ClaudeProvider {
         let mut body = json!({
             "model": self.config.model,
             "max_tokens": req.max_tokens,
-            "system": system,
+            "system": [{
+                "type": "text",
+                "text": system_text,
+                "cache_control": {"type": "ephemeral"},
+            }],
             "messages": messages,
             "tools": [{
                 "name": req.tool_name,
                 "description": req.tool_description,
                 "input_schema": strict_schema(&req.input_schema),
+                "cache_control": {"type": "ephemeral"},
             }],
             "tool_choice": tool_choice,
         });
@@ -369,9 +468,13 @@ impl ClaudeProvider {
                 .map_err(|e| ProviderError::Request(redact(&e, key)))?;
             let retryable = matches!(resp.status, 429 | 500 | 502 | 503 | 504 | 529);
             if resp.status == 200 {
-                return serde_json::from_str(&resp.body).map_err(|e| {
+                let v: Value = serde_json::from_str(&resp.body).map_err(|e| {
                     ProviderError::Request(format!("unreadable response from the API: {e}"))
-                });
+                })?;
+                if let Ok(mut u) = self.usage.lock() {
+                    u.add_response(&v);
+                }
+                return Ok(v);
             }
             if retryable && attempt < self.config.max_retries {
                 let wait_ms = resp
