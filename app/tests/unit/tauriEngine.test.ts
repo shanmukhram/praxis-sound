@@ -366,6 +366,7 @@ class FakeAudio implements AudioLike {
   currentTime = 0;
   duration = 30;
   paused = true;
+  volume = 1;
   async play(): Promise<void> {
     this.paused = false;
   }

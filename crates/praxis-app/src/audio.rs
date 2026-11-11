@@ -294,6 +294,8 @@ pub struct TransportStatus {
     /// Live overrides by layer id.
     pub layers: BTreeMap<String, LayerLive>,
     pub loop_range: Option<BarRange>,
+    /// The A/B trim on the take while comparing with a reference clip (none: its own level).
+    pub compare: Option<CompareLevel>,
 }
 
 /// A live layer override on top of the score (not saved): a trim in dB, and mute / solo when
@@ -308,6 +310,38 @@ pub struct LayerLive {
     pub solo: Option<bool>,
 }
 
+/// The take's side of a loudness-matched A/B with a reference clip (WP-U6, FR-30): a trim on the
+/// master while comparing (the take is turned down when it is the louder one), or `muted` while
+/// the clip is heard. Never saved; never in a render or an export.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CompareLevel {
+    /// dB, clamped to -60..=0 (the A/B never turns the take up).
+    pub gain_db: f32,
+    #[serde(default)]
+    pub muted: bool,
+}
+
+/// The master trim (dB) the engine plays a muted A/B side at: its floor.
+pub const COMPARE_MUTE_DB: f32 = -60.0;
+
+impl CompareLevel {
+    /// The master gain the engine gets for a graph whose own master gain is `base_db`.
+    pub fn master_db(level: Option<CompareLevel>, base_db: f64) -> f32 {
+        match level {
+            None => base_db as f32,
+            Some(c) if c.muted => COMPARE_MUTE_DB,
+            Some(c) => {
+                let trim = if c.gain_db.is_finite() {
+                    c.gain_db.clamp(-60.0, 0.0)
+                } else {
+                    0.0
+                };
+                (base_db as f32 + trim).max(COMPARE_MUTE_DB)
+            }
+        }
+    }
+}
+
 // ------------------------------------------------------------------ the service
 
 enum Req {
@@ -316,6 +350,7 @@ enum Req {
     Seek(f64),
     SetLoop(Option<BarRange>),
     Layer(String, LayerLive),
+    Compare(Option<CompareLevel>),
     Score {
         generation: u64,
         score: Box<Score>,
@@ -405,6 +440,12 @@ impl AudioService {
 
     pub fn set_layer(&self, layer: &str, live: LayerLive) {
         self.send(Req::Layer(layer.into(), live));
+    }
+
+    /// The take's side of an A/B with a reference clip: a trim (or silence) on the master while
+    /// comparing; `None` plays the take at its own level again. Kept across graph swaps.
+    pub fn set_compare(&self, level: Option<CompareLevel>) {
+        self.send(Req::Compare(level));
     }
 
     /// The live score changed (a new take, a restore, a hand edit, undo, redo, a mute): plays it
@@ -506,6 +547,9 @@ struct Service {
     warnings: Vec<String>,
     sent: Vec<Sent>,
     overrides: BTreeMap<String, LayerLive>,
+    /// The A/B trim, and the master gain of the playing graph it applies to.
+    compare: Option<CompareLevel>,
+    graph_gain_db: Option<f64>,
     loop_bars: Option<BarRange>,
     statuses: Vec<Status>,
     peak: [f32; 2],
@@ -557,6 +601,8 @@ impl Service {
             warnings: Vec::new(),
             sent: Vec::new(),
             overrides: BTreeMap::new(),
+            compare: None,
+            graph_gain_db: None,
             loop_bars: None,
             statuses: Vec::with_capacity(praxis_engine::realtime::STATUS_CAPACITY),
             peak: [0.0; 2],
@@ -596,6 +642,7 @@ impl Service {
                 self.device = Some(d);
                 self.device_error = None;
                 self.graph = None;
+                self.graph_gain_db = None;
                 self.xruns_seen = 0;
                 self.sent.clear();
                 self.send_loop();
@@ -680,6 +727,10 @@ impl Service {
                 }
                 self.send_mix();
             }
+            Req::Compare(level) => {
+                self.compare = level;
+                self.send_master();
+            }
             Req::Score {
                 generation,
                 score,
@@ -703,6 +754,8 @@ impl Service {
                 self.send(Command::Seek(0));
                 self.want = None;
                 self.overrides.clear();
+                self.compare = None;
+                self.send_master();
                 self.loop_bars = None;
                 self.prepare_error = None;
                 self.send(Command::SetLoop(None));
@@ -764,6 +817,7 @@ impl Service {
         }
         self.preparing = false;
         self.prepare_ms = Some(ms);
+        let graph_gain = graph.master_gain_db();
         self.warnings = graph.warnings().to_vec();
         if d.control.swap(*graph).is_err() {
             self.prepare_error = Some("the engine's command queue is full".into());
@@ -782,6 +836,19 @@ impl Service {
         self.graph = Some((generation, score));
         self.send_mix();
         self.send_loop();
+        self.graph_gain_db = Some(graph_gain);
+        // A new graph starts at its own master gain: an A/B trim goes on again.
+        if self.compare.is_some() {
+            self.send_master();
+        }
+    }
+
+    /// Sends the master gain the A/B asks for (the graph's own gain when not comparing).
+    fn send_master(&mut self) {
+        if let Some(base) = self.graph_gain_db {
+            let gain_db = CompareLevel::master_db(self.compare, base);
+            self.send(Command::SetMasterGain { gain_db });
+        }
     }
 
     /// Sends every layer whose wanted mute, solo or trim differs from what the engine has.
@@ -977,6 +1044,7 @@ impl Service {
             p99_render_ms: stats.p99_render_ms,
             layers: self.overrides.clone(),
             loop_range: self.loop_bars,
+            compare: self.compare,
         }
     }
 }

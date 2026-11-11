@@ -1,0 +1,32 @@
+{
+  "brief": "A tense cue in A minor at 110 BPM, 48 bars long, with an intro, a build, a peak and a release on felt piano, sub bass and a soft kick.",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "A",
+      "mode": "minor"
+    },
+    "bpm": 110,
+    "bars": 48,
+    "emotion": "tense",
+    "layer_count": 3,
+    "section_roles": [
+      "intro",
+      "build",
+      "peak",
+      "release"
+    ],
+    "layers_enter_in_order": true,
+    "drop_before": "peak",
+    "hold_before": "release",
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

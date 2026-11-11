@@ -89,6 +89,122 @@ pub struct ScorePlan {
     /// from the brief's words and ignores the field.
     #[serde(default)]
     pub requested: Vec<GeneratorClass>,
+    /// Multi-section form for a cue (FR-9), e.g. intro, build, peak, release or A/B/A. The
+    /// planner solves each part's bars from the piece's length (`weight` shares, or exact
+    /// `bars`), moves part boundaries onto hit points, and writes `sections` from it: with a
+    /// form, leave `sections` empty. Layers a part does not list enter by its intensity, in the
+    /// order of `layers` (the first layer alone at the quietest part, every layer at the
+    /// loudest), so the music grows by layering.
+    #[serde(default)]
+    pub form: Vec<FormPart>,
+    /// Hit points (FR-10): moments in seconds from the start (a cut, a reveal) the music must
+    /// land on. The planner chooses the tempo (inside `tempo_range`) so each lands on the grid,
+    /// accents it, and starts a form part there when one is near.
+    #[serde(default)]
+    pub hits: Vec<HitPoint>,
+    /// A chord progression that repeats from the start of every section: chord symbols in the
+    /// key ("Am", "F") or Roman numerals ("i", "VI", "III", "VII"). Leave `chords` empty when
+    /// you give one. With a form and no progression the planner picks one for the emotion.
+    #[serde(default)]
+    pub progression: Option<PlanProgression>,
+    /// Tempo range the planner may choose from to land the hit points (min and max BPM). Omit
+    /// it to keep the tempo within 4% of `tempo_bpm`.
+    #[serde(default)]
+    pub tempo_range: Option<TempoRange>,
+}
+
+/// One part of a multi-section form.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct FormPart {
+    /// intro, verse, main (a chorus-like part), build, peak, breakdown, release, transition or
+    /// outro.
+    pub role: SectionRole,
+    /// Part name, e.g. "A", "Chorus"; omit for the role's name.
+    #[serde(default)]
+    pub name: String,
+    /// Relative length (default 1): the parts share the piece's bars by weight.
+    #[serde(default = "one_weight")]
+    pub weight: f32,
+    /// Exact length in bars; wins over `weight`.
+    #[serde(default)]
+    pub bars: Option<u32>,
+    /// 0..1 tension of the part; omit for the role's usual level (intro 0.3, build 0.6,
+    /// peak 0.85, release 0.4). It drives dynamics, density, a gentle filter and layer entries.
+    #[serde(default)]
+    pub intensity: Option<f32>,
+    /// Ids of the layers that play in this part; omit to let the intensity decide.
+    #[serde(default)]
+    pub layers: Vec<String>,
+    /// How the music moves into this part.
+    #[serde(default)]
+    pub transition: Transition,
+}
+
+fn one_weight() -> f32 {
+    1.0
+}
+
+/// A musical transition into a form part. Never a riser unless the brief asks for one (then use
+/// a riser layer, which needs `requested`).
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Transition {
+    /// The planner chooses: a drop into a peak, a pickup when a layer enters, a held chord into
+    /// a release or outro.
+    #[default]
+    Auto,
+    /// Straight in.
+    None,
+    /// A layer entering here starts on the last beat of the bar before.
+    Pickup,
+    /// The bar before plays only the lead layer.
+    Drop,
+    /// The bar before holds one sustained chord; drums rest.
+    Hold,
+}
+
+/// A moment the music must land on.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct HitPoint {
+    /// Seconds from the start, e.g. 65.0 for 1:05.
+    pub time_s: f64,
+    /// What happens there ("cut", "reveal").
+    #[serde(default)]
+    pub label: String,
+}
+
+/// A repeating chord progression.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PlanProgression {
+    /// Chord symbols in the key or Roman numerals, in order.
+    pub chords: Vec<String>,
+    /// Bars each chord lasts (1, 2 or 4; default 1).
+    #[serde(default = "one_bar_u32")]
+    pub bars_per_chord: u32,
+}
+
+fn one_bar_u32() -> u32 {
+    1
+}
+
+/// Inclusive tempo range in BPM.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct TempoRange {
+    pub min: f64,
+    pub max: f64,
+}
+
+impl ScorePlan {
+    /// True when the plan asks for scoring depth (a form, hit points or a progression): the
+    /// arranger then voice-leads chords, develops motifs by intensity, writes transitions and
+    /// lands hits (`crate::scoring`). Plans without them arrange exactly as before.
+    pub fn is_scored(&self) -> bool {
+        !self.form.is_empty() || !self.hits.is_empty() || self.progression.is_some()
+    }
 }
 
 fn four_four() -> TimeSignature {
@@ -279,6 +395,46 @@ pub enum PlanIssueCode {
     InactiveLayer,
     Intensity,
     Chord,
+    /// A form part is invalid (role, weight, bars, intensity or layer ids).
+    Form,
+    /// A hit point is outside the piece or too close to another.
+    Hit,
+    /// A progression chord cannot be read or is not in the key.
+    Progression,
+    // Quality issues (model providers only, `brief::quality_issues`): the plan is valid, but the
+    // brief or the arranged Score's lints say it breaks the owner's taste. They go back to the
+    // model in a repair round; nothing rejects a plan for them.
+    /// A layer plays an instrument the brief does not name (restraint).
+    UnrequestedLayer,
+    /// A layer enters late or leaves early although the brief never says when.
+    LayerBars,
+    /// Lint `isolated_notes` on the arranged Score.
+    IsolatedNotes,
+    /// Lint `no_motif_repetition`.
+    NoMotifRepetition,
+    /// Lint `missing_sustain_overlap`.
+    MissingSustainOverlap,
+    /// Lint `too_many_elements`.
+    TooManyElements,
+    /// Lint `unrequested_effect_class`.
+    UnrequestedEffectClass,
+}
+
+impl PlanIssueCode {
+    /// Quality issues are advice for a model: a plan with only these is valid.
+    pub fn is_quality(self) -> bool {
+        use PlanIssueCode::*;
+        matches!(
+            self,
+            UnrequestedLayer
+                | LayerBars
+                | IsolatedNotes
+                | NoMotifRepetition
+                | MissingSustainOverlap
+                | TooManyElements
+                | UnrequestedEffectClass
+        )
+    }
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -707,8 +863,16 @@ pub fn validate_plan(plan: &ScorePlan, ctx: &PlanContext) -> Vec<PlanIssue> {
         );
     }
 
-    validate_sections(&mut out, plan, bars);
+    // With a form the sections are derived from it (crate::scoring::realise).
+    if plan.form.is_empty() {
+        validate_sections(&mut out, plan, bars);
+    }
     validate_chords(&mut out, plan, bars);
+    let secs = timing
+        .as_ref()
+        .ok()
+        .map(|t| t.bars as f64 * ts.bar_quarters() * 60.0 / t.bpm);
+    crate::scoring::validate(&mut out, plan, bars, secs);
     out
 }
 
@@ -1083,6 +1247,10 @@ mod tests {
             chords: vec![],
             notes: vec![],
             requested: vec![],
+            form: vec![],
+            hits: vec![],
+            progression: None,
+            tempo_range: None,
         };
         assert_eq!(
             resolve_timing(&p),

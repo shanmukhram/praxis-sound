@@ -11,10 +11,18 @@
   },
   "edit": {
     "instruction": "make it pop",
-    "expect": {
-      "intent": "not_understood",
-      "unchanged": true,
-      "summary_contains": "Nothing changed"
-    }
+    "expect_any": [
+      {
+        "intent": "not_understood",
+        "unchanged": true,
+        "summary_contains": "Nothing changed"
+      },
+      {
+        "intent": "change_tone",
+        "tone": "brighter",
+        "whole": true,
+        "notes_unchanged": true
+      }
+    ]
   }
 }

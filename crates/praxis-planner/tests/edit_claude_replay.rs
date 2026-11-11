@@ -135,7 +135,7 @@ fn claude_edit_with_one_repair_round() {
     );
     // Opus 5.5 rejects a forced tool choice: auto plus a named tool in the system prompt.
     assert_eq!(first["tool_choice"]["type"], "auto");
-    let system = first["system"].as_str().expect("system");
+    let system = first["system"][0]["text"].as_str().expect("system");
     assert!(system.contains("edit_score"));
     assert!(
         system.contains("Layer `piano`") && system.contains("Layer `kick`"),
@@ -191,7 +191,7 @@ fn claude_tone_edit_and_not_understood() {
     let piano = out.score.layer("piano").expect("piano");
     assert_eq!(piano.instrument.params.get("tone"), Some(&0.2));
     let reqs = replay.requests.lock().expect("lock");
-    let system = reqs[0]["system"].as_str().expect("system");
+    let system = reqs[0]["system"][0]["text"].as_str().expect("system");
     assert!(
         system.contains("change_tone")
             && system.contains("change_space")

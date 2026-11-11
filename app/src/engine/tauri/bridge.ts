@@ -4,6 +4,11 @@
 export interface Bridge {
   /** Calls a `#[tauri::command]` in crates/praxis-app. Rejects with the command's error. */
   invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T>;
+  /**
+   * Calls a command with a raw byte body (a dropped clip) and string headers (ASCII; encode
+   * anything else). Absent in bridges that cannot send bytes.
+   */
+  invokeBytes?<T>(cmd: string, body: Uint8Array, headers: Record<string, string>): Promise<T>;
   /** Subscribes to an app event; resolves to the unsubscribe function. */
   listen<T>(event: string, cb: (payload: T) => void): Promise<() => void>;
   /** A URL the WebView can load a local file from (`<audio>`, `fetch`). */
@@ -33,6 +38,7 @@ export async function tauriBridge(): Promise<Bridge> {
   const event = await import('@tauri-apps/api/event');
   return {
     invoke: (cmd, args) => core.invoke(cmd, args),
+    invokeBytes: (cmd, body, headers) => core.invoke(cmd, body, { headers }),
     listen: (name, cb) => event.listen(name, (e) => cb(e.payload as never)),
     fileUrl: (path) => core.convertFileSrc(path),
   };

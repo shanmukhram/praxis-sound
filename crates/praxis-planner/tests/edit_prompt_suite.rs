@@ -180,25 +180,17 @@ fn generic_checks(before: &Score, out: &EditOutcome, catalogue: &Catalogue) -> R
     Ok(())
 }
 
-/// The planner the suite runs on: the real Claude planner when `PRAXIS_SUITE_PROVIDER=claude`,
-/// otherwise the offline rule planner.
-fn suite_provider() -> (Box<dyn Provider>, bool) {
-    match std::env::var("PRAXIS_SUITE_PROVIDER").as_deref() {
-        Ok("claude") => (
-            Box::new(praxis_planner::claude::ClaudeProvider::new()),
-            true,
-        ),
-        _ => (Box::new(RuleProvider::new()), false),
-    }
+/// True when the suite runs on the real Claude planner (`PRAXIS_SUITE_PROVIDER=claude`).
+fn live() -> bool {
+    std::env::var("PRAXIS_SUITE_PROVIDER").as_deref() == Ok("claude")
 }
 
-fn check_case(case: &Value) -> Result<String, String> {
+fn check_case(provider: &dyn Provider, case: &Value) -> Result<String, String> {
     let catalogue = Catalogue::standard();
     // The sound being edited always comes from the offline planner, so every live edit starts
     // from the same score; only the edit instruction goes to the suite's planner.
     let rules = RuleProvider::new();
-    let (provider, live) = suite_provider();
-    let provider = provider.as_ref();
+    let live = live();
     let brief = case["brief"].as_str().ok_or("brief")?;
     let seed = case["seed"].as_u64().unwrap_or(0);
     let mut before = plan_brief(brief, &rules, &catalogue, seed)
@@ -231,12 +223,35 @@ fn check_case(case: &Value) -> Result<String, String> {
             return Err(format!("not first try: {} attempts", out.attempts));
         }
     }
+    // `expect_any`: a list of acceptable outcomes (an instruction with more than one fair
+    // reading); the case passes when one of them holds. Otherwise `expect` must hold.
+    if let Some(alts) = edit.get("expect_any").and_then(Value::as_array) {
+        let mut why = Vec::new();
+        for (k, ex) in alts.iter().enumerate() {
+            match check_expect(&before, &out, ex) {
+                Ok(s) => return Ok(s),
+                Err(e) => why.push(format!("alternative {k}: {e}")),
+            }
+        }
+        return Err(why.join("; "));
+    }
+    check_expect(&before, &out, &edit["expect"])
+}
+
+/// One expectation object against an edit outcome.
+fn check_expect(before: &Score, out: &EditOutcome, ex: &Value) -> Result<String, String> {
+    let before = before.clone();
     let after = &out.score;
-    let ex = &edit["expect"];
     if let Some(i) = ex.get("intent").and_then(Value::as_str) {
         let got = serde_json::to_value(out.plan.intent).map_err(|e| e.to_string())?;
         if got != i {
             return Err(format!("intent {got} != {i}"));
+        }
+    }
+    if let Some(t) = ex.get("tone").and_then(Value::as_str) {
+        let plan = serde_json::to_value(&out.plan).map_err(|e| e.to_string())?;
+        if plan["params"]["tone"] != t {
+            return Err(format!("tone {} != {t}", plan["params"]["tone"]));
         }
     }
     if let Some(b) = ex.get("bars").and_then(Value::as_array) {
@@ -394,7 +409,7 @@ fn check_case(case: &Value) -> Result<String, String> {
     {
         return Err(format!("summary lacks `{s}`: {}", out.summary));
     }
-    Ok(out.summary)
+    Ok(out.summary.clone())
 }
 
 #[test]
@@ -406,17 +421,45 @@ fn edit_prompt_suite_passes() {
         files.len()
     );
     let mut failures = Vec::new();
+    #[cfg(feature = "claude")]
+    let claude = live().then(praxis_planner::claude::ClaudeProvider::new);
+    #[cfg(not(feature = "claude"))]
+    let claude: Option<RuleProvider> = None;
+    let rules = RuleProvider::new();
     for f in &files {
         let text = std::fs::read_to_string(f).expect("read case");
         let case: Value = serde_json::from_str(&text).expect("case json");
         let name = f.file_stem().map(|s| s.to_string_lossy().to_string());
-        match check_case(&case) {
+        #[cfg(feature = "claude")]
+        let before = claude.as_ref().map(|c| c.usage()).unwrap_or_default();
+        let provider: &dyn Provider = match &claude {
+            Some(c) => c,
+            None => &rules,
+        };
+        let result = check_case(provider, &case);
+        #[cfg(feature = "claude")]
+        if let Some(c) = &claude {
+            let u = c.usage().since(&before);
+            println!(
+                "  usage: {u}, ${:.4}",
+                u.cost_usd(&c.config().model).unwrap_or(f64::NAN)
+            );
+        }
+        match result {
             Ok(summary) => println!("PASS {name:?}: {summary}"),
             Err(e) => {
                 println!("FAIL {name:?}: {e}");
                 failures.push(format!("{name:?}: {e}"));
             }
         }
+    }
+    #[cfg(feature = "claude")]
+    if let Some(c) = &claude {
+        let u = c.usage();
+        println!(
+            "live usage (edit suite): {u}; cost ${:.4}",
+            u.cost_usd(&c.config().model).unwrap_or(f64::NAN)
+        );
     }
     println!(
         "edit prompt suite: {}/{} passed",

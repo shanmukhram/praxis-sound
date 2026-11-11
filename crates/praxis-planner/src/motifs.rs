@@ -223,6 +223,11 @@ pub fn motif_templates() -> Vec<MotifTemplate> {
 /// Chord-relative degrees for a motif that follows explicit chords.
 pub const CHORD_RELATIVE_MOTIF: [i32; 8] = [0, 4, 7, 4, 9, 4, 7, 4];
 
+/// Two-bar chord-relative motif for scored cues: the first bar outlines the chord, the second
+/// answers it reaching up to the fifth above the octave (degrees are cycled over the hits, so
+/// on an eighth grid each bar takes eight).
+pub const SCORED_MOTIF: [i32; 16] = [0, 4, 7, 4, 9, 4, 7, 4, 0, 4, 7, 9, 11, 9, 7, 4];
+
 /// Default degrees for a role (relative to the chord root for chord-following roles).
 pub fn default_degrees(role: RhythmRole) -> Vec<i32> {
     match role {

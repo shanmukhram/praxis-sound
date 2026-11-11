@@ -5,6 +5,9 @@
 // Every call is async so IPC and worker-backed adapters fit without changes.
 
 import type { BarRange, GeneratorClass, InstrumentKind, Key, NScore, Score, ScorePatch, TimeSignature } from '../score/types';
+import type { AnalyzeResult, CompareLevel, LibraryEntry, LibraryResult, ReferenceClip, SoundProfile } from './reference';
+
+export type { AnalyzeResult, ClipKind, CompareLevel, LibraryEntry, LibraryResult, ReferenceClip, SoundProfile } from './reference';
 
 /** Why a patch was rejected. Mirrors `PatchError` in crates/praxis-score/src/patch.rs. */
 export type PatchError =
@@ -184,13 +187,18 @@ export interface Take {
   /** A panel view the maker opened to show what it did. */
   opens?: ViewName;
   scope?: TakeScope;
+  /** The reference (a clip's file name or a library style) the request carried, if any. */
+  reference?: string;
 }
 
 export interface AskRequest {
   text: string;
   scope?: TakeScope;
-  /** A dropped reference clip (FR-11). */
-  clipFile?: File | { name: string };
+  /**
+   * A reference: a dropped clip's profile or a library style (FR-11, FR-19). Its profile goes to
+   * the planner and the assistant with the request.
+   */
+  reference?: ReferenceClip;
   /** Called with each step of the sound assistant while it works (the desktop engine). */
   onProgress?: (p: AskProgress) => void;
 }
@@ -333,5 +341,31 @@ export interface EngineAdapter {
   onMeters(cb: (m: Meters) => void): Unsubscribe;
 
   export(request: ExportRequest): Promise<ExportResult>;
+
+  // Reference clips (FR-11, FR-12, FR-19, FR-30). A profile holds measurements, never audio.
+  /** Measures a dropped audio or video clip: its Sound Profile, and a URL to play it for A/B. */
+  analyzeClip(file: ClipFile): Promise<AnalyzeResult>;
+  /** The reference library (entries without their profiles). */
+  library(): Promise<LibraryEntry[]>;
+  /** One library entry's full profile (null when it is gone). */
+  libraryProfile(id: string): Promise<SoundProfile | null>;
+  /** Saves a reference's profile (never its audio) to the library under a name, with tags. */
+  saveReference(ref: ReferenceClip, name: string, tags: string[]): Promise<LibraryResult>;
+  /** Replaces a library entry's tags. */
+  tagReference(id: string, tags: string[]): Promise<LibraryResult>;
+  removeReference(id: string): Promise<boolean>;
+  /**
+   * The take's side of a loudness-matched A/B: a trim (or silence) on what the transport plays
+   * while comparing; null puts it back. Never saved, never in a render or an export.
+   */
+  setCompare(level: CompareLevel | null): Promise<void>;
+
   dispose(): void;
+}
+
+/** A clip as the front end has it (a dropped or chosen `File`). */
+export interface ClipFile {
+  readonly name: string;
+  readonly size: number;
+  arrayBuffer(): Promise<ArrayBuffer>;
 }

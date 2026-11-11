@@ -12,7 +12,8 @@ use crate::plan::{
 };
 use crate::provider::{Message, Provider, Role, ToolRequest};
 use crate::repair::{
-    PlanError, Repair, fix_plan, plan_with_repair, repairs_summary, schema_issues,
+    PlanError, Repair, fix_plan, plan_with_quality_repair, plan_with_repair, repairs_summary,
+    schema_issues,
 };
 use praxis_score::lint::{LintContext, lint};
 use praxis_score::validate::{Issue, IssueCode, validate};
@@ -146,6 +147,11 @@ pub fn plan_summary(plan: &ScorePlan, score: &Score, repairs: usize) -> String {
     if !kept_out.is_empty() {
         out.push_str(&format!(" Kept out: {}.", kept_out.join(", ")));
     }
+    let scoring = crate::scoring::summary(plan, score);
+    if !scoring.is_empty() {
+        out.push(' ');
+        out.push_str(&scoring);
+    }
     if repairs > 0 {
         out.push_str(&format!(
             " The planner fixed {repairs} thing{} in the plan.",
@@ -168,24 +174,61 @@ pub fn requested_classes(brief: &str) -> BTreeSet<GeneratorClass> {
 /// System prompt for model providers.
 pub fn system_prompt(catalogue: &Catalogue) -> String {
     format!(
-        "You are the planner of Praxis Sound, a sound-design workstation. You never produce \
-audio. You turn the user's brief into a compact ScorePlan by calling the `{TOOL_NAME}` tool \
-exactly once; a deterministic arranger expands the plan into notes.\n\n\
+        "You are the planner of Praxis Sound, a sound-design workstation. You never produce audio. You \
+turn the user's brief into a compact ScorePlan by calling the `{TOOL_NAME}` tool exactly once; a \
+deterministic arranger expands the plan into notes.\n\
+\n\
 Rules (the owner's taste; plans that break them are rejected):\n\
 1. Rhythm first: every layer is one repeating motif on a step grid (spoken rhythm: DON strong, \
-din soft, don normal, TIN bright, - rest, ~ tie) with deliberate accents.\n\
+din soft, don normal, TIN bright, - rest, ~ tie) with deliberate accents. Keep every layer busy \
+enough that no note is followed by more than one beat of silence: a bass or a slow part holds \
+its notes with ties (~) or sustain_steps that reach the next hit instead of leaving rests. If \
+the brief gives a spoken rhythm, copy it exactly as `spoken`, without padding it with rests.\n\
 2. Notes connect: sustaining instruments use sustain_steps above 1.0 (1.6 is a good default).\n\
 3. Arrangement is layering: a later section adds or removes whole layers; it never rewrites a \
 part that is already playing. List in each section the ids of the layers that play in it.\n\
-4. Restraint: one emotion word, few elements (at most 5 layers, usually 1-3). No risers, sweeps, \
+4. Restraint: one emotion word, few elements. Use only the instruments the brief names: one \
+layer per named instrument, and no layer the brief did not ask for (no added bass, keys, pad, \
+drums or second melody to fill out the sound). If the brief names one instrument, the plan has \
+one layer. A brief that names no instrument gets one to three that fit it. No risers, sweeps, \
 impacts, booms, pads, whooshes or fills unless the brief literally asks for them. \"Cinematic\", \
 \"epic\" or \"mysterious\" describe mood; they are not a licence for trailer effects.\n\
-5. Always in key: scale degrees are in the key by construction; explicit notes must be too.\n\
-6. Duration: if the brief gives bars and a length in seconds, give bars and duration_s and leave \
-tempo_bpm empty (16 bars in 30 s is 128 BPM). If it gives a tempo and a length, leave bars empty.\n\
-7. Use only presets from this catalogue (name, kind, class):\n{}\n\
-Put requested instruments the catalogue lacks in `notes` instead of substituting silently.",
-        catalogue.prompt_listing()
+5. Every layer plays from bar 1 to the last bar unless the brief says when it enters or leaves \
+(\"bars 9-16: add a kick\", \"in the second half\"). Without such words use one section, or list \
+every layer in every section.\n\
+6. Emotion: the brief's own mood word when it has one (\"suspenseful\" -> tense).\n\
+7. Always in key: scale degrees are in the key by construction; explicit notes must be too.\n\
+8. Duration: if the brief gives bars and a length in seconds, give bars and duration_s and leave \
+tempo_bpm empty (16 bars in 30 s is 128 BPM). If it gives a tempo and a length, leave bars \
+empty.\n\
+9. Use only presets from this catalogue (name, kind, class):\n\
+{}\n\
+An instrument the brief names that the catalogue lacks goes in `notes` (\"strings are not in the \
+catalogue\"); never replace it with other layers.\n\
+\n\
+Scoring a cue (only when the brief asks for a cue, a form, sections such as intro / build / \
+peak / release or verse / chorus, a chord progression, or hit points):\n\
+10. Form: give `form` parts in order (role intro, verse, main, build, peak, breakdown, release, \
+transition or outro; `weight` = relative length; optional `intensity` 0..1) and leave \
+`sections` empty: the planner solves each part's bars to the length. An A/B form (A/B/A, \
+verse-chorus) is parts named \"A\" with role verse and \"B\" with role main. Leave a part's \
+`layers` \
+empty so the layers enter by intensity in the order you list them (the first layer alone in the \
+quietest part, all of them in the loudest); list them only when the brief says what plays \
+where. `transition` is auto (a drop into a peak, a pickup when a layer enters, a held chord into \
+a release), none, pickup, drop or hold; never a riser unless the brief asks for one.\n\
+11. Hit points: \"hits at 0:42, 1:05 and 1:38\" -> `hits` [{{\"time_s\": 42}}, \
+{{\"time_s\": 65}}, {{\"time_s\": 98}}]. Give `duration_s` (and `tempo_bpm`, or a \
+`tempo_range` when the brief gives no tempo); the planner picks the exact tempo so every hit \
+lands on the beat grid, accents it and starts a form part there.\n\
+12. Harmony: a `progression` (chord symbols in the key or Roman numerals such as i VI III VII, \
+`bars_per_chord` 1 or 2) repeats from each part's start; leave `chords` empty with it. Every \
+chord must be in the key (no borrowed chords). Melodic and chord layers set `follow_chords`.\n\
+13. Emotion presets for cues (mode, tempo range, register, instruments in entry order, form \
+shape); use the preset's instruments only when the brief names none:\n\
+{}",
+        catalogue.prompt_listing(),
+        crate::scoring::emotion::prompt_listing()
     )
 }
 
@@ -220,7 +263,15 @@ pub fn plan_brief(
         requested: &requested,
     };
     let req = tool_request(brief, catalogue, seed);
-    let out = plan_with_repair(provider, req, &ctx)?;
+    // The offline planner is a pure function of the brief and is never asked twice; a model gets
+    // the quality checks as repair rounds too.
+    let out = if provider.id() == crate::edit::RULE_PROVIDER_ID {
+        plan_with_repair(provider, req, &ctx)?
+    } else {
+        let named = crate::offline::brief_instruments(brief);
+        let quality = |p: &ScorePlan| quality_issues(p, &ctx, &named, seed);
+        plan_with_quality_repair(provider, req, &ctx, &quality)?
+    };
     let mut plan = out.plan;
     // The plan's own `requested` field is ignored when a brief is present: the brief's words
     // decide (a model cannot talk itself into a riser).
@@ -298,6 +349,9 @@ fn finish(
         seed,
         brief,
     };
+    // Scoring fields (form, hits, progression) become sections, tempo and chords; the outcome's
+    // plan is the realised one, which arranges to the same Score again.
+    let plan = crate::scoring::realise(&plan, seed);
     let mut score = arrange(&plan, &actx).map_err(|e| PlanError::Arrange(e.to_string()))?;
 
     // Lints drive arranger fixes (ADR-0006 step 4).
@@ -343,6 +397,151 @@ fn finish(
         provider_id,
         lint: warnings,
     })
+}
+
+/// Quality issues of a valid plan, for a model's repair rounds: the brief's restraint rules
+/// (a layer for an instrument the brief does not name; a layer that enters late or leaves early
+/// when the brief never says when) and the lints of the arranged Score (`isolated_notes`,
+/// `no_motif_repetition`, `missing_sustain_overlap`, `too_many_elements`,
+/// `unrequested_effect_class`). Each issue points into the plan and says plainly what to change.
+pub fn quality_issues(
+    plan: &ScorePlan,
+    ctx: &PlanContext,
+    named: &crate::offline::BriefInstruments,
+    seed: u64,
+) -> Vec<PlanIssue> {
+    use crate::plan::PlanIssueCode as C;
+    let mut out = Vec::new();
+    let mut plan = plan.clone();
+    plan.requested = ctx.requested.iter().copied().collect();
+    let actx = ArrangeContext {
+        catalogue: ctx.catalogue,
+        requested: ctx.requested,
+        seed,
+        brief: None,
+    };
+    // An arranger failure is reported by `finish` as today; there is nothing to lint.
+    let Ok(score) = arrange(&plan, &actx) else {
+        return out;
+    };
+    let plan_index = |id: &str| plan.layers.iter().position(|l| l.id == id);
+
+    // Restraint: only the instruments the brief names. Judged only when the brief names some
+    // and the plan covers at least one of them (a plan whose every layer is a substitute is a
+    // reading of the brief, not an extra layer).
+    if named.names_any() {
+        let covered: Vec<bool> = score
+            .layers
+            .iter()
+            .map(|l| named.covers(&l.instrument.preset, l.class))
+            .collect();
+        if covered.iter().any(|c| *c) {
+            let mut asked: Vec<String> = named.families.iter().cloned().collect();
+            asked.extend(
+                named
+                    .unmapped
+                    .iter()
+                    .map(|u| format!("{u} (not in the catalogue)")),
+            );
+            for (l, _) in score.layers.iter().zip(&covered).filter(|(_, c)| !**c) {
+                let Some(i) = plan_index(&l.id) else { continue };
+                out.push(PlanIssue::new(
+                    C::UnrequestedLayer,
+                    format!("/layers/{i}"),
+                    format!(
+                        "layer `{}` ({}) is an instrument the brief does not ask for; the \
+                         brief names only: {}. Remove this layer (and its id from the \
+                         sections). Use one layer per named instrument; an instrument the \
+                         catalogue lacks goes in `notes`, not into other layers",
+                        l.id,
+                        l.instrument.preset,
+                        asked.join(", ")
+                    ),
+                ));
+            }
+        }
+    }
+
+    // Every layer plays throughout unless the brief says when (a form says when).
+    if !named.timed && plan.form.is_empty() {
+        for l in &score.layers {
+            let bars: BTreeSet<u32> = l
+                .clips
+                .iter()
+                .flat_map(|c| c.bars.start..=c.bars.end.min(score.bars))
+                .collect();
+            if bars.len() as u32 >= score.bars {
+                continue;
+            }
+            let (Some(first), Some(last)) = (bars.first(), bars.last()) else {
+                continue;
+            };
+            out.push(PlanIssue::new(
+                C::LayerBars,
+                "/sections",
+                format!(
+                    "layer `{}` plays only in bars {first}-{last} of {}, but the brief does \
+                     not say when it enters or leaves. List it in every section so it plays \
+                     from bar 1 to bar {}",
+                    l.id, score.bars, score.bars
+                ),
+            ));
+        }
+    }
+
+    // Lints on the arranged Score, as the finished plan will have them.
+    let lint_ctx = lint_context(&score, ctx);
+    for w in lint(&score, &lint_ctx) {
+        let layer = w
+            .path
+            .strip_prefix("/layers/")
+            .and_then(|s| s.split('/').next())
+            .and_then(|s| s.parse::<usize>().ok())
+            .and_then(|li| score.layers.get(li))
+            .and_then(|l| plan_index(&l.id));
+        let at = |tail: &str| match layer {
+            Some(i) => format!("/layers/{i}{tail}"),
+            None => "/layers".to_string(),
+        };
+        let (code, path, advice) = match w.code {
+            IssueCode::IsolatedNotes => (
+                C::IsolatedNotes,
+                at("/motif"),
+                "Keep this layer on a repeating grid with no silence longer than one beat \
+                 between notes: add hits or tie notes with `~` in `spoken`, and let sustain \
+                 (sustain_steps) connect each note to the next",
+            ),
+            IssueCode::NoMotifRepetition => (
+                C::NoMotifRepetition,
+                at("/motif"),
+                "Use one short motif (one or two bars of spoken rhythm) that repeats",
+            ),
+            IssueCode::MissingSustainOverlap => (
+                C::MissingSustainOverlap,
+                at("/motif/sustain_steps"),
+                "This instrument rings: set sustain_steps above 1.0 (1.6) so each note \
+                 overlaps the next",
+            ),
+            IssueCode::TooManyElements => (
+                C::TooManyElements,
+                "/layers".to_string(),
+                "Use fewer layers (only the instruments the brief names, at most four at once) \
+                 and one emotion word",
+            ),
+            IssueCode::UnrequestedEffectClass => (
+                C::UnrequestedEffectClass,
+                at(""),
+                "The brief did not ask for this effect: remove the layer",
+            ),
+            _ => continue,
+        };
+        out.push(PlanIssue::new(
+            code,
+            path,
+            format!("{} {advice}", w.message),
+        ));
+    }
+    out
 }
 
 /// Lint facts: which layers ring, which classes were asked for.

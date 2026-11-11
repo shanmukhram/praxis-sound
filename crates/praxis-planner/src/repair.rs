@@ -78,18 +78,40 @@ pub fn plan_with_repair(
     first: ToolRequest,
     ctx: &PlanContext,
 ) -> Result<LoopOutcome, PlanError> {
+    plan_with_quality_repair(provider, first, ctx, &|_| Vec::new())
+}
+
+/// [`plan_with_repair`] with quality checks on every valid plan (`brief::quality_issues`: lints
+/// on the arranged Score and the brief's restraint rules). Quality issues go back to the provider
+/// in the same repair rounds as validation issues (at most [`MAX_REPAIR_ROUNDS`]), but never
+/// reject a plan: when the rounds run out, the valid plan with the fewest quality issues wins
+/// (the latest on a tie), and only when no answer was valid do the deterministic fixes run.
+pub fn plan_with_quality_repair(
+    provider: &dyn Provider,
+    first: ToolRequest,
+    ctx: &PlanContext,
+    quality: &dyn Fn(&ScorePlan) -> Vec<PlanIssue>,
+) -> Result<LoopOutcome, PlanError> {
     let mut req = first;
     let mut attempts = 0u32;
     let mut rounds = Vec::new();
     let mut last_plan: Option<ScorePlan> = None;
     let mut last_value: Option<serde_json::Value> = None;
+    // The valid plan with the fewest quality issues so far, and that count.
+    let mut best: Option<(ScorePlan, usize)> = None;
     let last_issues = loop {
         let value = provider.call_tool(&req)?;
         attempts += 1;
         let repeated = last_value.as_ref() == Some(&value);
         let issues = match serde_json::from_value::<ScorePlan>(value.clone()) {
             Ok(plan) => {
-                let issues = crate::plan::validate_plan(&plan, ctx);
+                let mut issues = crate::plan::validate_plan(&plan, ctx);
+                if issues.is_empty() {
+                    issues = quality(&plan);
+                    if best.as_ref().is_none_or(|(_, n)| issues.len() <= *n) {
+                        best = Some((plan.clone(), issues.len()));
+                    }
+                }
                 last_plan = Some(plan);
                 issues
             }
@@ -109,6 +131,14 @@ pub fn plan_with_repair(
         // A provider that returns the same plan again cannot repair it (the offline provider is
         // a pure function of the brief); go straight to the deterministic fixes.
         if repeated || attempts > MAX_REPAIR_ROUNDS {
+            if let Some((plan, _)) = best.take() {
+                return Ok(LoopOutcome {
+                    plan,
+                    attempts,
+                    repairs: vec![],
+                    rounds,
+                });
+            }
             break issues;
         }
         let text = serde_json::to_string(&value).unwrap_or_default();
@@ -348,8 +378,12 @@ pub fn fix_plan(plan: &ScorePlan, ctx: &PlanContext) -> (ScorePlan, Vec<Repair>)
     }
 
     fix_layers(&mut p, ctx, bars, &mut f);
-    fix_sections(&mut p, bars, &mut f);
+    // With a form the sections are derived from it (crate::scoring::realise).
+    if p.form.is_empty() {
+        fix_sections(&mut p, bars, &mut f);
+    }
     fix_chords(&mut p, bars, &mut f);
+    f.repairs.extend(crate::scoring::fix(&mut p, bars));
     (p, f.repairs)
 }
 

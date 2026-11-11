@@ -63,6 +63,10 @@ repairs, rounds, provider_id, lint}`.
 | `layers[].motif` | `{grid, length_bars 1..8, spoken, degrees[], octave?, sustain_steps?, follow_chords, notes[]}`. `spoken` uses the FR-5 tokens (`praxis_score::rhythm`); a rhythm whose length does not divide the motif restarts every bar. `degrees` (0 = tonic, 7 = an octave up) are cycled over the hits and restart with each motif repetition; with `follow_chords` they are relative to each bar's chord root, and chords/harmony/pad layers stack triads. Optional explicit `notes` `{step, pitch, accent, velocity?, length?}` replace the generated notes |
 | `chords[]` | `{bars, symbol}`; roots (and slash basses) must be in the key; bars without a chord use the tonic triad |
 | `notes[]` | Planner remarks (unmapped instruments, assumptions); copied to `meta.provenance.planner_notes` |
+| `form[]` | Scoring depth (WP-P3). `{role, name?, weight (default 1), bars?, intensity?, layers[], transition auto/none/pickup/drop/hold}`, at most 12 parts. With a form, `sections` is derived (see "Scoring depth") and any given sections are ignored |
+| `hits[]` | `{time_s, label?}`: hit points in seconds from the start, at most 8, at least 1 s apart, inside the piece (0.5 s before its end) |
+| `progression` | `{chords [symbols in the key or Roman numerals], bars_per_chord 1..8}`: 1-16 chords that repeat from each section's start; borrowed chords (`bVII`) are rejected because Score v1 keeps every pitched note in the key |
+| `tempo_range` | `{min, max}` BPM (40-220): where hit points may move the tempo; without it, within 4% of the resolved tempo |
 
 ### Issue codes and repairs
 
@@ -72,7 +76,11 @@ divide the bar, the spoken tokens). Codes: `schema`, `timing`, `time_signature`,
 `emotion`, `bad_id`, `duplicate_id`, `no_layers`, `too_many_layers`, `unknown_preset`,
 `preset_kind`, `class_mismatch`, `avoided_class`, `unrequested_class`, `grid`, `motif_length`,
 `spoken`, `degrees`, `octave`, `sustain`, `off_scale`, `off_grid`, `note_range`, `velocity`,
-`gain`, `sections`, `unknown_layer`, `inactive_layer`, `intensity`, `chord`.
+`gain`, `sections`, `unknown_layer`, `inactive_layer`, `intensity`, `chord`, and for scoring
+depth `form`, `hit`, `progression` (plus `timing` for a bad `tempo_range`). Quality codes
+(`PlanIssueCode::is_quality`; never produced by `validate_plan`, never a reason to reject a plan):
+`unrequested_layer`, `layer_bars`, `isolated_notes`, `no_motif_repetition`,
+`missing_sustain_overlap`, `too_many_elements`, `unrequested_effect_class`.
 
 The loop: provider call -> parse (field-level `schema` issues with pointers) -> validate -> on
 issues, the issues go back to the provider in a user message (at most 3 repair rounds; a provider
@@ -84,6 +92,33 @@ snap explicit notes (`Key::snap`), rebuild sections without gaps or overlaps, in
 Every fix is recorded as `Repair {code, path, action}`; `fix_plan` is idempotent. Provenance
 keys: `planner`, `provider`, `attempts`, `repairs`, `repair_codes`, `seed`, `planner_notes`.
 
+**Quality rounds (model providers only, WP-P4).** For a provider whose id is not
+`offline-rules`, `plan_brief` runs `repair::plan_with_quality_repair`: every plan that passes
+`validate_plan` is also checked by `brief::quality_issues`, and its issues go back to the model in
+the same repair rounds (the same limit of 3, the same message format: pointer, code, what is
+wrong and what to do). The checks:
+- `unrequested_layer` (`/layers/<i>`): a layer whose instrument the brief does not name. The
+  brief's instruments are read with the rule planner's vocabulary (`offline::brief_instruments`:
+  instrument families, class words such as "bass" or "melody", drum-kit words such as "drums" or
+  "beat" covering every drum, and catalogue-less instruments such as "strings"). Judged only when
+  the brief names an instrument and the plan covers at least one named instrument, so a plan made
+  wholly of substitutes is a reading, not an extra.
+- `layer_bars` (`/sections`): a layer that does not play every bar when the brief has no bar
+  phrase ("bars 9-16", "second half", "from bar 5", "last 4 bars") and no timing word ("intro",
+  "outro", "enters", "joins", "later", "then", "drop", ...).
+- The lints of the arranged Score (`praxis_score::lint`) with the layer mapped back to the plan:
+  `isolated_notes` and `no_motif_repetition` (`/layers/<i>/motif`), `missing_sustain_overlap`
+  (`/layers/<i>/motif/sustain_steps`), `too_many_elements` (`/layers`),
+  `unrequested_effect_class` (`/layers/<i>`), each with the lint's message plus a plain
+  instruction (for `isolated_notes`: keep the layer on a repeating grid, add hits or `~` ties and
+  let sustain connect each note to the next).
+
+A plan with only quality issues is valid: when the rounds run out, or the model answers with the
+same plan again, the valid plan with the fewest quality issues is kept (the latest on a tie) and
+its lints stay in `PlanOutcome.lint`; the deterministic `fix_plan` runs only when no answer was
+valid, then `finish` lengthens sustain as before. `rounds` lists quality issues like any other.
+The offline provider is never asked again, so its plans and the offline suites are unchanged.
+
 ### Arranger guarantees
 
 One pattern per layer (`<layer>_motif`); clips are the contiguous runs of the sections a layer
@@ -92,7 +127,109 @@ identical pattern. Sustaining presets get note lengths above 1.0 step and a smal
 (`decay_s` 1.8, `size` 0.35, `predelay_ms` 12, `mix` 0.18); kicks get an EQ high-pass at 30 Hz
 and, when soft, a low-pass at 2.5 kHz; hats and shakers a 300 Hz high-pass. Master defaults:
 -16 LUFS, -1 dBTP. Banned layers are never generated. The Score passes `validate::validate` with
-zero errors and is a pure function of (plan, seed).
+zero errors and is a pure function of (plan, seed). Scored plans (below) keep these guarantees
+except "one pattern per layer": there a layer also has its sparse and lifted forms and one-bar
+transition and hit patterns.
+
+### Scoring depth (WP-P3, FR-9 and FR-10)
+
+Code: `crates/praxis-planner/src/scoring.rs` (`realise`, `validate`, `fix`, `summary`),
+`scoring/emotion.rs` (presets), `scoring/harmony.rs` (progressions, voice-leading),
+`scoring/form.rs` (form solver), `scoring/hits.rs` (tempo solver, landings),
+`scoring/develop.rs` (the arranger's scored path), `scoring/words.rs` (what the rule planner reads).
+
+A plan is **scored** when it has a `form`, `hits` or a `progression`
+(`ScorePlan::is_scored`); every other plan arranges exactly as before. `scoring::realise(plan,
+seed)` runs first (in `finish`, and in `arrange` itself, so `quality_issues` sees the real
+Score) and turns the scoring fields into ordinary ones; it is idempotent, and the
+`PlanOutcome.plan` is the realised plan, which arranges to the same Score again:
+
+1. **Hits choose the tempo.** Every tempo in `tempo_range` (or the resolved tempo +-4%) is tried
+   in 0.01 BPM steps. Bars are fixed when the plan gives no `duration_s`; with `duration_s` they
+   are the whole bars nearest it. A candidate is skipped when a hit falls within half a beat (at
+   least 0.5 s) of the end. The best has, in order: the fewest hits more than 12 ms from a
+   sixteenth step (sixteenth-triplet when the first layer's grid is a triplet), the strongest
+   metric positions (bar line 0, beat 1, half beat 2, other step 3, summed), the smallest largest
+   distance in whole ms, the tempo nearest the resolved one. The plan then has `tempo_bpm`,
+   `bars`, no `duration_s`, `tempo_range` pinned to the tempo, and a note saying so.
+2. **The form becomes sections.** Parts share the bars by weight (fixed `bars` first), in phrases
+   of 4 bars from 32 bars, 2 from 12, else 1, by largest remainder; each part gets at least one
+   bar. Each hit asks for a section to start at its bar (the next bar when it falls in the second
+   half of its bar); an exhaustive search assigns as many hits as possible to part boundaries in
+   order, then moves them least, and the parts between are re-spaced by weight. A part's
+   intensity is its own or its role's usual level (intro 0.3, verse 0.45, main 0.55, build 0.6,
+   peak 0.85, breakdown 0.35, release 0.4, transition 0.5, outro 0.3). A part without `layers`
+   gets the first `1 + round((n-1) (x - min) / (max - min))` plan layers, with `x` its intensity
+   and min/max the form's quietest and loudest (layering: the first layer alone at the quietest,
+   all at the loudest). Section names are the part's name, else the role's (numbered when
+   repeated).
+3. **Harmony.** A `progression` becomes `chords`, restarting at every section start with
+   `bars_per_chord` bars per chord; a one-shot's last bar is the tonic chord. A form with no
+   progression and no chords gets one of its emotion preset's progressions (chosen by seed), with
+   a note.
+
+The arranger's scored path (`scoring::develop`):
+- **Chords** (chords, harmony and pad layers following chords): one close-position triad per bar,
+  each chosen to move the voices least from the previous one (the pattern's wrap included),
+  around the layer's octave.
+- **Bass** (bass layers following chords): when the next bar's root is a third or more away, the
+  last beat plays the scale step next to it, approached from the current root's side; the note
+  before stops there.
+- **Density by intensity**: below 0.4 a layer plays its sparse form (`<layer>_sparse`: the notes
+  on beats and the strong and bright ones, sustaining notes ringing to the next kept onset; only
+  when that leaves no more than a beat of silence); up to 0.75 the motif as written; above it
+  melodic layers (motif, melody, arp) play the lifted form (`<layer>_lifted`: strong and bright
+  notes doubled an octave up, in range, softer). Every form keeps the motif's pitches and accents.
+- **Dynamics**: each bar's clip `velocity_scale` is 0.8 + 0.3 x intensity (0.6-1.1, steps of
+  0.05); a build ramps bar by bar to the next part's intensity. Gain lanes are not used, so a
+  later `change_dynamics` edit still works.
+- **Filter**: pitched, sustaining layers other than bass and drone get a `tension` low-pass first
+  in their chain (resonance 0) and a smooth lane on `effects.tension.cutoff_hz`: 1800 x 2^(3x) Hz
+  (1.2-16 kHz) at each section start, held to half a bar before the next (a build ramps to it).
+- **Transitions** into section k (the last bar of the section before, never a bar with a hit and
+  never when that section is one bar long): `drop` keeps only the lead layer (the first plan layer
+  playing); `hold` turns pitched layers into one held chord (their first onset of the bar, the
+  whole bar long), drums rest; `pickup` lets a layer entering at k play the last beat of its part
+  in that bar. `auto`: drop into a peak after a part with two or more layers, hold into a release
+  or outro that is quieter than the part before, pickup into a build, main or verse where a layer
+  enters, else none. Never a riser.
+- **Hits**: in each hit's bar the anchor layer (chords, else motif or melody, else arp, else bass;
+  playing there, else the first pitched layer) gets a one-bar pattern `<layer>_hit<k>` on the hit
+  grid: its notes of that bar, less any within a step of the hit, plus a strong chord of the bar's
+  harmony (velocity 1, two beats long on sustaining presets) on the hit's step with `offset` (the
+  only off-grid notes a planner Score has; at most half a step, usually under 12 ms) so its onset
+  is exactly the hit. A playing bass adds its root and a playing kick (or kit) a kick. The Score
+  gets a `hit` marker per hit (`hit-<k>`, the hit's time, its label or "Hit k").
+
+**Emotion presets** (`scoring::emotion::PRESETS`): calm, tense, hopeful, melancholy, playful,
+dark, warm and epic-but-restrained, each with synonyms, a default key, a tempo range and usual
+tempo, the lead layer's register, instruments in entry order, a default form (role, weight,
+intensity per part), three progressions and bars per chord. The system prompt lists them.
+
+**The rule planner** reads a brief as scored when it has hit timecodes after "hit(s)", "hit
+points" or "markers" ("hits at 0:42, 1:05 and 1:38", "at 30 s and 52.5 seconds"; read and blanked
+before anything else, so they never count as the length), two or more different form words
+(intro, build, peak/climax, release, outro/ending, verse, chorus, bridge, breakdown, in order),
+an A/B form (A/B, A/B/A, ABAB, AABA), or "cue", "evolving", "progression", "tension curve",
+"score for", "underscore". One form word alone ("an 8-bar build") is not a form. Then: the emotion
+preset of the mood word (an otherwise unknown preset synonym such as "epic" selects its preset);
+its key when the brief gives none, its usual tempo when the brief gives none (and its tempo range
+for the hits); its instruments when the brief names none; the brief's form words, else the
+preset's form (unless the brief places its layers in bars itself); the brief's chords or Roman
+numerals after "progression", else a preset progression; pitched layers follow the chords, the
+motif layer with a two-bar chord-relative motif (`motifs::SCORED_MOTIF`), the lead layer in the
+preset's register. "Borrowed chords" adds a note that the progression stays in the key.
+
+**Model providers**: rules 10-13 of the system prompt describe `form`, `hits`, `progression`,
+`tempo_range` and the presets. A plan with a form is exempt from the `layer_bars` quality check
+(the form says when layers enter).
+
+**The summary** (`PlanOutcome::summary`) adds "Form: intro (bars 1-8), ..." and "Hits land at
+0:42 (bar 18), ...".
+
+**Contract gap**: borrowed chords (bVII, iv in major) need notes outside the key, which Score v1's
+`off_scale` check rejects; supporting them needs a per-chord scale or an allowed-chromatic flag on
+`ChordSpan` (not done).
 
 ### Catalogue
 
@@ -115,7 +252,28 @@ pad, noise_bed texture (unpitched).
   call was made and asks once more if not; older models get
   `{"type": "tool", "name": "plan_score"}`. `output_config.effort` defaults to `medium`. On
   models that support it, `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) re-runs
-  a refused request on a fallback model.
+  a refused request on a fallback model. The system prompt is sent as one text block; it and the
+  tool definition carry `cache_control: {"type": "ephemeral"}`, so the schema (the same in every
+  request) and the system prompt (the same for every brief, resent in every repair round) are
+  read from the prompt cache. Each 200 response's `usage` is added to `ClaudeProvider::usage()`
+  (`claude::Usage`: requests, input, output, cache write and cache read tokens; `cost_usd(model)`
+  at list price, `since(earlier)` for one call's share); the live suites print it per case.
+  A tool input wrapped as `{"parameters": {...}}` (also `input`, `arguments` or `args`; seen live in
+  about one brief in six) is unwrapped before validation (`claude::unwrap_tool_input`) when that
+  key is the only one, is not a property of the tool's schema, and the wrapped object (or JSON
+  string) has at least one of the schema's properties; anything else reaches validation as sent.
+
+### System prompt (model providers)
+
+`brief::system_prompt` states the owner's rules as numbered plain sentences: rhythm first (one
+repeating motif per layer, no note followed by more than a beat of silence: a slow part holds
+notes with `~` ties or sustain; a spoken rhythm in the brief is copied exactly, not padded with
+rests), notes connect, layering by sections, restraint (only the instruments the brief names, one
+layer per named instrument, no layer the brief did not ask for, one layer when the brief names
+one instrument, one to three when it names none, no trailer classes unless asked, mood words are
+not a licence for effects), every layer from bar 1 to the end unless the brief says when, the
+brief's own mood word as the emotion, always in key, the duration rule, and the catalogue (an
+instrument it lacks goes in `notes`, never replaced by other layers).
 
 ### For agents
 
@@ -131,6 +289,28 @@ whooshes or fills unless the user asked for one, and then list it in `requested`
 repairs what it can deterministically and lists each change in `repairs`; if it returns
 `PlanError::Invalid`, each issue's `path` points into your plan and its message lists the allowed
 values, so fix those fields and call again.
+
+### Prompt suites
+
+`tests/prompt_suite.rs` (every brief in `tests/prompts/*.json`) and `tests/edit_prompt_suite.rs`
+(every `edit_*.json`) run offline on `RuleProvider`; with `PRAXIS_SUITE_PROVIDER=claude` they run
+on one shared `ClaudeProvider` (paid) and print each case's token usage and cost and the totals.
+Live runs report repair rounds instead of failing on them and skip the determinism check; every
+other check is the same. Checks that read a model's words fairly without loosening anything else
+(`tests/common/mod.rs`): an expected emotion accepts the close synonyms listed in
+`EMOTION_SYNONYMS` ("ominous" for dark, "suspenseful" for tense, ...); an expected spoken rhythm
+is compared after reducing an exact repetition to one period and dropping trailing rests
+(`spoken_core`; hits, accents, ties and inner rests must match); an edit case may give
+`expect_any`, a list of acceptable outcomes. Layer counts, presets, bars, keys, tempo, grid,
+banned classes and isolation are compared exactly. `edit_not_understood` ("make it pop") accepts
+`not_understood` (nothing changes) or a whole-score `change_tone` brighter that keeps every note
+and clip, the one reading of "pop" that is safe and that the edit tools can express.
+`PRAXIS_SUITE_FILTER=<text>` runs only the brief cases whose file name contains it (a live run of
+just the `scoring_` cases). Scoring cases add `check_scoring` expectations: `section_roles`,
+`section_names`, `section_letters`, `hits`, `hits_within_ms`, `duration_within`, `bpm_range`,
+`layers_enter_in_order`, `voice_leading_max`, `progression_start`, `bass_passing_tones`,
+`drop_before`, `hold_before`. The on-grid check allows a nudge (`offset`) only on the strong
+accents of `_hit` patterns.
 
 ## Edits (WP-P2)
 
@@ -275,8 +455,10 @@ to one intent (tested in `tests/edit_tone_space.rs` and `edit/rules.rs`):
 Mood and Energy have no intent of their own; the nearest existing one that keeps the notes is
 dynamics (every unlocked layer, default 4 dB softer / 3 dB louder). Rewriting or thinning notes
 for a slider nudge would break "never rewrite a part unless asked". Model providers get the same forced-tool request with
-a system prompt that lists the catalogue, the presets with tone controls, the tone / space /
-not_understood rules and the Score (layers, bars they play, locks);
+a system prompt that lists the catalogue, the presets with tone controls, the restraint rule
+(change only what the user names; one added layer per instrument asked for, none they did not
+ask for, playing through every bar of the scope), the tone / space / not_understood rules and
+the Score (layers, bars they play, locks);
 `tests/edit_claude_replay.rs` replays `ClaudeProvider` through a repair round, a widened
 answer, a `change_tone` answer and a `not_understood` answer.
 

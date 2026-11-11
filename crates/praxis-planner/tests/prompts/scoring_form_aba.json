@@ -1,0 +1,40 @@
+{
+  "brief": "An A/B/A cue for felt piano and soft keys in G major at 90 BPM, one minute long.",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "G",
+      "mode": "major"
+    },
+    "bpm": 90,
+    "layer_count": 2,
+    "layers": [
+      {
+        "preset": "felt_piano"
+      },
+      {
+        "preset": "soft_keys"
+      }
+    ],
+    "section_names": [
+      "A",
+      "B",
+      "A"
+    ],
+    "layers_enter_in_order": true,
+    "duration_within": [
+      60,
+      1.5
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ],
+    "section_letters": true
+  }
+}

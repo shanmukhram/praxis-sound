@@ -43,6 +43,20 @@ import { patchErrorMessage } from './EngineAdapter';
 import { encodeWav } from './wav';
 import { blankScore, DRAFT_ASK } from './blank';
 import { STANDARD_PRESETS } from './presets';
+import type { AnalyzeResult, ClipFile, CompareLevel, LibraryEntry, LibraryResult, ReferenceClip, SoundProfile } from './EngineAdapter';
+import { clipErrorWords, clipProblem, isVideoName, profileSummary, withReference } from './reference';
+import { decodeClip, mockProfile } from './mock/profile';
+
+/** Library tags: trimmed, lower case, no repeats. */
+export function cleanTags(tags: string[]): string[] {
+  return [...new Set(tags.map((t) => t.trim().toLowerCase()).filter(Boolean))];
+}
+
+/** The gain an A/B trim sets on the mock's output. */
+function compareGain(c: CompareLevel | null): number {
+  if (!c) return 1;
+  return c.muted ? 0 : 10 ** (Math.min(0, c.gainDb) / 20);
+}
 
 /** One undoable step of the session: a take, a go-back, or a plain edit (mute, solo, lock). */
 interface Entry {
@@ -93,7 +107,16 @@ export class MockEngine implements EngineAdapter {
   private loop: BarRange | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
 
+  /** The reference library (profiles only), newest first. */
+  private lib: LibraryEntry[] = [];
+  private libSeq = 0;
+  /** The A/B trim on the take while comparing. */
+  private compare: CompareLevel | null = null;
+  /** The last request's words as the planner got them (tests). */
+  lastRequest = '';
+
   private ctx: AudioContext | null = null;
+  private gainNode: GainNode | null = null;
   private source: AudioBufferSourceNode | null = null;
   private analysers: [AnalyserNode, AnalyserNode] | null = null;
   private ctxStartTime = 0;
@@ -196,14 +219,12 @@ export class MockEngine implements EngineAdapter {
 
   private askAs(who: Who, request: AskRequest, opts: { title?: string; askText?: string } = {}): Promise<TakeResult> {
     return this.exclusive(async () => {
-      const text = request.text.trim();
-      const askText = opts.askText ?? (request.scope ? `${text} (${scopeLabel(this.score, request.scope)})` : text);
-      if (request.clipFile) {
-        return {
-          ok: false,
-          message: `Got "${request.clipFile.name}". Reading a clip needs the analyzer (WP-D), which the mock engine does not have yet; Praxis keeps a clip's character, never its melody.`,
-        } as TakeResult;
-      }
+      const typed = request.text.trim();
+      const askText = opts.askText ?? (request.scope ? `${typed} (${scopeLabel(this.score, request.scope)})` : typed);
+      // The planner reads the reference's profile in words, as the real planner does.
+      const text = withReference(typed, request.reference);
+      const reference = request.reference?.name;
+      this.lastRequest = text;
       if (this.draft && this.takeList.length === 0) {
         return { ok: false, message: DRAFT_ASK } as TakeResult;
       }
@@ -213,13 +234,13 @@ export class MockEngine implements EngineAdapter {
         this.resetSession();
         this.score = fresh.score;
         this.draft = false;
-        const take = await this.renderTake(fresh.score, null, { who, ask: askText, title: fresh.title, say: fresh.say });
+        const take = await this.renderTake(fresh.score, null, { who, ask: askText, title: fresh.title, say: fresh.say, reference });
         return { ok: true, take } as TakeResult;
       }
       const origin: Origin = 'model';
-      const plan = planEdit(this.score, text, request.scope, origin);
-      if (!plan.ok) return { ok: false, message: plan.message } as TakeResult;
-      return this.commitTake(plan.patch, { who, ask: askText, title: opts.title ?? plan.title, say: plan.say, opens: plan.opens, scope: request.scope });
+      const plan = planEdit(this.score, typed, request.scope, origin);
+      if (!plan.ok) return { ok: false, message: reference ? `${plan.message} (The mock planner cannot match a reference; the desktop app's assistant can.)` : plan.message } as TakeResult;
+      return this.commitTake(plan.patch, { who, ask: askText, title: opts.title ?? plan.title, say: plan.say, opens: plan.opens, scope: request.scope, reference });
     });
   }
 
@@ -418,7 +439,7 @@ export class MockEngine implements EngineAdapter {
 
   private async commitTake(
     patch: ScorePatch,
-    words: { who: Who; ask: string; title: string; say: string; opens?: ViewName; scope?: TakeScope },
+    words: { who: Who; ask: string; title: string; say: string; opens?: ViewName; scope?: TakeScope; reference?: string },
   ): Promise<TakeResult> {
     const before = this.score!;
     const r = applyPatch(before, patch);
@@ -435,7 +456,7 @@ export class MockEngine implements EngineAdapter {
   private async renderTake(
     score: NScore,
     patch: ScorePatch | null,
-    words: { who: Who; ask: string; title: string; say: string; opens?: ViewName; scope?: TakeScope },
+    words: { who: Who; ask: string; title: string; say: string; opens?: ViewName; scope?: TakeScope; reference?: string },
     before?: NScore,
     prevN?: number,
     holdGain = false,
@@ -469,6 +490,7 @@ export class MockEngine implements EngineAdapter {
       opens: words.opens,
       scope: words.scope,
     };
+    if (words.reference) take.reference = words.reference;
     this.takeAudio.set(n, out.channels);
     this.takeList.push(take);
     this.currentN = n;
@@ -556,6 +578,75 @@ export class MockEngine implements EngineAdapter {
       }
     }
     return { ok: true, files, message: 'Mock engine: request recorded; no files were written.' };
+  }
+
+  // ------------------------------------------------------------ reference clips
+
+  async analyzeClip(file: ClipFile): Promise<AnalyzeResult> {
+    const problem = clipProblem(file);
+    if (problem) return { ok: false, message: problem };
+    let bytes: ArrayBuffer;
+    try {
+      bytes = await file.arrayBuffer();
+    } catch (e) {
+      return { ok: false, message: `Could not read ${file.name}: ${e instanceof Error ? e.message : String(e)}.` };
+    }
+    const audio = await decodeClip(bytes);
+    if (!audio && isVideoName(file.name)) {
+      return { ok: false, message: clipErrorWords(file.name, 'ffmpeg_missing', 'video needs ffmpeg') };
+    }
+    const profile = mockProfile(file.name, audio, file.size);
+    let audioUrl: string | null = null;
+    if (typeof Blob !== 'undefined' && file instanceof Blob && typeof URL.createObjectURL === 'function') {
+      audioUrl = URL.createObjectURL(file);
+      this.urls.push(audioUrl);
+    }
+    return { ok: true, clip: { name: file.name, profile, audioUrl, path: `mock://clips/${file.name}`, libraryId: null } };
+  }
+
+  /** Entries without their profiles, as the desktop lists them. */
+  async library(): Promise<LibraryEntry[]> {
+    return this.lib.map((e) => ({ ...clone(e), profile: null }));
+  }
+
+  async libraryProfile(id: string): Promise<SoundProfile | null> {
+    const e = this.lib.find((x) => x.id === id);
+    return e?.profile ? clone(e.profile) : null;
+  }
+
+  async saveReference(ref: ReferenceClip, name: string, tags: string[]): Promise<LibraryResult> {
+    const n = name.trim();
+    if (!n) return { ok: false, message: 'Give the reference a name.' };
+    if (this.lib.some((e) => e.name.toLowerCase() === n.toLowerCase())) return { ok: false, message: `There is already a reference called "${n}".` };
+    // Profiles only: the entry keeps the measurements, never the clip's audio or its file.
+    const profile: SoundProfile = { ...clone(ref.profile), tags: cleanTags(tags), style_name: n };
+    const entry: LibraryEntry = { id: `ref-${++this.libSeq}`, name: n, tags: cleanTags(tags), kind: profile.class.kind, summary: profileSummary(profile), profile };
+    this.lib.unshift(entry);
+    return { ok: true, entry: clone(entry) };
+  }
+
+  async tagReference(id: string, tags: string[]): Promise<LibraryResult> {
+    const e = this.lib.find((x) => x.id === id);
+    if (!e) return { ok: false, message: 'That reference is no longer in the library.' };
+    e.tags = cleanTags(tags);
+    if (e.profile) e.profile.tags = [...e.tags];
+    return { ok: true, entry: clone(e) };
+  }
+
+  async removeReference(id: string): Promise<boolean> {
+    const before = this.lib.length;
+    this.lib = this.lib.filter((e) => e.id !== id);
+    return this.lib.length < before;
+  }
+
+  async setCompare(level: CompareLevel | null): Promise<void> {
+    this.compare = level ? { ...level } : null;
+    if (this.gainNode) this.gainNode.gain.value = compareGain(this.compare);
+  }
+
+  /** The A/B trim the transport plays with now (tests). */
+  compareLevel(): CompareLevel | null {
+    return this.compare ? { ...this.compare } : null;
   }
 
   dispose(): void {
@@ -661,7 +752,11 @@ export class MockEngine implements EngineAdapter {
       const a = ctx.createAnalyser();
       const b = ctx.createAnalyser();
       a.fftSize = b.fftSize = 1024;
-      src.connect(ctx.destination);
+      const gain = ctx.createGain();
+      gain.gain.value = compareGain(this.compare);
+      gain.connect(ctx.destination);
+      this.gainNode = gain;
+      src.connect(gain);
       src.connect(splitter);
       splitter.connect(a, 0);
       splitter.connect(b, 1);
@@ -683,6 +778,8 @@ export class MockEngine implements EngineAdapter {
     }
     this.source?.disconnect();
     this.source = null;
+    this.gainNode?.disconnect();
+    this.gainNode = null;
     this.analysers = null;
   }
 
