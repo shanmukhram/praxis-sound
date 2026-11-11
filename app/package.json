@@ -16,7 +16,7 @@
     "gen:types": "node scripts/gen-types.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:web": "cargo run -p praxis-wasm --example native_render -- ../target/praxis-native/acceptance1.f32 && playwright test -c tests/web/playwright.config.ts",
+    "test:web": "npm run build:web && cargo run -p praxis-wasm --example native_render -- ../target/praxis-native/acceptance1.f32 && playwright test -c tests/web/playwright.config.ts",
     "tauri": "cd ../crates/praxis-app && tauri"
   },
   "devDependencies": {
