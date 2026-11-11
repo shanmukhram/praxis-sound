@@ -79,7 +79,7 @@ conversation-first concept is approved; scrollbars must match the dark theme.
 ## 4. State of the build
 
 Phase 0 done (CI green on 3 OSes). Phase 1 done (bell acceptance loop bit-identical, seamless).
-Phase 2 in progress.
+Phase 2 closed (owner sign-off 2026-11-11). Phase 3 in progress.
 
 Merged into `build/integration` (all reviewed, tests rerun):
 
@@ -135,10 +135,7 @@ Merge order: WP-D1b and WP-R whenever they are ready; WP-K2 before finishing WP-
 WP-R both may touch `Cargo.lock` (and U3 the root `Cargo.toml`): resolve by keeping both
 sides' entries and letting cargo regenerate the lock.
 
-- **Phase 2 exit demo is ready**: `demos/phase-2/acceptance1_mixed_loop.flac` (+ `_x3` seam file,
-  README with what to listen for). Waiting for the owner's listening sign-off
-  (docs/NEEDS_OWNER.md item 2). Measured: 127.99 BPM, A minor, -16.00 LUFS, -2.72 dBTP, seamless,
-  kick adds 7.9 dB below 120 Hz from bar 9; grid 90.9% (WP-D1b is fixing the thin margin).
+- **Phase 2 closed**: the owner signed off `demos/phase-2/acceptance1_mixed_loop.flac` on 2026-11-11.
 
 Known follow-ups not yet assigned: none beyond the phases in section 6. (Follow-ups 1-5 from
 the pause are in WP-D1b, WP-K2, or done: old branches/worktrees deleted.)
@@ -164,11 +161,10 @@ owner to open sessions, and take screenshots with headless Edge (section 8).
 
 ## 6. What to do next (in order)
 
-Done: Phases 0 and 1; Phase 2 built (demo awaiting sign-off); WP-A, B1, B2, C1, C2, D1, E, F,
+Done: Phases 0, 1 and 2 (owner signed off the Phase 2 demo 2026-11-11); WP-A, B1, B2, C1, C2, D1, E, F,
 F2, K, P, P2, U1, U2, X all merged.
 
-1. **Phase 2 sign-off**: ask the owner to listen to `demos/phase-2/acceptance1_mixed_loop.flac`.
-   Fix anything they hear before closing the phase; their sign-off does not block the next steps.
+1. **Phase 2 sign-off**: done 2026-11-11 (owner: "its perfect"). Phase 2 is closed.
 2. **Wave 3 (running, section 5)**: review and merge WP-D1b, WP-R and WP-K2 as each reports;
    after WP-K2 merges, message the WP-U3 session to merge `build/integration` and finish the
    wiring; then review and merge WP-U3.

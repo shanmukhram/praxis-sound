@@ -2,7 +2,7 @@
 
 Updated after every merge. Newest first. Branch: `build/integration` (pushed to `origin`).
 
-## Current phase: 3 (desktop app and real-time engine merged; Phase 2 sign-off still pending: demos/phase-2/acceptance1_mixed_loop.flac)
+## Current phase: 3 (Phases 0-2 closed; Phase 2 signed off by the owner 2026-11-11)
 
 Wave 1 (WP-A, B1, B2, C1, D1, E, F, P) runs as background agents in worktrees. From wave 2 on,
 work packages run as visible sessions (owner's choice), briefed from `docs/briefs/`. WP-X (MCP
@@ -36,6 +36,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- **Phase 2 closed**: the owner listened to `demos/phase-2/acceptance1_mixed_loop.flac` and the x3 seam file and signed off ("its perfect"). No changes requested; the FDN reverb stays without modulation.
 
 - Merged WP-U3 desktop app (1ef3c5f + review fix e5d6bc6): Tauri 2.12.5 shell `crates/praxis-app` (workspace member, not default) and `TauriEngine` adapter; take commands are thin wrappers over `praxis_cli::ops` (one take history shared with agents via `takes.json` revision polling); `<audio>` playback through the asset protocol, which serves only a real sound folder's `takes/`, `variations/`, `live/` (review fix: it first allowed any folder the front end named). Release exe 22 MB: "a calm 30-second felt piano loop in A minor" made take 1 in 3.0 s with 8/8 checks; an agent's take (`praxis ask --who cut-assistant`) appeared live. Rerun here: fmt, clippy, praxis-app 6/6, tsc, Vitest 146/146. Run it: `cd app && npm run tauri -- dev`. Follow-ups: real-time engine for transport and meters (Phase 3 exit), shell re-reads connected agents, NSIS installer, undo/redo into `praxis_cli::ops` (app has its own today), planner solves "30-second" to 31.4 s (11 bars at 84 BPM).
 
