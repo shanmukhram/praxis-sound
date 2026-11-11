@@ -150,6 +150,12 @@ Owns: `crates/praxis-app/**`, `app/src/engine/tauri/**`. Depends: WP-K (command 
 Brief: `docs/briefs/WP-U3-real-adapter.md`. Done: requests in the app make real, checked takes
 with real audio on Windows; agent takes appear live.
 
+### WP-U4 real-time playback in the app (Phase 3 exit)
+Owns: `crates/praxis-app/**`, `app/src/engine/tauri/**`, `app/src/ui/shell.ts` (agents refresh
+only). Depends: WP-R, WP-U3. Brief: `docs/briefs/WP-U4-realtime-in-app.md`. Done: transport,
+meters and live swaps through the real-time engine; acceptance 1 built by hand in the window,
+played 60 s with 0 xruns, exported and checked.
+
 ## Phase 4: Planner (exit: acceptance 1 from one prompt; "change the last four bars" leaves bars 1-12 sample-identical; prompt suite passes)
 
 ### WP-P2 edits + variations
