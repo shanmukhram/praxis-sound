@@ -127,14 +127,10 @@ Build speed-ups (local, not committed): sccache 0.19 (winget `Mozilla.sccache`, 
 WP-R and WP-U3; WP-K2 and WP-D1b were mid-build and kept the defaults). Once a package builds
 cleanly with them, move both settings into `.claude/worktrees/.cargo/config.toml` for all.
 Dev Drive is the owner's call (not set up); Cranelift was rejected (tests run optimised). Running now:
-WP-H sound-effect patches (session `local_deff1b16-ac90-43ee-bf77-188cb404cccd`, brief
-`docs/briefs/WP-H-sfx-patches.md`). WP-D1b, WP-R, WP-K2 and WP-U3 are merged. The second slot is
-now WP-U4 real-time playback in the app (`local_357d4a07-2ba0-438e-8411-b2a171c1a850`, brief
-`docs/briefs/WP-U4-realtime-in-app.md`, allowed to edit the playback part of `app/src/ui/shell.ts`).
-Waiting for a slot: WP-P2b tone and space edits (`local_0bb0fb8b-9b03-4896-a09b-59cd7c6a1d28`,
-brief `docs/briefs/WP-P2b-tone-space-edits.md`): it reads and writes code but must not build
-until messaged "slot free"; send that when WP-H or WP-U4 finishes. Also waiting, same rule:
-WP-AG sound assistant agent (`local_a5e4c36f-0854-402a-ae61-2d057494b210`, brief
+WP-P2b tone and space edits (released to build). Merged in wave 3: WP-D1b, WP-R, WP-K2, WP-U3,
+WP-U4 (real-time playback in the app) and WP-H (sound-effect presets). WP-P2b is `local_0bb0fb8b-9b03-4896-a09b-59cd7c6a1d28` (brief
+`docs/briefs/WP-P2b-tone-space-edits.md`). Waiting for a slot (they read and write code but must
+not build until messaged "slot free"): WP-AG sound assistant agent (`local_a5e4c36f-0854-402a-ae61-2d057494b210`, brief
 `docs/briefs/WP-AG-in-app-agent.md`) and WP-U5 build a sound by hand
 (`local_ef4aaa95-5591-45a4-976b-056f5cfe01de`, `docs/briefs/WP-U5-hand-building.md`, closes
 Phase 3). Release order: WP-P2b (building now), then WP-AG, then WP-U5. Never play audio on the
