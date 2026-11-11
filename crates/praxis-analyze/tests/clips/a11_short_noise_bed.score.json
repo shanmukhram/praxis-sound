@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "title": "a11_short_noise_bed",
+  "seed": 7,
+  "meta": {
+    "tags": [
+      "labelled-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {
+      "source": "WP-D2 labelled set"
+    }
+  },
+  "tempo": {
+    "bpm": 120.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "Ab",
+    "mode": "major"
+  },
+  "bars": 6,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 2.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "amb0_p",
+      "grid": "quarter",
+      "length_steps": 24,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 56,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 23.5
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "amb0",
+      "name": "amb0",
+      "class": "ambience",
+      "instrument": {
+        "kind": "synth",
+        "preset": "noise_bed",
+        "params": {
+          "tone": 0.45
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 6
+          },
+          "pattern": "amb0_p",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -16.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

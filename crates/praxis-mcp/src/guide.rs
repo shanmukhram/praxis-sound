@@ -14,7 +14,10 @@ person (a sound folder): praxis_ask makes a take (a brief on a new sound, then s
 `scope` {layer, bars} holds it to exactly those bars), praxis_takes lists them (watch \
 `revision`), praxis_restore goes back, praxis_keep_variation keeps an alternate, \
 praxis_open_view shows the person a panel view. Each take says what changed and which bars \
-stayed bit-identical. Paths in, paths and measurements out; audio is never returned inline. \
+stayed bit-identical. Reference clips: praxis_analyze measures a clip's Sound Profile (class, \
+tempo, key, loudness, envelope, spectrum, groove, pitch, reverb, sections); praxis_library saves \
+profiles as named, tagged styles (never audio). Paths in, paths and measurements out; audio is \
+never returned inline. \
 Errors come back with isError=true and `error.code` (io, bad_json, bad_score, invalid_score, \
 bad_format, render_failed, no_api_key, provider_failed, pack_missing, pack_verify_failed, \
 decode_failed, patch_rejected, error); `error.issues[]` carry a JSON pointer `path` into your \
