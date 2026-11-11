@@ -32,6 +32,8 @@ serde_json.workspace = true
 anyhow.workspace = true
 # `key clear` deletes the keychain entry (the planner only reads and stores it).
 keyring.workspace = true
+# The sound assistant talks to the Claude Messages API over HTTP (streaming).
+ureq.workspace = true
 
 [dev-dependencies]
 praxis-testkit.workspace = true

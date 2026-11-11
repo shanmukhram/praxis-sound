@@ -321,7 +321,7 @@ impl PraxisServer {
 
     #[tool(
         name = "praxis_ask",
-        description = "Make a take in a sound's shared history (the same thread the person sees in the app). On a new sound `text` is the brief (take 1); afterwards it is what to change, as a scoped edit of the current take. `scope` {layer, bars} holds the change to exactly those bars of that layer. Every take is rendered (takes/<n>/mix.wav), checked, and recorded with `changed` (bars per layer), `untouched` and `identical_bars` (bars measured bit-identical to the take before). The master gain is frozen after take 1, so untouched bars stay sample-identical.",
+        description = "Make a take in a sound's shared history (the same thread the person sees in the app). On a new sound `text` is the brief (take 1); afterwards it is what to change, as a scoped edit of the current take. `scope` {layer, bars} holds the change to exactly those bars of that layer. With an API key (or `provider: \"claude\"`) the request is carried out by the sound assistant, which reads the sound, changes it with Praxis's own tools, renders and measures it, and remembers the sound's conversation; `agent.steps` lists what it did and `agent.reply` is its answer (a turn that makes no take, such as a clarifying question, fails with that reply and the steps under `error.issues[0].agent`). `provider: \"offline\"` uses the rule planner. Every take is rendered (takes/<n>/mix.wav), checked, and recorded with `changed` (bars per layer), `untouched` and `identical_bars` (bars measured bit-identical to the take before). The master gain is frozen after take 1, so untouched bars stay sample-identical.",
         input_schema = input_schema::<AskArgs>(),
         annotations(read_only_hint = false, destructive_hint = false, open_world_hint = true)
     )]
@@ -332,11 +332,12 @@ impl PraxisServer {
         peer: Peer<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         let who = client_who(&peer);
-        let req = match parse::<AskArgs>(args).and_then(|a| a.request(&who)) {
+        let parsed = parse::<AskArgs>(args).and_then(|a| a.request(&who).map(|r| (r, a.options())));
+        let (req, opts) = match parsed {
             Ok(r) => r,
             Err(e) => return Ok(tool_result("ask", Err(e))),
         };
-        Ok(run("ask", &meta, &peer, move || ops::ask(&req)).await)
+        Ok(run("ask", &meta, &peer, move || ops::ask_with(&req, &opts)).await)
     }
 
     #[tool(

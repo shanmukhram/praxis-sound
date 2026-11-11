@@ -476,10 +476,20 @@ pub struct AskArgs {
     /// Overrides the take's title.
     #[serde(default)]
     pub title: Option<String>,
+    /// `claude`: the sound assistant (Claude with every Praxis tool and this sound's
+    /// conversation history) carries the request out; the default when an API key is available.
+    /// `offline`: the deterministic rule planner.
     #[serde(default)]
     pub provider: Option<Provider>,
+    /// The assistant's model (default claude-opus-5-5).
     #[serde(default)]
     pub model: Option<String>,
+    /// The assistant's effort (default medium).
+    #[serde(default)]
+    pub effort: Option<Effort>,
+    /// Tool calls the assistant may make for this request (default 16).
+    #[serde(default)]
+    pub max_steps: Option<u32>,
     /// Planner seed (default: the new take's number).
     #[serde(default)]
     pub seed: Option<u64>,
@@ -491,7 +501,41 @@ pub struct AskArgs {
     pub include_score: bool,
 }
 
+/// How hard the sound assistant thinks (`output_config.effort`).
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Effort {
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+}
+
 impl AskArgs {
+    /// The assistant's settings for this request.
+    pub fn options(&self) -> praxis_cli::ops::AskOptions {
+        let mut agent = praxis_cli::agent::AgentConfig::default();
+        if let Some(e) = self.effort {
+            agent.effort = match e {
+                Effort::Low => "low",
+                Effort::Medium => "medium",
+                Effort::High => "high",
+                Effort::Xhigh => "xhigh",
+                Effort::Max => "max",
+            }
+            .to_string();
+        }
+        if let Some(n) = self.max_steps {
+            agent.max_steps = n.max(1);
+        }
+        praxis_cli::ops::AskOptions {
+            client: None,
+            agent,
+            progress: None,
+        }
+    }
+
     pub fn request(&self, default_who: &str) -> Result<praxis_cli::ops::AskRequest, OpError> {
         request(json!({
             "sound": sound_arg(&self.sound),

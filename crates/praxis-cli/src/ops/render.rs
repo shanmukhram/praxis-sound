@@ -173,6 +173,17 @@ pub(crate) fn render_score_master(
     out: &Path,
     settings: &RenderSettings,
 ) -> Result<(Value, praxis_dsp::StereoBuffer), OpError> {
+    render_score_output(score, out, settings, false).map(|(v, output)| (v, output.master))
+}
+
+/// [`render_score`], also returning the engine's output: the master and, with `stems_in_memory`
+/// (or `settings.stems`), one stem per rendered layer.
+pub(crate) fn render_score_output(
+    score: &Score,
+    out: &Path,
+    settings: &RenderSettings,
+    stems_in_memory: bool,
+) -> Result<(Value, praxis_engine::RenderOutput), OpError> {
     let mut score = score.clone();
     if let Some(s) = settings.seed {
         score.seed = s;
@@ -214,7 +225,7 @@ pub(crate) fn render_score_master(
     }
     let opts = RenderOptions {
         sample_rate: settings.sample_rate,
-        stems: settings.stems.is_some(),
+        stems: settings.stems.is_some() || stems_in_memory,
         only_layers,
         ..RenderOptions::default()
     };
@@ -296,5 +307,5 @@ pub(crate) fn render_score_master(
         "realtime_factor": if render_s > 0.0 { duration_s / render_s } else { 0.0 },
         "check": check,
     });
-    Ok((payload, output.master))
+    Ok((payload, output))
 }

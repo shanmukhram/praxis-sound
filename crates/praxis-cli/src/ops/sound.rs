@@ -6,6 +6,8 @@
 //!   takes.json            {format: "praxis-takes", version: 1, revision, current, takes[], views[]}
 //!   takes/<n>/mix.wav     each take's master (24-bit WAV, 48 kHz)
 //!   variations/<i>.wav    candidates from `variations` (none committed until kept)
+//!   conversation.json     the sound assistant's history (`crate::agent::conversation`)
+//!   agent/*.wav           the assistant's working renders (not takes)
 //! ```
 //!
 //! Every write goes to a temporary file in the folder and is renamed over the old one, and every
@@ -215,8 +217,15 @@ pub struct SoundLock {
 impl SoundLock {
     /// Creates `dir` if needed and takes its lock, waiting for another writer to finish.
     pub fn acquire(dir: &Path) -> Result<SoundLock, OpError> {
+        SoundLock::acquire_file(dir, LOCK_FILE)
+    }
+
+    /// The same wait-and-break-stale lock on another file of the folder (the assistant holds
+    /// `.agent-lock` for a whole turn, so two turns on one sound run one after the other while
+    /// the folder's own `.lock` stays free for each write).
+    pub fn acquire_file(dir: &Path, file: &str) -> Result<SoundLock, OpError> {
         std::fs::create_dir_all(dir).map_err(|e| io_error(dir, e))?;
-        let path = dir.join(LOCK_FILE);
+        let path = dir.join(file);
         let t0 = Instant::now();
         loop {
             match std::fs::OpenOptions::new()

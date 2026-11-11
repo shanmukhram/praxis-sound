@@ -16,6 +16,7 @@ pub mod changes;
 pub mod check;
 pub mod edit;
 pub mod generate;
+pub mod history;
 pub mod key;
 pub mod midi;
 pub mod packs;
@@ -31,6 +32,7 @@ pub use analyze::{AnalyzeRequest, analyze};
 pub use check::{CheckRequest, check};
 pub use edit::{EditRequest, edit};
 pub use generate::{GenerateRequest, ProviderChoice, generate};
+pub use history::{HistoryAction, UndoRedoRequest, undo_redo};
 pub use key::{KeyAction, KeyRequest, key};
 pub use midi::{ExportMidiRequest, export_midi};
 pub use packs::{PacksInstallRequest, packs_install, packs_list};
@@ -39,8 +41,8 @@ pub use render::{RenderRequest, RenderSettings, render};
 pub use schema::{SchemaRequest, schema};
 pub use sound::{TakeRecord, TakeScope, ViewName, praxis_home, resolve_sound};
 pub use takes::{
-    AskRequest, KeepVariationRequest, OpenViewRequest, RestoreRequest, TakesRequest, ask,
-    keep_variation, open_view, restore, takes,
+    AskOptions, AskRequest, KeepVariationRequest, OpenViewRequest, RestoreRequest, TakesRequest,
+    ask, ask_with, keep_variation, open_view, restore, takes,
 };
 pub use validate::{ValidateRequest, validate};
 pub use variations::{VariationsRequest, variations};

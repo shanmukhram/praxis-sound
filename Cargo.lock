@@ -3747,6 +3747,7 @@ dependencies = [
  "praxis-testkit",
  "serde",
  "serde_json",
+ "ureq",
 ]
 
 [[package]]

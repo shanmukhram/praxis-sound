@@ -15,6 +15,7 @@
 //!   `take-<n>`, and recorded with what changed and which bars stayed bit-identical (measured
 //!   on the two renders).
 
+use crate::agent::{AgentConfig, ModelClient, Progress};
 use crate::error::{ErrorCode, OpError};
 use crate::ops::changes::{bars_label, changed_layers, identical_bars, untouched_text};
 use crate::ops::check::decode;
@@ -33,6 +34,7 @@ use praxis_score::patch::{Origin, PatchOp, Scope, ScorePatch};
 use praxis_score::{BarRange, Score};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::sync::Arc;
 
 /// Who a take is from when the request does not say (the CLI's default).
 pub const DEFAULT_WHO: &str = "You";
@@ -113,17 +115,17 @@ pub struct OpenViewRequest {
 }
 
 /// The words of a take.
-struct Words {
-    who: String,
-    ask: String,
-    title: String,
-    say: String,
-    scope: Option<TakeScope>,
-    provider: String,
-    seed: u64,
+pub(crate) struct Words {
+    pub(crate) who: String,
+    pub(crate) ask: String,
+    pub(crate) title: String,
+    pub(crate) say: String,
+    pub(crate) scope: Option<TakeScope>,
+    pub(crate) provider: String,
+    pub(crate) seed: u64,
 }
 
-fn render_settings(skip_missing: bool) -> RenderSettings {
+pub(crate) fn render_settings(skip_missing: bool) -> RenderSettings {
     RenderSettings {
         skip_missing,
         ..RenderSettings::default()
@@ -154,14 +156,14 @@ fn render_report(r: &Value) -> Value {
     })
 }
 
-fn project_error(e: impl std::fmt::Display) -> OpError {
+pub(crate) fn project_error(e: impl std::fmt::Display) -> OpError {
     OpError::new(ErrorCode::PatchRejected, e.to_string())
 }
 
 /// Renders the sound's current score as take `n`, freezes the master gain after a new sound's
 /// first render, saves version `take-<n>`, records the take and makes it current. The caller
 /// has already committed `patch` (when there is one) to the project.
-fn make_take(
+pub(crate) fn make_take(
     sound: &mut Sound,
     before: Option<&Score>,
     patch: Option<ScorePatch>,
@@ -245,7 +247,7 @@ fn make_take(
 }
 
 /// The payload of a command that made or selected a take.
-fn take_payload(sound: &Sound, take: &TakeRecord, include_score: bool) -> Value {
+pub(crate) fn take_payload(sound: &Sound, take: &TakeRecord, include_score: bool) -> Value {
     let project = sound.project.as_ref();
     json!({
         "sound": sound.dir.display().to_string(),
@@ -379,10 +381,67 @@ fn scoped_edit(
     Ok((out, note))
 }
 
+/// How [`ask_with`] runs the sound assistant: which model client, its settings and a progress
+/// callback. The default talks to the Claude API over HTTP when a key is available.
+#[derive(Clone, Default)]
+pub struct AskOptions {
+    /// `None`: the Claude Messages API (`agent::HttpClient`), used when a key is available.
+    /// Tests pass a scripted model here.
+    pub client: Option<Arc<dyn ModelClient>>,
+    pub agent: AgentConfig,
+    /// Called with each step the assistant takes, in plain words.
+    pub progress: Option<Progress>,
+}
+
+impl std::fmt::Debug for AskOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AskOptions")
+            .field("client", &self.client.as_ref().map(|_| "<client>"))
+            .field("agent", &self.agent)
+            .field("progress", &self.progress.as_ref().map(|_| "<callback>"))
+            .finish()
+    }
+}
+
+/// A request on a sound (the app's conversation, `praxis ask`, MCP `praxis_ask`).
+///
+/// - With `patch`: the hand edit is committed as given (no model).
+/// - Otherwise the sound assistant ([`crate::agent`]) carries it out when it can: `provider`
+///   unset and an API key available, or `provider: claude` (then a missing key is `no_api_key`).
+/// - Otherwise (`provider: offline`, or no key) the offline planner does, as before.
+///
+/// Same payload as before; an assistant take adds `agent {outcome, reply, steps[], usage,
+/// model}`. A turn that makes no take (a question, a refusal, nothing to change) fails with the
+/// assistant's reply as the message and the same `agent` record as the error's only issue.
+pub fn ask(req: &AskRequest) -> Result<Value, OpError> {
+    ask_with(req, &AskOptions::default())
+}
+
+/// [`ask`] with an explicit model client, assistant settings and progress callback.
+pub fn ask_with(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
+    if req.patch.is_none() && use_agent(req, opts)? {
+        return crate::agent::run_ask(req, opts);
+    }
+    ask_planner(req)
+}
+
+fn use_agent(req: &AskRequest, opts: &AskOptions) -> Result<bool, OpError> {
+    let reachable = || opts.client.is_some() || crate::ops::key::resolve_key().is_ok();
+    match req.provider {
+        Some(ProviderChoice::Offline) => Ok(false),
+        Some(ProviderChoice::Claude) if reachable() => Ok(true),
+        Some(ProviderChoice::Claude) => Err(OpError::new(
+            ErrorCode::NoApiKey,
+            praxis_planner::ProviderError::NoApiKey.to_string(),
+        )),
+        None => Ok(reachable()),
+    }
+}
+
 /// `{sound, project, revision, current, take, score_summary, can_undo, can_redo, provider_note,
 /// edit?}`: a new sound (take 1) or a scoped edit of the current take, rendered, checked and
 /// recorded. An edit that changes nothing fails with `patch_rejected` and makes no take.
-pub fn ask(req: &AskRequest) -> Result<Value, OpError> {
+fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
     let dir = resolve_sound(&req.sound)?;
     let _lock = SoundLock::acquire(&dir)?;
     let mut sound = Sound::open(&dir)?;
