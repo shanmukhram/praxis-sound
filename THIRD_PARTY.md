@@ -34,8 +34,17 @@ licences only (ADR-0008). Checked against crates.io on 2026-11-10.
 | wasm-bindgen | 0.2.130 | MIT OR Apache-2.0 | 2026-10 | yes | wasm |
 | proptest (dev) | 1.12.0 | MIT OR Apache-2.0 | 2026-10 | n/a | tests |
 | jsonschema (dev) | 0.61.1 | MIT | 2026-11 | n/a | tests |
+| tauri | 2.12.5 | Apache-2.0 OR MIT | 2026-10-21 | n/a (desktop shell; uses the system WebView2) | app (ADR-0002, WP-U3); adds about 227 crates to the lock, all reached only through praxis-app |
+| tauri-build | 2.7.4 | Apache-2.0 OR MIT | 2026-10 | n/a (build script) | app |
 
 Rejected: symphonia 0.6.1 (MPL-2.0, weak copyleft; ADR-0004). fundsp 0.23 (not needed; ADR-0003).
+
+## npm packages (desktop app, `app/package.json`)
+
+| Package | Version | Licence | Use |
+| --- | --- | --- | --- |
+| @tauri-apps/api | 2.12.4 | Apache-2.0 OR MIT | IPC from the front end to the Rust shell |
+| @tauri-apps/cli (dev) | 2.12.4 | Apache-2.0 OR MIT | `npm run tauri` (dev and build) |
 
 ## Instrument packs and impulse responses
 
