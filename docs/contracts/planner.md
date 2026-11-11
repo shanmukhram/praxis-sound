@@ -72,7 +72,10 @@ divide the bar, the spoken tokens). Codes: `schema`, `timing`, `time_signature`,
 `emotion`, `bad_id`, `duplicate_id`, `no_layers`, `too_many_layers`, `unknown_preset`,
 `preset_kind`, `class_mismatch`, `avoided_class`, `unrequested_class`, `grid`, `motif_length`,
 `spoken`, `degrees`, `octave`, `sustain`, `off_scale`, `off_grid`, `note_range`, `velocity`,
-`gain`, `sections`, `unknown_layer`, `inactive_layer`, `intensity`, `chord`.
+`gain`, `sections`, `unknown_layer`, `inactive_layer`, `intensity`, `chord`. Quality codes
+(`PlanIssueCode::is_quality`; never produced by `validate_plan`, never a reason to reject a plan):
+`unrequested_layer`, `layer_bars`, `isolated_notes`, `no_motif_repetition`,
+`missing_sustain_overlap`, `too_many_elements`, `unrequested_effect_class`.
 
 The loop: provider call -> parse (field-level `schema` issues with pointers) -> validate -> on
 issues, the issues go back to the provider in a user message (at most 3 repair rounds; a provider
@@ -83,6 +86,33 @@ fits the bar, clamp lengths, degrees and octaves, sustain 1.6 on sustaining pres
 snap explicit notes (`Key::snap`), rebuild sections without gaps or overlaps, in-key chords.
 Every fix is recorded as `Repair {code, path, action}`; `fix_plan` is idempotent. Provenance
 keys: `planner`, `provider`, `attempts`, `repairs`, `repair_codes`, `seed`, `planner_notes`.
+
+**Quality rounds (model providers only, WP-P4).** For a provider whose id is not
+`offline-rules`, `plan_brief` runs `repair::plan_with_quality_repair`: every plan that passes
+`validate_plan` is also checked by `brief::quality_issues`, and its issues go back to the model in
+the same repair rounds (the same limit of 3, the same message format: pointer, code, what is
+wrong and what to do). The checks:
+- `unrequested_layer` (`/layers/<i>`): a layer whose instrument the brief does not name. The
+  brief's instruments are read with the rule planner's vocabulary (`offline::brief_instruments`:
+  instrument families, class words such as "bass" or "melody", drum-kit words such as "drums" or
+  "beat" covering every drum, and catalogue-less instruments such as "strings"). Judged only when
+  the brief names an instrument and the plan covers at least one named instrument, so a plan made
+  wholly of substitutes is a reading, not an extra.
+- `layer_bars` (`/sections`): a layer that does not play every bar when the brief has no bar
+  phrase ("bars 9-16", "second half", "from bar 5", "last 4 bars") and no timing word ("intro",
+  "outro", "enters", "joins", "later", "then", "drop", ...).
+- The lints of the arranged Score (`praxis_score::lint`) with the layer mapped back to the plan:
+  `isolated_notes` and `no_motif_repetition` (`/layers/<i>/motif`), `missing_sustain_overlap`
+  (`/layers/<i>/motif/sustain_steps`), `too_many_elements` (`/layers`),
+  `unrequested_effect_class` (`/layers/<i>`), each with the lint's message plus a plain
+  instruction (for `isolated_notes`: keep the layer on a repeating grid, add hits or `~` ties and
+  let sustain connect each note to the next).
+
+A plan with only quality issues is valid: when the rounds run out, or the model answers with the
+same plan again, the valid plan with the fewest quality issues is kept (the latest on a tie) and
+its lints stay in `PlanOutcome.lint`; the deterministic `fix_plan` runs only when no answer was
+valid, then `finish` lengthens sustain as before. `rounds` lists quality issues like any other.
+The offline provider is never asked again, so its plans and the offline suites are unchanged.
 
 ### Arranger guarantees
 
@@ -115,7 +145,24 @@ pad, noise_bed texture (unpitched).
   call was made and asks once more if not; older models get
   `{"type": "tool", "name": "plan_score"}`. `output_config.effort` defaults to `medium`. On
   models that support it, `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) re-runs
-  a refused request on a fallback model.
+  a refused request on a fallback model. The system prompt is sent as one text block; it and the
+  tool definition carry `cache_control: {"type": "ephemeral"}`, so the schema (the same in every
+  request) and the system prompt (the same for every brief, resent in every repair round) are
+  read from the prompt cache. Each 200 response's `usage` is added to `ClaudeProvider::usage()`
+  (`claude::Usage`: requests, input, output, cache write and cache read tokens; `cost_usd(model)`
+  at list price, `since(earlier)` for one call's share); the live suites print it per case.
+
+### System prompt (model providers)
+
+`brief::system_prompt` states the owner's rules as numbered plain sentences: rhythm first (one
+repeating motif per layer, no note followed by more than a beat of silence: a slow part holds
+notes with `~` ties or sustain; a spoken rhythm in the brief is copied exactly, not padded with
+rests), notes connect, layering by sections, restraint (only the instruments the brief names, one
+layer per named instrument, no layer the brief did not ask for, one layer when the brief names
+one instrument, one to three when it names none, no trailer classes unless asked, mood words are
+not a licence for effects), every layer from bar 1 to the end unless the brief says when, the
+brief's own mood word as the emotion, always in key, the duration rule, and the catalogue (an
+instrument it lacks goes in `notes`, never replaced by other layers).
 
 ### For agents
 
@@ -131,6 +178,22 @@ whooshes or fills unless the user asked for one, and then list it in `requested`
 repairs what it can deterministically and lists each change in `repairs`; if it returns
 `PlanError::Invalid`, each issue's `path` points into your plan and its message lists the allowed
 values, so fix those fields and call again.
+
+### Prompt suites
+
+`tests/prompt_suite.rs` (every brief in `tests/prompts/*.json`) and `tests/edit_prompt_suite.rs`
+(every `edit_*.json`) run offline on `RuleProvider`; with `PRAXIS_SUITE_PROVIDER=claude` they run
+on one shared `ClaudeProvider` (paid) and print each case's token usage and cost and the totals.
+Live runs report repair rounds instead of failing on them and skip the determinism check; every
+other check is the same. Checks that read a model's words fairly without loosening anything else
+(`tests/common/mod.rs`): an expected emotion accepts the close synonyms listed in
+`EMOTION_SYNONYMS` ("ominous" for dark, "suspenseful" for tense, ...); an expected spoken rhythm
+is compared after reducing an exact repetition to one period and dropping trailing rests
+(`spoken_core`; hits, accents, ties and inner rests must match); an edit case may give
+`expect_any`, a list of acceptable outcomes. Layer counts, presets, bars, keys, tempo, grid,
+banned classes and isolation are compared exactly. `edit_not_understood` ("make it pop") accepts
+`not_understood` (nothing changes) or a whole-score `change_tone` brighter that keeps every note
+and clip, the one reading of "pop" that is safe and that the edit tools can express.
 
 ## Edits (WP-P2)
 
@@ -275,8 +338,10 @@ to one intent (tested in `tests/edit_tone_space.rs` and `edit/rules.rs`):
 Mood and Energy have no intent of their own; the nearest existing one that keeps the notes is
 dynamics (every unlocked layer, default 4 dB softer / 3 dB louder). Rewriting or thinning notes
 for a slider nudge would break "never rewrite a part unless asked". Model providers get the same forced-tool request with
-a system prompt that lists the catalogue, the presets with tone controls, the tone / space /
-not_understood rules and the Score (layers, bars they play, locks);
+a system prompt that lists the catalogue, the presets with tone controls, the restraint rule
+(change only what the user names; one added layer per instrument asked for, none they did not
+ask for, playing through every bar of the scope), the tone / space / not_understood rules and
+the Score (layers, bars they play, locks);
 `tests/edit_claude_replay.rs` replays `ClaudeProvider` through a repair round, a widened
 answer, a `change_tone` answer and a `not_understood` answer.
 

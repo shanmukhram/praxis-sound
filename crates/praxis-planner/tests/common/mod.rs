@@ -185,3 +185,74 @@ pub fn check_acceptance1(score: &Score) -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Emotion words a case's expected emotion accepts. A model names the mood in its own word
+/// ("ominous" for a dark brief, "suspenseful" for a tense one); each set holds only close
+/// synonyms, so a plan in another mood still fails. The expected word itself always matches.
+pub const EMOTION_SYNONYMS: &[(&str, &[&str])] = &[
+    (
+        "dark",
+        &[
+            "ominous",
+            "brooding",
+            "menacing",
+            "grim",
+            "foreboding",
+            "somber",
+            "sombre",
+        ],
+    ),
+    (
+        "tense",
+        &[
+            "suspenseful",
+            "suspense",
+            "anxious",
+            "uneasy",
+            "nervous",
+            "apprehensive",
+        ],
+    ),
+    ("mysterious", &["enigmatic", "mystical", "mystery"]),
+    ("dreamy", &["dreamlike", "ethereal", "hazy"]),
+    (
+        "melancholy",
+        &["melancholic", "sad", "sorrowful", "wistful", "mournful"],
+    ),
+    ("hopeful", &["optimistic", "uplifting"]),
+    ("playful", &["whimsical", "cheerful"]),
+    ("tender", &["gentle", "intimate"]),
+    ("calm", &["serene", "peaceful", "tranquil", "relaxed"]),
+];
+
+/// True when `got` is the expected emotion or one of its documented synonyms (case-insensitive).
+pub fn emotion_matches(expected: &str, got: &str) -> bool {
+    let got = got.trim().to_lowercase();
+    let expected = expected.to_lowercase();
+    got == expected
+        || EMOTION_SYNONYMS
+            .iter()
+            .any(|(e, syn)| *e == expected && syn.contains(&got.as_str()))
+}
+
+/// A spoken rhythm reduced to what a listener hears in one repetition: whitespace-separated
+/// tokens, a sequence that is an exact repetition of a shorter one reduced to that one, then
+/// trailing rests (`-`) removed (the arranger restarts a rhythm every bar, so rests at its end are
+/// silence either way). Hits, accents, ties and rests between hits are kept exactly.
+pub fn spoken_core(s: &str) -> Vec<String> {
+    let toks: Vec<String> = s.split_whitespace().map(str::to_string).collect();
+    let n = toks.len();
+    let period = (1..=n)
+        .find(|p| n.is_multiple_of(*p) && (0..n).all(|i| toks[i] == toks[i % p]))
+        .unwrap_or(n);
+    let mut core: Vec<String> = toks[..period].to_vec();
+    while core.last().is_some_and(|t| t == "-") {
+        core.pop();
+    }
+    core
+}
+
+/// Spoken rhythms compared after [`spoken_core`].
+pub fn same_spoken(expected: &str, got: &str) -> bool {
+    spoken_core(expected) == spoken_core(got)
+}
