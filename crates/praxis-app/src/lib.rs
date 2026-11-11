@@ -10,7 +10,9 @@
 pub mod audio;
 pub mod clips;
 pub mod commands;
+pub mod crash;
 pub mod hand;
+pub mod packs;
 mod shell;
 pub mod sounds;
 pub mod watch;

@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 fn main() -> std::process::ExitCode {
+    praxis_cli::ops::crash::install("praxis-mcp");
     if std::env::args().skip(1).any(|a| a == "--help" || a == "-h") {
         eprintln!(
             "praxis-mcp {}: the Praxis Sound MCP server (stdio).\n\

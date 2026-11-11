@@ -291,6 +291,23 @@ enum Command {
     },
     /// The planner's presets and whether each can render here.
     Presets,
+    /// Time a render on this machine: a 2-minute, 8-layer piece (or a score you give) against
+    /// the 20x real-time target. Writes nothing.
+    Bench {
+        /// Bench this score or project instead of the built-in piece.
+        input: Option<PathBuf>,
+        /// Length of the built-in piece in seconds.
+        #[arg(long, default_value_t = 120.0)]
+        seconds: f64,
+        /// Timed runs after one warm-up render.
+        #[arg(long, default_value_t = 3)]
+        runs: usize,
+        #[arg(long, default_value_t = 48_000)]
+        sample_rate: u32,
+        /// Also time each layer rendered alone.
+        #[arg(long)]
+        per_layer: bool,
+    },
     /// Store or clear the Anthropic API key in the OS keychain (read from stdin).
     Key {
         #[command(subcommand)]
@@ -371,6 +388,7 @@ fn name(c: &Command) -> &'static str {
         Command::ExportMidi { .. } => "export-midi",
         Command::Packs { .. } => "packs",
         Command::Presets => "presets",
+        Command::Bench { .. } => "bench",
         Command::Key { .. } => "key",
     }
 }
@@ -712,6 +730,19 @@ fn run(command: Command) -> Result<Value, OpError> {
             }
         },
         Command::Presets => ops::presets(),
+        Command::Bench {
+            input,
+            seconds,
+            runs,
+            sample_rate,
+            per_layer,
+        } => ops::bench(&ops::BenchRequest {
+            input,
+            seconds,
+            runs,
+            sample_rate,
+            per_layer,
+        }),
         Command::Key { action } => {
             let action = match action {
                 KeyCmd::Set => KeyAction::Set(read_stdin()?),
@@ -765,6 +796,7 @@ fn parse() -> Cli {
 }
 
 fn main() {
+    ops::crash::install("praxis");
     let cli = parse();
     let command = name(&cli.command);
     std::process::exit(emit(command, cli.json, run(cli.command)));
