@@ -19,15 +19,15 @@ const ok: PlaybackInfo = {
 
 describe('playback line', () => {
   it('names the engine, device, rate, callback size and xruns', () => {
-    expect(playbackText(ok)).toEqual({ text: 'Real-time engine · Speakers (Realtek(R) Audio) · 48 kHz · 480-frame callbacks · 0 xruns', trouble: false });
+    expect(playbackText(ok)).toEqual({ text: 'Real-time engine · Speakers (Realtek(R) Audio) · 48 kHz · callbacks 480 frames · 0 xruns while playing', trouble: false });
     expect(playbackText({ ...ok, callbackFrames: [441, 480], preparing: true }).text).toBe(
-      'Real-time engine · Speakers (Realtek(R) Audio) · 48 kHz · 441–480-frame callbacks · 0 xruns · building the new version',
+      'Real-time engine · Speakers (Realtek(R) Audio) · 48 kHz · callbacks 441–480 frames · 0 xruns while playing · building the new version',
     );
   });
 
   it('flags xruns, device errors and a stalled device', () => {
     expect(playbackText({ ...ok, xruns: 1, deviceErrors: 2, stalled: true })).toEqual({
-      text: 'Real-time engine · Speakers (Realtek(R) Audio) · 48 kHz · 480-frame callbacks · 1 xrun · 2 device errors · the device stopped calling back',
+      text: 'Real-time engine · Speakers (Realtek(R) Audio) · 48 kHz · callbacks 480 frames · 1 xrun while playing · 2 device errors · the device stopped calling back',
       trouble: true,
     });
   });

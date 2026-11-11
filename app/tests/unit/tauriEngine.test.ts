@@ -259,6 +259,7 @@ class FakeBridge implements Bridge {
       peak_db: [-120, -120],
       rms_db: [-120, -120],
       xruns: 0,
+      xruns_total: 0,
       late_wakeups: 0,
       device_errors: 0,
       min_callback_frames: 480,

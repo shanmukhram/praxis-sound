@@ -206,7 +206,10 @@ export interface TransportEventPayload {
   /** dBFS, floored at -120 (silence). */
   peak_db: [number, number];
   rms_db: [number, number];
+  /** Xruns while the engine played (audible). */
   xruns: number;
+  /** Every xrun since the device opened, stopped time included. */
+  xruns_total: number;
   late_wakeups: number;
   device_errors: number;
   min_callback_frames: number;

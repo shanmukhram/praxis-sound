@@ -14,6 +14,7 @@ use praxis_engine::testing::TestFactory;
 use praxis_engine::{RenderOptions, render_offline};
 use praxis_score::{BarRange, Playback, Score};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -68,6 +69,7 @@ fn rig(speed: f64) -> Rig {
             callback_frames: CALLBACK,
             speed,
             tap: Some(tap.clone()),
+            xruns: None,
         }
         .opener(),
         Arc::new(TestFactory::new()),
@@ -292,6 +294,41 @@ fn seek_and_a_loop_range_keep_the_position_in_the_range() {
 }
 
 #[test]
+fn only_xruns_while_playing_count_as_heard() {
+    let xruns = Arc::new(AtomicU64::new(0));
+    let events: Events = Arc::new(Mutex::new(Vec::new()));
+    let ev = events.clone();
+    let service = AudioService::start(
+        FakeOutput {
+            sample_rate: SR,
+            callback_frames: CALLBACK,
+            speed: 4.0,
+            tap: None,
+            xruns: Some(xruns.clone()),
+        }
+        .opener(),
+        Arc::new(TestFactory::new()),
+        Box::new(move |e| ev.lock().unwrap().push(e.clone())),
+    );
+    let score = bell_score();
+    service.load(score, None);
+    wait_for("the graph", 30.0, || service.status().loaded);
+    // Stopped: the silent stream starves (a take renders, say). Counted, but not as heard.
+    xruns.fetch_add(2, Ordering::Relaxed);
+    wait_for("the idle xruns", 5.0, || {
+        service.status().event.xruns_total == 2
+    });
+    assert_eq!(service.status().event.xruns, 0);
+    service.play();
+    wait_for("playing", 5.0, || service.status().event.playing);
+    xruns.fetch_add(1, Ordering::Relaxed);
+    wait_for("the heard xrun", 5.0, || service.status().event.xruns == 1);
+    let s = service.status();
+    assert_eq!((s.event.xruns, s.event.xruns_total), (1, 3));
+    service.stop();
+}
+
+#[test]
 fn no_output_device_is_reported_plainly() {
     let events: Events = Arc::new(Mutex::new(Vec::new()));
     let ev = events.clone();
@@ -373,6 +410,7 @@ fn a_real_take_plays_through_the_service_with_the_felt_piano() {
             callback_frames: CALLBACK,
             speed: 4.0,
             tap: Some(tap.clone()),
+            xruns: None,
         }
         .opener(),
         Arc::new(praxis_instruments::Registry::with_default_packs()),
@@ -441,4 +479,94 @@ fn device_plays_without_xruns() {
     assert!(s.event.callbacks > 100);
     assert_eq!(s.event.xruns, 0);
     assert!(peak > -60.0, "nothing was heard: peak {peak} dBFS");
+}
+
+/// A stereo 32-bit float WAV, for listening to a recording of the engine's output.
+fn write_f32_wav(path: &Path, l: &[f32], r: &[f32], sr: u32) {
+    let n = l.len().min(r.len());
+    let data = (n * 8) as u32;
+    let mut b = Vec::with_capacity(44 + n * 8);
+    b.extend_from_slice(b"RIFF");
+    b.extend_from_slice(&(36 + data).to_le_bytes());
+    b.extend_from_slice(b"WAVEfmt ");
+    b.extend_from_slice(&16u32.to_le_bytes());
+    b.extend_from_slice(&3u16.to_le_bytes()); // IEEE float
+    b.extend_from_slice(&2u16.to_le_bytes());
+    b.extend_from_slice(&sr.to_le_bytes());
+    b.extend_from_slice(&(sr * 8).to_le_bytes());
+    b.extend_from_slice(&8u16.to_le_bytes());
+    b.extend_from_slice(&32u16.to_le_bytes());
+    b.extend_from_slice(b"data");
+    b.extend_from_slice(&data.to_le_bytes());
+    for i in 0..n {
+        b.extend_from_slice(&l[i].to_le_bytes());
+        b.extend_from_slice(&r[i].to_le_bytes());
+    }
+    std::fs::write(path, b).expect("write wav");
+}
+
+/// Records what the real-time engine plays across a swap, for listening: take `n - 1` of a
+/// sound for 6 s from `PRAXIS_RECORD_SWAP_FROM` seconds (default 0), then its live score
+/// swapped in while playing, 6 s more.
+/// `PRAXIS_RECORD_SWAP=<sound folder>` and `PRAXIS_RECORD_SWAP_OUT=<file.wav>`.
+#[test]
+fn record_a_swap_for_listening() {
+    let (Ok(sound), Ok(out)) = (
+        std::env::var("PRAXIS_RECORD_SWAP"),
+        std::env::var("PRAXIS_RECORD_SWAP_OUT"),
+    ) else {
+        println!(
+            "SKIP record_a_swap_for_listening: set PRAXIS_RECORD_SWAP and PRAXIS_RECORD_SWAP_OUT"
+        );
+        return;
+    };
+    let dir = PathBuf::from(&sound);
+    let takes = praxis_app::commands::takes(&sound).expect("takes");
+    let current = takes["current"].as_u64().expect("current") as u32;
+    let before = praxis_app::commands::take_score(&dir, Some(current - 1)).expect("previous take");
+    let (after, gain) = praxis_app::commands::playback_score(&sound).expect("live score");
+    let tap: Tap = Arc::new(Mutex::new((Vec::new(), Vec::new())));
+    let service = AudioService::start(
+        FakeOutput {
+            sample_rate: SR,
+            callback_frames: CALLBACK,
+            speed: 2.0,
+            tap: Some(tap.clone()),
+            xruns: None,
+        }
+        .opener(),
+        Arc::new(praxis_instruments::Registry::with_default_packs()),
+        Box::new(|_| {}),
+    );
+    service.load(before, gain);
+    wait_for("take n-1", 120.0, || service.status().loaded);
+    let from: f64 = std::env::var("PRAXIS_RECORD_SWAP_FROM")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
+    service.seek(from);
+    let frames = || tap.lock().unwrap().0.len();
+    let start = frames();
+    service.play();
+    wait_for("6 s", 60.0, || frames() >= start + 6 * SR as usize);
+    let at = frames() - start;
+    service.load(after, gain);
+    wait_for("the swap", 120.0, || {
+        let s = service.status();
+        s.loaded && s.event.swaps >= 2
+    });
+    let swapped = frames() - start;
+    wait_for("6 s more", 60.0, || {
+        frames() >= start + swapped + 6 * SR as usize
+    });
+    service.stop();
+    let t = tap.lock().unwrap();
+    write_f32_wav(Path::new(&out), &t.0[start..], &t.1[start..], SR);
+    println!(
+        "recorded {:.2} s to {out}; swap asked at {:.3} s, in by {:.3} s (take {} -> live score of take {current})",
+        (t.0.len() - start) as f64 / SR as f64,
+        at as f64 / SR as f64,
+        swapped as f64 / SR as f64,
+        current - 1
+    );
 }

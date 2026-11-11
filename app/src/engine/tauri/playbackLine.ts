@@ -16,8 +16,8 @@ export function playbackText(p: PlaybackInfo): { text: string; trouble: boolean 
   if (p.device) parts.push(p.device);
   if (p.sampleRate) parts.push(`${p.sampleRate / 1000} kHz`);
   const [lo, hi] = p.callbackFrames;
-  if (hi) parts.push(lo === hi ? `${hi}-frame callbacks` : `${lo}–${hi}-frame callbacks`);
-  parts.push(`${p.xruns} ${p.xruns === 1 ? 'xrun' : 'xruns'}`);
+  if (hi) parts.push(lo === hi ? `callbacks ${hi} frames` : `callbacks ${lo}–${hi} frames`);
+  parts.push(`${p.xruns} ${p.xruns === 1 ? 'xrun' : 'xruns'} while playing`);
   if (p.deviceErrors) parts.push(`${p.deviceErrors} device ${p.deviceErrors === 1 ? 'error' : 'errors'}`);
   if (p.stalled) parts.push('the device stopped calling back');
   if (p.preparing) parts.push('building the new version');

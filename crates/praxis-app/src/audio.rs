@@ -148,6 +148,8 @@ pub struct FakeOutput {
     pub callback_frames: usize,
     pub speed: f64,
     pub tap: Option<Tap>,
+    /// Xruns the fake reports (tests raise it to stand for a starved device).
+    pub xruns: Option<Arc<AtomicU64>>,
 }
 
 impl FakeOutput {
@@ -158,6 +160,7 @@ impl FakeOutput {
 }
 
 struct FakeRunning {
+    xruns: Option<Arc<AtomicU64>>,
     stop: Arc<AtomicBool>,
     callbacks: Arc<AtomicU64>,
     frames: u64,
@@ -205,6 +208,7 @@ impl Output for FakeOutput {
             }
         });
         Ok(Box::new(FakeRunning {
+            xruns: self.xruns.clone(),
             stop,
             callbacks,
             frames: n as u64,
@@ -221,6 +225,7 @@ impl Running for FakeRunning {
             frames: callbacks * self.frames,
             min_callback_frames: self.frames,
             max_callback_frames: self.frames,
+            xruns: self.xruns.as_ref().map_or(0, |x| x.load(Ordering::Relaxed)),
             ..DeviceStats::default()
         }
     }
@@ -255,7 +260,11 @@ pub struct TransportEvent {
     /// Peak and RMS (dBFS, floored at [`METER_FLOOR_DB`]) since the last event, left and right.
     pub peak_db: [f32; 2],
     pub rms_db: [f32; 2],
+    /// Xruns while the engine was playing (the ones that can be heard).
     pub xruns: u64,
+    /// Every xrun since the device opened, stopped time included (the stream keeps running
+    /// silent between plays; a busy machine can starve it then, inaudibly).
+    pub xruns_total: u64,
     pub late_wakeups: u64,
     pub device_errors: u64,
     /// Callback sizes the device actually used, in frames.
@@ -505,6 +514,10 @@ struct Service {
     last_event: TransportEvent,
     last_emit: Instant,
     last_callbacks: (u64, Instant),
+    /// The device's xrun counter at the last tick, and the xruns counted while playing.
+    xruns_seen: u64,
+    xruns_playing: u64,
+    was_playing: bool,
 }
 
 fn to_db(x: f32) -> f32 {
@@ -552,6 +565,9 @@ impl Service {
             last_event: TransportEvent::default(),
             last_emit: Instant::now(),
             last_callbacks: (0, Instant::now()),
+            xruns_seen: 0,
+            xruns_playing: 0,
+            was_playing: false,
         };
         s.open();
         s
@@ -580,6 +596,7 @@ impl Service {
                 self.device = Some(d);
                 self.device_error = None;
                 self.graph = None;
+                self.xruns_seen = 0;
                 self.sent.clear();
                 self.send_loop();
                 // A score asked for before the device opened is built now, at its rate.
@@ -871,6 +888,13 @@ impl Service {
             self.last_callbacks = (stats.callbacks, now);
         }
         let stalled = st.playing && now.duration_since(self.last_callbacks.1) > STALL_AFTER;
+        // Xruns between two ticks count as heard when the engine played at either end.
+        let new_xruns = stats.xruns.saturating_sub(self.xruns_seen);
+        if st.playing || self.was_playing {
+            self.xruns_playing += new_xruns;
+        }
+        self.xruns_seen = stats.xruns;
+        self.was_playing = st.playing;
         let n = self.meter_n.max(1) as f64;
         let rms = [
             (self.sum_sq[0] / n).sqrt() as f32,
@@ -887,7 +911,8 @@ impl Service {
             seconds: st.position as f64 / d.sample_rate.max(1) as f64,
             peak_db: [to_db(self.peak[0]), to_db(self.peak[1])],
             rms_db: [to_db(rms[0]), to_db(rms[1])],
-            xruns: stats.xruns,
+            xruns: self.xruns_playing,
+            xruns_total: stats.xruns,
             late_wakeups: stats.late_wakeups,
             device_errors: stats.errors,
             min_callback_frames: stats.min_callback_frames,
