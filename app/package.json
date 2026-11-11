@@ -3,15 +3,20 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Praxis Sound workstation front end (browser dev mode against a mock engine).",
+  "description": "Praxis Sound workstation front end: the desktop shell's UI, the browser build on the WebAssembly engine, and a mock engine for UI tests.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "build:wasm": "cargo build -p praxis-wasm --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir src/engine-wasm/pkg ../target/wasm32-unknown-unknown/release/praxis_wasm.wasm",
+    "build:web": "npm run build:wasm && tsc --noEmit && vite build --mode web",
+    "dev:web": "vite --mode web",
+    "preview:web": "vite preview --mode web",
     "typecheck": "tsc --noEmit",
     "gen:types": "node scripts/gen-types.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:web": "cargo run -p praxis-wasm --example native_render -- ../target/praxis-native/acceptance1.f32 && playwright test -c tests/web/playwright.config.ts",
     "tauri": "cd ../crates/praxis-app && tauri"
   },
   "devDependencies": {
