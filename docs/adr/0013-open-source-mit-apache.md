@@ -24,5 +24,7 @@ The owner decided: "lets make this opensource forget our paid stuff", and chose 
 
 ## Going public
 
-The repository (`shanmukhram/praxis-sound`) stays private until the owner explicitly says to make
-it public. Before that, the whole history is checked for secrets and personal data.
+The whole history was checked for secrets and personal data (none: every commit uses the GitHub
+no-reply address, no key or token in any version of any file). The repository
+(`shanmukhram/praxis-sound`) was made public on 2026-11-12 at the owner's request. Public
+repositories get free GitHub Actions minutes, so CI can run fully again.
