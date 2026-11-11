@@ -2274,6 +2274,8 @@ dependencies = [
  "midly",
  "nanomp3",
  "praxis-dsp",
+ "praxis-engine",
+ "praxis-instruments",
  "praxis-score",
  "praxis-testkit",
  "rtrb",

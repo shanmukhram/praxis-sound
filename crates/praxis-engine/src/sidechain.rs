@@ -21,10 +21,10 @@
 /// Ring buffer of one key layer's instrument output, indexed by musical time.
 #[derive(Clone, Debug)]
 pub struct KeyTap {
-    l: Vec<f32>,
-    r: Vec<f32>,
+    pub(crate) l: Vec<f32>,
+    pub(crate) r: Vec<f32>,
     /// Musical time one past the last written sample.
-    written: u64,
+    pub(crate) written: u64,
 }
 
 impl KeyTap {
