@@ -10,7 +10,7 @@
 
 mod common;
 
-use common::{TRAILER, active_bars, check_acceptance1};
+use common::{TRAILER, active_bars, check_acceptance1, emotion_matches, same_spoken};
 use praxis_planner::catalogue::class_name;
 use praxis_planner::{Catalogue, Provider, RuleProvider, plan_brief};
 use praxis_score::lint::lint;
@@ -52,22 +52,19 @@ fn layer_by_preset<'a>(score: &'a Score, preset: &str) -> Option<&'a praxis_scor
     score.layers.iter().find(|l| l.instrument.preset == preset)
 }
 
-/// The planner the suite runs on: the real Claude planner when `PRAXIS_SUITE_PROVIDER=claude`,
-/// otherwise the offline rule planner.
-fn suite_provider() -> (Box<dyn Provider>, bool) {
-    match std::env::var("PRAXIS_SUITE_PROVIDER").as_deref() {
-        Ok("claude") => (
-            Box::new(praxis_planner::claude::ClaudeProvider::new()),
-            true,
-        ),
-        _ => (Box::new(RuleProvider::new()), false),
-    }
+/// True when the suite runs on the real Claude planner (`PRAXIS_SUITE_PROVIDER=claude`).
+fn live() -> bool {
+    std::env::var("PRAXIS_SUITE_PROVIDER").as_deref() == Ok("claude")
 }
 
-fn check_case(brief: &str, seed: u64, expect: &Value) -> Result<String, String> {
+fn check_case(
+    provider: &dyn Provider,
+    brief: &str,
+    seed: u64,
+    expect: &Value,
+) -> Result<String, String> {
     let catalogue = Catalogue::standard();
-    let (provider, live) = suite_provider();
-    let provider = provider.as_ref();
+    let live = live();
     let out = plan_brief(brief, provider, &catalogue, seed).map_err(|e| e.to_string())?;
     let score = &out.score;
 
@@ -79,11 +76,18 @@ fn check_case(brief: &str, seed: u64, expect: &Value) -> Result<String, String> 
     if out.attempts != 1 || !out.repairs.is_empty() {
         if live {
             println!(
-                "  note: {} attempts, repairs {:?}",
+                "  note: {} attempts, repairs {:?}, rounds {:?}",
                 out.attempts,
                 out.repairs
                     .iter()
                     .map(|r| format!("{:?}", r.code))
+                    .collect::<Vec<_>>(),
+                out.rounds
+                    .iter()
+                    .map(|r| r
+                        .iter()
+                        .map(|i| format!("{:?} {}", i.code, i.path))
+                        .collect::<Vec<_>>())
                     .collect::<Vec<_>>()
             );
         } else {
@@ -188,8 +192,13 @@ fn check_case(brief: &str, seed: u64, expect: &Value) -> Result<String, String> 
             return Err(format!("playback {} != {pb}", got["mode"]));
         }
     }
+    // The emotion or one of its documented synonyms (tests/common EMOTION_SYNONYMS).
     if let Some(e) = expect.get("emotion").and_then(Value::as_str)
-        && score.meta.emotion.as_deref() != Some(e)
+        && !score
+            .meta
+            .emotion
+            .as_deref()
+            .is_some_and(|got| emotion_matches(e, got))
     {
         return Err(format!("emotion {:?} != {e}", score.meta.emotion));
     }
@@ -244,7 +253,13 @@ fn check_case(brief: &str, seed: u64, expect: &Value) -> Result<String, String> 
             let p = score
                 .pattern(&l.clips[0].pattern)
                 .ok_or("missing pattern")?;
-            if p.spoken.as_deref() != s.as_str() {
+            // Compared after normalising repetition and trailing rests (common::spoken_core).
+            if !p
+                .spoken
+                .as_deref()
+                .zip(s.as_str())
+                .is_some_and(|(got, want)| same_spoken(want, got))
+            {
                 return Err(format!("`{preset}` spoken {:?} != {s}", p.spoken));
             }
         }
@@ -325,6 +340,11 @@ fn prompt_suite_passes() {
     );
     let mut failures = Vec::new();
     let mut acceptance = 0;
+    #[cfg(feature = "claude")]
+    let claude = live().then(praxis_planner::claude::ClaudeProvider::new);
+    #[cfg(not(feature = "claude"))]
+    let claude: Option<RuleProvider> = None;
+    let rules = RuleProvider::new();
     for f in &files {
         let text = std::fs::read_to_string(f).expect("read prompt");
         let case: Value = serde_json::from_str(&text).expect("prompt json");
@@ -334,7 +354,22 @@ fn prompt_suite_passes() {
         if case["expect"]["acceptance1"] == true {
             acceptance += 1;
         }
-        match check_case(brief, seed, &case["expect"]) {
+        #[cfg(feature = "claude")]
+        let before = claude.as_ref().map(|c| c.usage()).unwrap_or_default();
+        let provider: &dyn Provider = match &claude {
+            Some(c) => c,
+            None => &rules,
+        };
+        let result = check_case(provider, brief, seed, &case["expect"]);
+        #[cfg(feature = "claude")]
+        if let Some(c) = &claude {
+            let u = c.usage().since(&before);
+            println!(
+                "  usage: {u}, ${:.4}",
+                u.cost_usd(&c.config().model).unwrap_or(f64::NAN)
+            );
+        }
+        match result {
             Ok(summary) => println!("PASS {name:?}: {summary}"),
             Err(e) => {
                 println!("FAIL {name:?}: {e}");
@@ -347,6 +382,14 @@ fn prompt_suite_passes() {
         files.len() - failures.len(),
         files.len()
     );
+    #[cfg(feature = "claude")]
+    if let Some(c) = &claude {
+        let u = c.usage();
+        println!(
+            "live usage (brief suite): {u}; cost ${:.4}",
+            u.cost_usd(&c.config().model).unwrap_or(f64::NAN)
+        );
+    }
     assert!(acceptance >= 3, "need several acceptance-1 phrasings");
     assert!(failures.is_empty(), "failures:\n{}", failures.join("\n"));
 }

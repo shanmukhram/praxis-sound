@@ -1,0 +1,519 @@
+{
+  "schema_version": 1,
+  "title": "m01_c_major_60_felt_piano",
+  "seed": 7,
+  "meta": {
+    "tags": [
+      "labelled-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {
+      "source": "WP-D2 labelled set"
+    }
+  },
+  "tempo": {
+    "bpm": 60.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "C",
+    "mode": "major"
+  },
+  "bars": 8,
+  "playback": {
+    "mode": "loop"
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "main_p",
+      "grid": "eighth",
+      "length_steps": 32,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 60,
+          "velocity": 0.85,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 1,
+          "pitch": 67,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 2,
+          "pitch": 64,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 3,
+          "pitch": 67,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 4,
+          "pitch": 72,
+          "velocity": 0.72,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 5,
+          "pitch": 67,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 6,
+          "pitch": 64,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 7,
+          "pitch": 67,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 8,
+          "pitch": 65,
+          "velocity": 0.85,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 9,
+          "pitch": 72,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 10,
+          "pitch": 69,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 11,
+          "pitch": 72,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 12,
+          "pitch": 77,
+          "velocity": 0.72,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 13,
+          "pitch": 72,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 14,
+          "pitch": 69,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 15,
+          "pitch": 72,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 16,
+          "pitch": 67,
+          "velocity": 0.85,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 17,
+          "pitch": 74,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 18,
+          "pitch": 71,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 19,
+          "pitch": 74,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 20,
+          "pitch": 79,
+          "velocity": 0.72,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 21,
+          "pitch": 74,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 22,
+          "pitch": 71,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 23,
+          "pitch": 74,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 24,
+          "pitch": 60,
+          "velocity": 0.85,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 25,
+          "pitch": 67,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 26,
+          "pitch": 64,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 27,
+          "pitch": 67,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 28,
+          "pitch": 72,
+          "velocity": 0.72,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 29,
+          "pitch": 67,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 30,
+          "pitch": 64,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 31,
+          "pitch": 67,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        }
+      ]
+    },
+    {
+      "id": "bass_p",
+      "grid": "quarter",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 36,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 2,
+          "pitch": 43,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 4,
+          "pitch": 41,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 6,
+          "pitch": 48,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 8,
+          "pitch": 43,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 10,
+          "pitch": 50,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 12,
+          "pitch": 36,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 14,
+          "pitch": 43,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        }
+      ]
+    },
+    {
+      "id": "drum_p",
+      "grid": "eighth",
+      "length_steps": 8,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 42,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.0
+        },
+        {
+          "step": 1,
+          "pitch": 42,
+          "velocity": 0.35,
+          "accent": "soft",
+          "length": 1.0
+        },
+        {
+          "step": 2,
+          "pitch": 42,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.0
+        },
+        {
+          "step": 3,
+          "pitch": 42,
+          "velocity": 0.35,
+          "accent": "soft",
+          "length": 1.0
+        },
+        {
+          "step": 4,
+          "pitch": 42,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.0
+        },
+        {
+          "step": 5,
+          "pitch": 42,
+          "velocity": 0.35,
+          "accent": "soft",
+          "length": 1.0
+        },
+        {
+          "step": 6,
+          "pitch": 42,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.0
+        },
+        {
+          "step": 7,
+          "pitch": 42,
+          "velocity": 0.35,
+          "accent": "soft",
+          "length": 1.0
+        },
+        {
+          "step": 0,
+          "pitch": 36,
+          "velocity": 0.9,
+          "accent": "strong",
+          "length": 1.0
+        },
+        {
+          "step": 4,
+          "pitch": 36,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 2,
+          "pitch": 38,
+          "velocity": 0.75,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 6,
+          "pitch": 38,
+          "velocity": 0.75,
+          "accent": "normal",
+          "length": 1.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "main",
+      "name": "main",
+      "class": "motif",
+      "instrument": {
+        "kind": "sampler",
+        "preset": "felt_piano",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "main_p",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "bass",
+      "name": "bass",
+      "class": "bass",
+      "instrument": {
+        "kind": "synth",
+        "preset": "warm_bass",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "bass_p",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "drums",
+      "name": "drums",
+      "class": "drums",
+      "instrument": {
+        "kind": "drum",
+        "preset": "kit",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "drum_p",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -16.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

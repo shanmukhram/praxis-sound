@@ -1,0 +1,456 @@
+{
+  "schema_version": 1,
+  "title": "m44_cs_minor_78_felt_piano",
+  "seed": 7,
+  "meta": {
+    "tags": [
+      "labelled-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {
+      "source": "WP-D2 labelled set"
+    }
+  },
+  "tempo": {
+    "bpm": 78.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "C#",
+    "mode": "minor"
+  },
+  "bars": 16,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 2.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "main_p",
+      "grid": "eighth",
+      "length_steps": 32,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 61,
+          "velocity": 0.85,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 1,
+          "pitch": 68,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 2,
+          "pitch": 64,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 3,
+          "pitch": 68,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 4,
+          "pitch": 73,
+          "velocity": 0.72,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 5,
+          "pitch": 68,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 6,
+          "pitch": 64,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 7,
+          "pitch": 68,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 8,
+          "pitch": 69,
+          "velocity": 0.85,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 9,
+          "pitch": 76,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 10,
+          "pitch": 73,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 11,
+          "pitch": 76,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 12,
+          "pitch": 81,
+          "velocity": 0.72,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 13,
+          "pitch": 76,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 14,
+          "pitch": 73,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 15,
+          "pitch": 76,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 16,
+          "pitch": 66,
+          "velocity": 0.85,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 17,
+          "pitch": 73,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 18,
+          "pitch": 69,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 19,
+          "pitch": 73,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 20,
+          "pitch": 78,
+          "velocity": 0.72,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 21,
+          "pitch": 73,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 22,
+          "pitch": 69,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 23,
+          "pitch": 73,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 24,
+          "pitch": 68,
+          "velocity": 0.85,
+          "accent": "strong",
+          "length": 1.6
+        },
+        {
+          "step": 25,
+          "pitch": 75,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 26,
+          "pitch": 71,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 27,
+          "pitch": 75,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 28,
+          "pitch": 80,
+          "velocity": 0.72,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 29,
+          "pitch": 75,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        },
+        {
+          "step": 30,
+          "pitch": 71,
+          "velocity": 0.62,
+          "accent": "normal",
+          "length": 1.6
+        },
+        {
+          "step": 31,
+          "pitch": 75,
+          "velocity": 0.5,
+          "accent": "soft",
+          "length": 1.6
+        }
+      ]
+    },
+    {
+      "id": "mel_p",
+      "grid": "eighth",
+      "length_steps": 32,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 80,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 2,
+          "pitch": 80,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 3,
+          "pitch": 81,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 4,
+          "pitch": 80,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 6,
+          "pitch": 76,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 8,
+          "pitch": 75,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 10,
+          "pitch": 73,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 12,
+          "pitch": 76,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 16,
+          "pitch": 80,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 18,
+          "pitch": 85,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 19,
+          "pitch": 81,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 20,
+          "pitch": 80,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 22,
+          "pitch": 76,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 24,
+          "pitch": 80,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 26,
+          "pitch": 75,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 28,
+          "pitch": 73,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.5
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "main",
+      "name": "main",
+      "class": "motif",
+      "instrument": {
+        "kind": "sampler",
+        "preset": "felt_piano",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 16
+          },
+          "pattern": "main_p",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "melody",
+      "name": "melody",
+      "class": "melody",
+      "instrument": {
+        "kind": "synth",
+        "preset": "bell",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 16
+          },
+          "pattern": "mel_p",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -16.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}
