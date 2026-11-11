@@ -52,7 +52,8 @@ says what is current.
    (loudness, true peak, each layer's spectral centroid, low- and high-band energy, onsets on the grid)
    with the change against the current take. Use the numbers instead of ears: a muffled piano has
    a lower centroid and less high-band energy; a softer kick has less low-band energy. If a check fails, fix it (see
-   "Fixing failures") and check again.
+   "Fixing failures") and check again. A check marked inconclusive ("can't tell from these
+   notes") is not a failure: leave the sound as it is.
 6. **Answer briefly.** One or two plain sentences: what changed (in sound terms, with a number
    when it helps) and what stayed identical. No lists, no headings, no tool names, no JSON.
 

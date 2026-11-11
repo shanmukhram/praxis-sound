@@ -124,14 +124,21 @@ pub fn done_words(tool: &str, ok: bool, result: &Value, error: &str) -> String {
     }
     match tool {
         "render_check" => {
+            // Only decided checks count; "can't tell" ones are neither passed nor failed.
             let checks = result["check"]["checks"].as_array();
-            let total = checks.map_or(0, |c| c.len());
+            let unsure = |k: &&Value| k["inconclusive"] == Value::Bool(true);
+            let total = checks.map_or(0, |c| c.iter().filter(|k| !unsure(k)).count());
             let passed = checks.map_or(0, |c| {
                 c.iter()
                     .filter(|k| k["passed"] == Value::Bool(true))
                     .count()
             });
-            format!("Checking: {passed} of {total} passed")
+            let cant = checks.map_or(0, |c| c.iter().filter(unsure).count());
+            if cant == 0 {
+                format!("Checking: {passed} of {total} passed")
+            } else {
+                format!("Checking: {passed} of {total} passed, {cant} can't tell")
+            }
         }
         "make_variations" => format!(
             "Made {} variations",
@@ -166,6 +173,12 @@ mod tests {
         assert_eq!(
             done_words("render_check", true, &r, ""),
             "Checking: 1 of 2 passed"
+        );
+        let r = json!({"check": {"checks": [{"passed": true},
+            {"passed": false, "inconclusive": true}, {"passed": true}]}});
+        assert_eq!(
+            done_words("render_check", true, &r, ""),
+            "Checking: 2 of 2 passed, 1 can't tell"
         );
         assert_eq!(
             done_words(

@@ -41,6 +41,9 @@ fn acceptance_1_render_passes() {
         let r = verify_render(&s, &b, SR, &Tolerances::default());
         print_report(name, &r);
         assert!(r.passed(), "{name}");
+        // Every check decided: nothing in acceptance 1 is "can't tell".
+        assert_eq!(r.inconclusive().count(), 0, "{name}");
+        assert_eq!(r.summary(), "8 of 8 checks passed", "{name}");
         assert!((r.tempo_bpm.unwrap() - 128.0).abs() < 0.5);
         assert_eq!(r.key.as_deref(), Some("a minor"));
     }
@@ -91,6 +94,10 @@ fn acceptance_1_defects_are_caught() {
     normalize_lufs(&mut b, SR, -16.0);
     let r = verify_render(&s, &b, SR, &Tolerances::default());
     print_report("acceptance1 rendered a tone too high", &r);
-    assert!(!check(&r, "key").passed);
+    let k = check(&r, "key");
+    assert!(
+        !k.passed && !k.inconclusive,
+        "a clear wrong key is a failure: {k:?}"
+    );
     assert_eq!(r.key.as_deref(), Some("b minor"));
 }

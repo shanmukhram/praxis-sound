@@ -4,7 +4,7 @@
 
 import type { RenderReport, VerifyCheck, VerifyReport } from '../EngineAdapter';
 import type { NScore } from '../../score/types';
-import { isUnpitchedClass, inKey, keyLabel } from '../../score/theory';
+import { isUnpitchedClass, inKey, keyLabel, semitone } from '../../score/theory';
 import { expandNotes, stepSeconds } from '../../score/timeline';
 import { audibleLayers } from './synth';
 
@@ -12,7 +12,8 @@ const db = (x: number) => (x > 0 ? 20 * Math.log10(x) : -Infinity);
 
 export function verifyMock(score: NScore, channels: Float32Array[], sr: number, report: RenderReport): VerifyReport {
   const checks: VerifyCheck[] = [];
-  const add = (name: string, passed: boolean, measured: string, expected: string) => checks.push({ name, passed, measured, expected });
+  const add = (name: string, passed: boolean, measured: string, expected: string, inconclusive = false) =>
+    checks.push({ name, passed, measured, expected, inconclusive });
   const { audible } = audibleLayers(score);
   const events = expandNotes(score).filter((e) => audible.includes(e.layer));
 
@@ -25,7 +26,15 @@ export function verifyMock(score: NScore, channels: Float32Array[], sr: number, 
   const keyName = keyLabel(score.key).toLowerCase();
   if (score.key.mode !== 'chromatic' && pitched.length) {
     const off = pitched.filter((e) => !inKey(score.key, e.pitch)).length;
-    add('key', off === 0, off === 0 ? `${keyName} (all notes in key; from the score)` : `${off} notes outside ${keyName}`, keyName);
+    // As verify_render: with no third (or minor sixth) over the tonic, major vs minor can't be heard.
+    const tonic = semitone(score.key.tonic);
+    const pcs = new Set(pitched.map((e) => (((e.pitch - tonic) % 12) + 12) % 12));
+    const t = score.key.tonic;
+    if (off === 0 && ![3, 4, 8].some((i) => pcs.has(i))) {
+      add('key', false, `${keyName} (from the score); can't tell: no third, so ${t} minor vs ${t} major can't be heard`, keyName, true);
+    } else {
+      add('key', off === 0, off === 0 ? `${keyName} (all notes in key; from the score)` : `${off} notes outside ${keyName}`, keyName);
+    }
   }
 
   // Grid: share of notes within 10 ms of a step, and the median deviation.
@@ -97,7 +106,7 @@ export function verifyMock(score: NScore, channels: Float32Array[], sr: number, 
     true_peak_dbtp: Number.isFinite(peakDb) ? peakDb : null,
     seam_jump_ratio: seamRatio,
     seam_excess_db: seamRatio === null ? null : db(seamRatio),
-    passed: checks.every((c) => c.passed),
+    passed: checks.every((c) => c.passed || c.inconclusive),
   };
 }
 

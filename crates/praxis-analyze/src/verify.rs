@@ -1,5 +1,7 @@
 //! Objective checks of a render against its Score. FROZEN CONTRACT for the types and the
 //! `verify_render` signature; WP-D implements the body. The CLI `praxis check` prints this report.
+//! WP-D1c added `Check::inconclusive` (approved contract change): a tempo or key check the
+//! material cannot decide says "can't tell" instead of failing.
 
 use praxis_dsp::StereoBuffer;
 use praxis_score::Score;
@@ -9,9 +11,44 @@ use serde::Serialize;
 pub struct Check {
     /// "tempo", "key", "grid", "loudness", "true_peak", "loop_seam", "clipping", "silence".
     pub name: String,
+    /// False for a failed check and for an inconclusive one.
     pub passed: bool,
+    /// What was measured. An inconclusive check's ends with `"; can't tell: <reason>"`, the
+    /// reason in plain words (see [`Check::cant_tell_reason`]).
     pub measured: String,
     pub expected: String,
+    /// The material cannot decide this check (tempo or key only): it keeps `passed: false` but
+    /// is neither a pass nor a failure, and [`VerifyReport::passed`] ignores it.
+    #[serde(default)]
+    pub inconclusive: bool,
+}
+
+/// Separates an inconclusive check's measurement from its plain-words reason.
+pub const CANT_TELL: &str = "; can't tell: ";
+
+impl Check {
+    /// Passed or failed, not inconclusive.
+    pub fn decided(&self) -> bool {
+        !self.inconclusive
+    }
+
+    /// Decided and failed.
+    pub fn failed(&self) -> bool {
+        !self.passed && !self.inconclusive
+    }
+
+    /// Why an inconclusive check cannot be told, in plain words ("no third, so A minor vs A
+    /// major can't be heard"); `None` for a decided check.
+    pub fn cant_tell_reason(&self) -> Option<&str> {
+        if !self.inconclusive {
+            return None;
+        }
+        Some(
+            self.measured
+                .split_once(CANT_TELL)
+                .map_or("the material doesn't show it clearly", |(_, r)| r),
+        )
+    }
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Default)]
@@ -34,8 +71,53 @@ pub struct VerifyReport {
 }
 
 impl VerifyReport {
+    /// Every decided check passed; inconclusive checks count neither way.
     pub fn passed(&self) -> bool {
-        self.checks.iter().all(|c| c.passed)
+        self.checks.iter().all(|c| c.passed || c.inconclusive)
+    }
+
+    /// Checks that were decided (passed or failed).
+    pub fn decided(&self) -> impl Iterator<Item = &Check> {
+        self.checks.iter().filter(|c| c.decided())
+    }
+
+    /// Checks the material could not decide.
+    pub fn inconclusive(&self) -> impl Iterator<Item = &Check> {
+        self.checks.iter().filter(|c| c.inconclusive)
+    }
+
+    /// Plain-words summary, as the take shows it: "6 of 6 checks passed · 2 can't tell
+    /// from these notes: tempo (the rhythm doesn't clearly show 128 BPM), key (no third, so A
+    /// minor vs A major can't be heard)"; with failures "1 of 7 checks failed: loudness".
+    pub fn summary(&self) -> String {
+        let total = self.decided().count();
+        let failed: Vec<&str> = self
+            .checks
+            .iter()
+            .filter(|c| c.failed())
+            .map(|c| c.name.as_str())
+            .collect();
+        let mut out = if failed.is_empty() {
+            format!("{total} of {total} checks passed")
+        } else {
+            format!(
+                "{} of {total} checks failed: {}",
+                failed.len(),
+                failed.join(", ")
+            )
+        };
+        let unsure: Vec<String> = self
+            .inconclusive()
+            .map(|c| format!("{} ({})", c.name, c.cant_tell_reason().unwrap_or_default()))
+            .collect();
+        if !unsure.is_empty() {
+            out.push_str(&format!(
+                " \u{b7} {} can't tell from these notes: {}",
+                unsure.len(),
+                unsure.join(", ")
+            ));
+        }
+        out
     }
 }
 
@@ -87,13 +169,66 @@ mod imp {
     /// heard after the material that really precedes it.
     const LOOP_PREROLL_S: f64 = 0.3;
 
+    // ---- When tempo and key cannot be told (WP-D1c; calibration in contracts/sound-profile.md)
+    /// A wrong tempo detected with less confidence than this is inconclusive: the onsets show no
+    /// clear beat at all.
+    const TEMPO_MIN_CONFIDENCE: f32 = 0.25;
+    /// A wrong tempo that is a simple ratio of the score's ([`TEMPO_RATIOS`]) is inconclusive
+    /// below this confidence when the grid check passes: the notes sit on the score's grid but
+    /// their rhythm also fits a related tempo.
+    const TEMPO_RATIO_MAX_CONFIDENCE: f32 = 0.6;
+    /// Detected / score tempo ratios a rhythm can be heard at (half, two thirds, three quarters
+    /// and their inverses).
+    const TEMPO_RATIOS: [f64; 6] = [0.5, 2.0 / 3.0, 0.75, 4.0 / 3.0, 1.5, 2.0];
+    /// A wrong key detected with less confidence than this is inconclusive.
+    const KEY_MIN_CONFIDENCE: f32 = 0.4;
+
     fn check(name: &str, passed: bool, measured: String, expected: String) -> Check {
         Check {
             name: name.to_string(),
             passed,
             measured,
             expected,
+            inconclusive: false,
         }
+    }
+
+    /// A check the material cannot decide: `passed` stays false.
+    fn cant_tell(name: &str, measured: String, expected: String, reason: &str) -> Check {
+        Check {
+            name: name.to_string(),
+            passed: false,
+            measured: format!("{measured}{}{reason}", super::CANT_TELL),
+            expected,
+            inconclusive: true,
+        }
+    }
+
+    /// "128" for whole tempos, else one decimal ("127.5").
+    fn bpm_words(bpm: f64) -> String {
+        if (bpm - bpm.round()).abs() < 0.05 {
+            format!("{bpm:.0}")
+        } else {
+            format!("{bpm:.1}")
+        }
+    }
+
+    /// Pitch classes sounding in `notes` (pitched layers only), C = 0.
+    fn sounding_pitch_classes(score: &Score, notes: &[NoteEvent]) -> [bool; 12] {
+        let mut pcs = [false; 12];
+        for e in notes {
+            if is_pitched(score.layers[e.layer].class) && e.velocity > 0.0 {
+                pcs[(e.pitch % 12) as usize] = true;
+            }
+        }
+        pcs
+    }
+
+    /// Whether the sounding notes can tell major from minor over `tonic`: a minor or major third
+    /// above it sounds, or a minor sixth (only the minor family has one; a major sixth is in
+    /// major and dorian alike, so it decides nothing).
+    fn mode_audible(pcs: &[bool; 12], tonic: usize) -> bool {
+        pcs[(tonic + 3) % 12] || pcs[(tonic + 4) % 12] || pcs[(tonic + 8) % 12]
     }
 
     fn skipped(name: &str, measured: String, why: &str) -> Check {
@@ -163,6 +298,7 @@ mod imp {
         env: &onset::OnsetEnvelope,
         score: &Score,
         note_starts: usize,
+        grid_ok: bool,
         tol: &Tolerances,
     ) -> Check {
         let est = tempo::estimate_tempo(env, &tempo::TempoConfig::default());
@@ -172,15 +308,23 @@ mod imp {
         if note_starts < MIN_NOTE_STARTS_FOR_TEMPO {
             return skipped("tempo", opt_bpm(est.as_ref()), "fewer than 4 note starts");
         }
-        match est {
-            Some(t) => check(
-                "tempo",
-                (t.bpm - bpm).abs() <= tol.tempo_bpm,
-                format!("{:.2} bpm (confidence {:.2})", t.bpm, t.confidence),
-                expected,
-            ),
-            None => check("tempo", false, "no periodic onsets".to_string(), expected),
+        let Some(t) = est else {
+            return check("tempo", false, "no periodic onsets".to_string(), expected);
+        };
+        let measured = format!("{:.2} bpm (confidence {:.2})", t.bpm, t.confidence);
+        if (t.bpm - bpm).abs() <= tol.tempo_bpm {
+            return check("tempo", true, measured, expected);
         }
+        let related = TEMPO_RATIOS
+            .iter()
+            .any(|r| (t.bpm - bpm * r).abs() <= tol.tempo_bpm);
+        let unsure = t.confidence < TEMPO_MIN_CONFIDENCE
+            || (related && grid_ok && t.confidence < TEMPO_RATIO_MAX_CONFIDENCE);
+        if unsure {
+            let why = format!("the rhythm doesn't clearly show {} BPM", bpm_words(bpm));
+            return cant_tell("tempo", measured, expected, &why);
+        }
+        check("tempo", false, measured, expected)
     }
 
     fn key_check(
@@ -188,6 +332,7 @@ mod imp {
         mono: &[f32],
         sample_rate: u32,
         score: &Score,
+        notes: &[NoteEvent],
         pitched_notes: usize,
     ) -> Check {
         let chroma = features::chroma::chromagram(mono, sample_rate).mean();
@@ -201,15 +346,30 @@ mod imp {
             return skipped("key", measured, "chromatic score");
         }
         let expected = score.key.display();
-        match est {
-            Some(k) => check(
-                "key",
-                k.key.tonic == score.key.tonic && mode_family(score.key.mode) == Some(k.key.mode),
-                format!("{} (confidence {:.2})", k.key.display(), k.confidence),
-                expected,
-            ),
-            None => check("key", false, "no tonal content".to_string(), expected),
+        let Some(k) = est else {
+            return check("key", false, "no tonal content".to_string(), expected);
+        };
+        let measured = format!("{} (confidence {:.2})", k.key.display(), k.confidence);
+        let tonic = score.key.tonic;
+        let tonic_ok = k.key.tonic == tonic;
+        let pcs = sounding_pitch_classes(score, notes);
+        if tonic_ok && !mode_audible(&pcs, tonic.semitone() as usize) {
+            // Right tonic, but nothing in the notes says major or minor: the detector's mode is
+            // a guess either way.
+            let why = format!(
+                "no third, so {t} minor vs {t} major can't be heard",
+                t = tonic.name()
+            );
+            return cant_tell("key", measured, expected, &why);
         }
+        if tonic_ok && mode_family(score.key.mode) == Some(k.key.mode) {
+            return check("key", true, measured, expected);
+        }
+        if k.confidence < KEY_MIN_CONFIDENCE {
+            let why = "the notes don't clearly point to one key";
+            return cant_tell("key", measured, expected, why);
+        }
+        check("key", false, measured, expected)
     }
 
     fn grid_check(
@@ -485,16 +645,14 @@ mod imp {
             .count();
 
         let (env, linear_onsets) = onset::detect_onsets(&mono, sample_rate);
-        let c = tempo_check(&mut report, &env, score, starts.len(), tol);
-        report.checks.push(c);
-        let c = key_check(&mut report, &mono, sample_rate, score, pitched_notes);
-        report.checks.push(c);
         let onsets = if is_loop {
             loop_onsets(&mono, sample_rate)
         } else {
             linear_onsets
         };
-        let c = grid_check(
+        // The grid is measured first: a tempo heard at a related ratio is only "can't tell"
+        // when the notes really sit on the score's grid.
+        let grid = grid_check(
             &mut report,
             &onsets,
             score,
@@ -502,7 +660,19 @@ mod imp {
             !notes.is_empty(),
             tol,
         );
+        let grid_ok = grid.passed && !grid.expected.starts_with("n/a");
+        let c = tempo_check(&mut report, &env, score, starts.len(), grid_ok, tol);
         report.checks.push(c);
+        let c = key_check(
+            &mut report,
+            &mono,
+            sample_rate,
+            score,
+            &notes,
+            pitched_notes,
+        );
+        report.checks.push(c);
+        report.checks.push(grid);
         loudness_checks(
             &mut report,
             left,

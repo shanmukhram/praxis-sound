@@ -267,20 +267,12 @@ pub(crate) fn render_score_output(
         &Tolerances::default(),
     );
     let mut check = serde_json::to_value(&report).unwrap_or(Value::Null);
-    check["passed"] = json!(report.passed());
+    crate::ops::check::add_verdict(&mut check, &report);
     check["layers_checked"] = json!(
         checked
             .layers
             .iter()
             .map(|l| l.id.clone())
-            .collect::<Vec<_>>()
-    );
-    check["failed"] = json!(
-        report
-            .checks
-            .iter()
-            .filter(|c| !c.passed)
-            .map(|c| c.name.clone())
             .collect::<Vec<_>>()
     );
     let payload = json!({

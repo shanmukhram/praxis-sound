@@ -78,7 +78,8 @@ against the server's working directory and come back absolute.
 3. Write the plan (rules below) and call `praxis_compose` with `plan`, `project` (a `.praxis`
    path) and `render` (a `.wav` path). Add `skip_missing: true` while some presets are not built.
 4. Read `repairs` (what Praxis changed in your plan) and `render.check`.
-5. If a check failed, fix the plan (table below) and compose again. Keep the `seed`.
+5. If a check failed, fix the plan (table below) and compose again. Keep the `seed`. A check
+   in `inconclusive[]` did not fail: leave it (see "Reading the result").
 6. `praxis_export` for the deliverable: FLAC, 16-bit WAV, stems (`stems: "<dir>"`) or MIDI.
 7. Tell the user what you made in measured terms: "16 bars, 30.0 s loop in A minor at 128 BPM;
    8 of 8 checks passed: in key, on the beat, -15.6 LUFS, peak -3.2 dBTP, seamless loop."
@@ -128,8 +129,17 @@ Praxis made to your plan), `lint`, `plan` (the repaired plan), and with a render
 - `loudness_lufs`, `true_peak_dbtp`, `applied_gain_db`
 - `skipped_layers[]` (`{layer, preset, reason}`): not rendered on this machine
 - `warnings[]`: engine notes (effects or mix stages not built yet)
-- `check`: `passed`, `failed[]` (names), `layers_checked[]`, and `checks[]`, each
-  `{name, passed, measured, expected}` in words and numbers.
+- `check`: `passed`, `failed[]` (names), `inconclusive[]` (names), `summary` (the take's line
+  in plain words), `layers_checked[]`, and `checks[]`, each
+  `{name, passed, measured, expected, inconclusive}` in words and numbers.
+
+**Inconclusive means "can't tell from these notes", not failed.** Tempo and key can be
+inconclusive when the material itself cannot decide them: a sparse or uneven rhythm that also
+fits a related tempo, or notes with no third, so minor and major sound alike. Such a check has
+`passed: false` and `inconclusive: true`, is left out of `passed` and `failed[]`, and its
+`measured` ends with `can't tell: <reason>`. Do not change the sound to "fix" it; report it in
+the person's words ("key: can't tell, there is no third"). A wrong tempo or key heard clearly
+still fails.
 
 The checks (docs/contracts/sound-profile.md):
 
@@ -225,7 +235,8 @@ client's name; set `who` to choose).
    change to the current take. To change exactly some bars of one layer, pass
    `scope: {layer, bars: {start, end}}`: nothing outside it changes (a new layer inside those bars
    is allowed); a request that would reach further is refused with `patch_rejected`.
-3. Read the take: `checks.passed` / `checks.failed`, `say` (what was done), `changed`
+3. Read the take: `checks.passed` / `checks.failed` / `checks.inconclusive` (can't tell, not
+   failed), `say` (what was done), `changed`
    (`{layer: [from, to]}`), `untouched` and `identical_bars` (bars measured bit-identical to the
    take before). The master gain is frozen after take 1, so untouched bars stay sample-identical
    except where a changed layer's tail wraps round a loop.
