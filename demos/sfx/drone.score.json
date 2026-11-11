@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "title": "WP-H demo: drone at default macros (loop)",
+  "seed": 7,
+  "meta": {
+    "brief": "A drone on A3 held for a 4-bar loop at 120 BPM (8 s); the loop must be seamless.",
+    "tags": [
+      "sfx-demo"
+    ],
+    "provenance": {
+      "source": "hand-written WP-H demo"
+    }
+  },
+  "tempo": {
+    "bpm": 120.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "bars": 4,
+  "playback": {
+    "mode": "loop"
+  },
+  "patterns": [
+    {
+      "id": "held",
+      "grid": "eighth",
+      "length_steps": 32,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 57,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 32
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "drone",
+      "name": "drone",
+      "class": "drone",
+      "instrument": {
+        "kind": "sfx",
+        "preset": "drone",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 4
+          },
+          "pattern": "held"
+        }
+      ],
+      "gain_db": 0.0,
+      "pan": 0.0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -16.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": false
+    }
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "title": "WP-H demo: tick at default macros",
+  "seed": 7,
+  "meta": {
+    "brief": "Tick as a clock: quarter notes at 120 BPM for two bars, the downbeat accented.",
+    "tags": [
+      "sfx-demo"
+    ],
+    "provenance": {
+      "source": "hand-written WP-H demo"
+    }
+  },
+  "tempo": {
+    "bpm": 120.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "bars": 2,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 1.0
+  },
+  "patterns": [
+    {
+      "id": "clock",
+      "grid": "quarter",
+      "length_steps": 4,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 60,
+          "velocity": 0.85,
+          "accent": "strong",
+          "length": 1
+        },
+        {
+          "step": 1,
+          "pitch": 60,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1
+        },
+        {
+          "step": 2,
+          "pitch": 60,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1
+        },
+        {
+          "step": 3,
+          "pitch": 60,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "tick",
+      "name": "tick",
+      "class": "tick",
+      "instrument": {
+        "kind": "sfx",
+        "preset": "tick",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 2
+          },
+          "pattern": "clock"
+        }
+      ],
+      "gain_db": 0.0,
+      "pan": 0.0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -16.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": false
+    }
+  }
+}
