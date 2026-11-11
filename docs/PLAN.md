@@ -135,6 +135,8 @@ FR-27 (real time). Owns: `crates/praxis-engine/src/realtime/**`, `crates/praxis-
 Depends: WP-F2, WP-E. Done: RealtimeEngine with rtrb command/meter queues, graph swap without
 allocation on the audio thread (tested with an allocation-counting test harness), cpal output,
 transport (play/stop/seek/loop), no dropouts at 256 frames in a 60 s soak (xrun counter = 0).
+Brief: `docs/briefs/WP-R-realtime.md` (also owns `crates/praxis-audio-io/examples/**`; real-time
+output must equal the offline render with the gain fixed).
 
 ### WP-U workstation UI
 FR-28, FR-29, FR-30, FR-31 (UI), FR-32 (export UI). Owns: `app/**` (front end),
@@ -158,6 +160,20 @@ N variations with own seeds; render-level isolation test of "change the last fou
 ### WP-K cli
 FR-33. Owns: `crates/praxis-cli/**`. Depends: grows with P, D, E, M. Done: every command in
 contracts/cli.md, JSON payload tests (`assert_cmd`-style via std::process).
+
+### WP-K2 edits, variations and takes in the command layer
+FR-7, FR-8, FR-31 for agents and the app. Owns: `crates/praxis-cli/**`, `crates/praxis-mcp/**`,
+`docs/agents/**`, planner tidy-ups (`offline.rs`, `brief.rs`, `tests/prompt_suite.rs`).
+Depends: WP-K, WP-P2, WP-X. Brief: `docs/briefs/WP-K2-edits-takes.md`. Done: `ops::{edit,
+variations, ask, takes, restore, keep_variation, open_view}` with CLI subcommands and MCP tools;
+a sound folder with an atomic `takes.json`; frozen gain after the first take so a scoped edit
+leaves bars 1-12 of the master bit-identical (tested at render level).
+
+### WP-D1b analyzer onset robustness
+Owns: `crates/praxis-analyze/src/features.rs` + `features/**`, `verify.rs` body, tests
+`verify_*`, `onset_*`. Depends: WP-D1. Brief: `docs/briefs/WP-D1b-onset-robustness.md`. Done:
+acceptance-1 grid clearly above the 90.9% baseline with unchanged thresholds; slow swells under
+reverb are one onset; real lateness in the audio, if any, reported with numbers.
 
 ### WP-X agent interface (MCP server + agent guide) - ADR-0010
 FR-33, FR-34 for agents. Owns: `crates/praxis-mcp/**` (new crate, added to the workspace by the

@@ -12,9 +12,24 @@ becomes a take planned by `praxis-planner`, rendered by the engine with the real
 must share one take history (the same command layer the MCP server uses).
 
 ## You own
-`crates/praxis-app/**` (new Tauri 2 crate; the orchestrator adds it to the workspace members, not
-default-members), `app/src/engine/tauri/**` (the `TauriEngine` adapter), and a switch in
-`app/src/main.ts` that picks Tauri when running inside it, the mock otherwise.
+`crates/praxis-app/**` (new Tauri 2 crate), `app/src/engine/tauri/**` (the `TauriEngine`
+adapter), and a switch in `app/src/main.ts` that picks Tauri when running inside it, the mock
+otherwise. Authorised outside those: in the root `Cargo.toml`, add `crates/praxis-app` to
+`[workspace] members` only (not `default-members`) and the audited Tauri crates to
+`[workspace.dependencies]`; in `app/package.json` (+ lock), the `@tauri-apps/api` and
+`@tauri-apps/cli` packages and a `tauri` script. Check Tauri's current version and licence first.
+
+## Running in parallel (wave 3, 2026-11-11)
+- **WP-K2** (`docs/briefs/WP-K2-edits-takes.md`) is adding the shared take history to the
+  command layer: `praxis_cli::ops::{ask, takes, restore, edit, variations, keep_variation,
+  open_view}` over a sound folder (`project.praxis`, `takes.json` with a `revision`,
+  `takes/<n>/mix.wav`). **Do not build a second take store in praxis-app.** Build the shell, the
+  IPC bridge, the adapter, playback and the fake-bridge tests first; wire the take commands to
+  those ops. The orchestrator will message you when WP-K2 is merged; then merge
+  `build/integration` into your branch and finish the wiring. Agent takes appear live by
+  watching `takes.json`'s `revision`.
+- WP-R (real-time engine) and WP-D1b (analyzer) work in other crates. Playback stays the
+  WebView `<audio>` element for this package.
 
 ## Build
 - Tauri commands are thin wrappers over the command-layer ops: `ask`, `takes`, `restore`, `edit`,
