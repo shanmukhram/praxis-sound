@@ -184,6 +184,13 @@ Brief: `docs/briefs/WP-AG-in-app-agent.md`. Done: scripted and replayed conversa
 (muffled piano keeps its notes, follow-ups use the history, scoped edits keep other bars
 identical); live run after merge with the owner's key.
 
+### WP-AG2 assistant polish
+From the first live run (docs/agents/live-run-results.md). Owns: `crates/praxis-cli/**`,
+`crates/praxis-mcp/**`, `crates/praxis-app/src/{commands,shell}.rs`, `app/src/{engine,ui}/**`,
+tests, `docs/agents/**`. Depends: WP-AG, WP-U5, WP-D1c. Brief: `docs/briefs/WP-AG2-assistant-polish.md`.
+Done: no-take turns are replies, short titles, reverb-aware wording, locks without takes,
+bar-limited tone edits through the app's scope, live steps in the app, loopback-only API override.
+
 ### WP-K cli
 FR-33. Owns: `crates/praxis-cli/**`. Depends: grows with P, D, E, M. Done: every command in
 contracts/cli.md, JSON payload tests (`assert_cmd`-style via std::process).
