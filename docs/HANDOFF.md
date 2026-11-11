@@ -127,16 +127,13 @@ Build speed-ups (local, not committed): sccache 0.19 (winget `Mozilla.sccache`, 
 WP-R and WP-U3; WP-K2 and WP-D1b were mid-build and kept the defaults). Once a package builds
 cleanly with them, move both settings into `.claude/worktrees/.cargo/config.toml` for all.
 Dev Drive is the owner's call (not set up); Cranelift was rejected (tests run optimised). Running now:
-WP-P2b tone and space edits (released to build). Merged in wave 3: WP-D1b, WP-R, WP-K2, WP-U3,
-WP-U4 (real-time playback in the app) and WP-H (sound-effect presets). WP-P2b is `local_0bb0fb8b-9b03-4896-a09b-59cd7c6a1d28` (brief
-`docs/briefs/WP-P2b-tone-space-edits.md`). Waiting for a slot (they read and write code but must
-not build until messaged "slot free"): WP-AG sound assistant agent (`local_a5e4c36f-0854-402a-ae61-2d057494b210`, brief
-`docs/briefs/WP-AG-in-app-agent.md`) and WP-U5 build a sound by hand
-(`local_ef4aaa95-5591-45a4-976b-056f5cfe01de`, `docs/briefs/WP-U5-hand-building.md`, closes
-Phase 3). Release order: WP-P2b (building now), then WP-AG, then WP-U5. Never play audio on the
-owner's speakers without asking (owner was upset once; see memory and the briefs). After
-WP-AG merges, ask the owner for the API key (`praxis key set`, typed by the owner, stored in the
-Windows credential store) and run `docs/agents/live-run.md`.
+Nothing is running. Wave 3 is fully merged: WP-D1b, WP-R, WP-K2, WP-U3, WP-U4, WP-H, WP-P2b,
+WP-AG and WP-U5. Phase 3's machine-side exit passed (594 Rust tests, 172 app, 11 browser,
+acceptance 1, by-hand exit run); the owner's hardware check is ready
+(`docs/phase-3-hardware-check.md`). The owner's API key is stored; the assistant's live run
+(`docs/agents/live-run.md`, about US$1-3) waits for the owner's go-ahead. Never play audio on the
+owner's speakers without asking, and keep every test off the paid API (offline provider or
+`PRAXIS_KEYCHAIN=off`).
 
 Merge order: WP-D1b and WP-R whenever they are ready; WP-K2 before finishing WP-U3. WP-U3 and
 WP-R both may touch `Cargo.lock` (and U3 the root `Cargo.toml`): resolve by keeping both
