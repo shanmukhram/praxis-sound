@@ -142,6 +142,60 @@ fn a_music_clip_an_effect_and_an_ambience_are_measured_and_told_apart() {
 }
 
 #[test]
+fn the_library_keeps_named_tagged_profiles_and_never_audio() {
+    let home = scratch("library");
+    let rain = clips::analyze_clip(&home, "rain bed.wav", &ambience_clip()).expect("ambience");
+    assert!(clips::profile_cache(Path::new(&rain.path)).is_file(), "the profile is cached");
+
+    // Saved from the kept clip: its cached profile, named and tagged.
+    let e = clips::library_add(&home, " Night rain ", &["rain".into(), "night".into()], Some(&rain.path), None)
+        .expect("add");
+    assert_eq!((e.id.as_str(), e.name.as_str()), ("night-rain", "Night rain"));
+    assert_eq!(e.tags, ["rain", "night"]);
+    assert_eq!(e.kind, "ambience");
+    assert!(!e.already);
+    assert!(e.summary.starts_with("ambience"), "{}", e.summary);
+    let p = e.profile.as_ref().expect("the saved profile");
+    assert_eq!(p["source"]["pcm_hash"], rain.profile["source"]["pcm_hash"]);
+    assert_eq!(p["style_name"], "Night rain");
+
+    // The same clip again is the same entry (by its decoded PCM hash), with the new tag.
+    let again = clips::library_add(&home, "Night rain", &["bed".into()], Some(&rain.path), None).unwrap();
+    assert!(again.already);
+    assert_eq!(again.id, "night-rain");
+    assert_eq!(again.tags, ["rain", "night", "bed"]);
+
+    // A profile the window holds (its kept clip gone) is saved as it is.
+    let hit = clips::analyze_clip(&home, "hit.wav", &sfx_clip()).unwrap();
+    let e2 = clips::library_add(&home, "Hit", &[], Some("C:\\elsewhere\\hit.wav"), Some(&hit.profile)).unwrap();
+    assert_eq!((e2.id.as_str(), e2.kind.as_str()), ("hit", "sfx"));
+
+    let list = clips::library_list(&home).unwrap();
+    assert_eq!(list.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["hit", "night-rain"]);
+    assert!(list.iter().all(|e| e.profile.is_none()), "a listing carries no profiles");
+
+    let t = clips::library_tag(&home, "night-rain", &["loop".into(), "rain".into()]).unwrap();
+    assert_eq!(t.tags, ["rain", "loop"]);
+    assert_eq!(clips::library_show(&home, "night-rain").unwrap().tags, ["rain", "loop"]);
+
+    // Profiles only: every file in the library is a profile JSON, far smaller than the audio.
+    for f in std::fs::read_dir(clips::library_dir(&home)).unwrap().flatten() {
+        let name = f.file_name().to_string_lossy().into_owned();
+        assert!(name.ends_with(".profile.json"), "{name} in the library");
+        let text = std::fs::read_to_string(f.path()).unwrap();
+        assert!(!text.starts_with("RIFF"));
+    }
+    assert!(clips::library_remove(&home, "hit").unwrap());
+    assert_eq!(clips::library_list(&home).unwrap().len(), 1);
+    let gone = clips::library_show(&home, "hit").unwrap_err();
+    assert_eq!(gone.code, "io");
+    assert_eq!(
+        clips::library_add(&home, "  ", &[], Some(&rain.path), None).unwrap_err().code,
+        "bad_json"
+    );
+}
+
+#[test]
 fn a_video_that_cannot_be_read_says_why_and_names_the_clip() {
     let home = scratch("video");
     let e = clips::analyze_clip(&home, "scene.mp4", b"not really a video").unwrap_err();

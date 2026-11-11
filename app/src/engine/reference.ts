@@ -34,6 +34,8 @@ export interface SoundProfile {
   style_name?: string | null;
   /** Set by the mock engine: rough browser measurements, not the analyzer's. */
   mock?: boolean;
+  /** The analyzer's one line in plain words (`praxis analyze`'s `summary`), when it sent one. */
+  summary?: string;
 }
 
 /** A reference the next request (and the A/B) uses: a dropped clip, or a style from the library. */
@@ -55,9 +57,10 @@ export interface LibraryEntry {
   name: string;
   tags: string[];
   kind: ClipKind;
-  /** One line in plain words ("Ambience · 12.0 s · dark · a large room"). */
+  /** One line in plain words ("ambience (82% sure) · 12.0 s · -23.5 LUFS · noisy"). */
   summary: string;
-  profile: SoundProfile;
+  /** The full profile; null in a listing until it is fetched (`libraryProfile`). */
+  profile: SoundProfile | null;
 }
 
 export type AnalyzeResult = { ok: true; clip: ReferenceClip } | { ok: false; message: string };
@@ -167,9 +170,19 @@ export function kindLine(p: SoundProfile): ProfileLine {
   return { id: 'kind', label: 'What it is', words, detail };
 }
 
+/**
+ * A beat worth naming: music with a confident tempo, or anything else whose onsets fall on a
+ * regular grid (the analyzer finds a spurious pulse in noise beds; WP-D2's hand-over).
+ */
+export function hasBeat(p: SoundProfile): boolean {
+  const t = p.tempo;
+  if (!t || !fin(t.bpm) || t.confidence < TEMPO_SURE) return false;
+  return p.class.kind === 'music' || !!p.groove;
+}
+
 export function tempoLine(p: SoundProfile): ProfileLine {
   const t = p.tempo;
-  if (!t || !fin(t.bpm) || t.confidence < TEMPO_SURE) {
+  if (!t || !hasBeat(p)) {
     return {
       id: 'tempo',
       label: 'Tempo',
@@ -342,7 +355,7 @@ export function profileLines(p: SoundProfile): ProfileLine[] {
 /** One line for a chip or a library row: "Ambience · 12 s · dark · a large hall". */
 export function profileSummary(p: SoundProfile): string {
   const parts: string[] = [kindWord(p.class.kind), lengthWords(p.source.duration_s)];
-  if (p.tempo && p.tempo.confidence >= TEMPO_SURE) parts.push(`${Math.round(p.tempo.bpm)} BPM`);
+  if (p.tempo && hasBeat(p)) parts.push(`${Math.round(p.tempo.bpm)} BPM`);
   if (p.key && p.key.confidence >= KEY_SURE && p.tonality >= 0.2) parts.push(keyLabel(p.key.key));
   parts.push(brightnessWord(p.spectral.centroid_hz));
   if (p.reverb && p.reverb.confidence >= 0.3) parts.push(roomWord(p.reverb.rt60_s));
@@ -395,11 +408,29 @@ export function abLevels(takeLufs: number | null | undefined, clipLufs: number |
 
 const MARK = /\n\nReference (clip|style) "([^"\n]*)"/;
 
+/** The profile's key numbers in one short line (never the tracks: a full profile is ~120 kB). */
+export function keyNumbers(p: SoundProfile): string {
+  const out: string[] = [];
+  const t = p.tempo;
+  if (t && fin(t.bpm)) out.push(`tempo ${one(t.bpm)} BPM at confidence ${t.confidence.toFixed(2)}`);
+  if (p.key) out.push(`key ${keyLabel(p.key.key)} at confidence ${p.key.confidence.toFixed(2)}`);
+  const l = p.loudness;
+  if (fin(l.integrated_lufs)) out.push(`${one(l.integrated_lufs)} LUFS, range ${fin(l.range_lu) ? one(l.range_lu) : '–'} LU, true peak ${fin(l.true_peak_dbtp) ? one(l.true_peak_dbtp) : '–'} dBTP`);
+  out.push(`centroid ${Math.round(p.spectral.centroid_hz)} Hz, tilt ${fin(p.spectral.tilt_db_per_oct) ? one(p.spectral.tilt_db_per_oct) : '–'} dB/oct`);
+  out.push(`tonality ${p.tonality.toFixed(2)}`);
+  if (p.reverb) out.push(`reverb ${one(p.reverb.rt60_s)} s at confidence ${p.reverb.confidence.toFixed(2)}`);
+  out.push(`width ${fin(p.stereo.width) ? p.stereo.width.toFixed(2) : '–'}`);
+  if (p.groove) out.push(`swing ${p.groove.swing.toFixed(2)}`);
+  out.push(`attack ${Math.round(p.envelope.attack_s * 1000)} ms, release ${Math.round(p.envelope.release_s * 1000)} ms`);
+  return out.join('; ');
+}
+
 /**
- * The words a request carries when it has a reference: its profile in plain words (which the
- * planner reads for tempo, key and character), and for a dropped clip the file the assistant
- * measures in full with its `analyze_clip` tool. Appended after a blank line, so the thread can
- * show the request as typed (see [`splitReference`]).
+ * The words a request carries when it has a reference: a short version of its profile (the
+ * analyzer's summary, each line in plain words, the key numbers), which the planner reads for
+ * tempo, key and character and the assistant reads as the reference; for a dropped clip also the
+ * kept file (for matching). Never the whole profile. Appended after a blank line, so the thread
+ * can show the request as typed (see [`splitReference`]).
  */
 export function referenceRequestText(ref: ReferenceClip): string {
   const p = ref.profile;
@@ -407,8 +438,9 @@ export function referenceRequestText(ref: ReferenceClip): string {
   const lines = profileLines(p).filter((l) => l.id !== 'sections');
   const said = lines.map((l) => `${l.label.toLowerCase()}: ${l.words.charAt(0).toLowerCase()}${l.words.slice(1)}`).join('; ');
   const head = ref.path ? `Reference clip "${name}"` : `Reference style "${name}" (from the reference library)`;
-  const tail = ref.path ? ` Its file, to measure in full with analyze_clip: ${ref.path}` : '';
-  return `\n\n${head}: keep its character, never its melody. ${lengthWords(p.source.duration_s)} long; ${said}.${tail}`;
+  const summary = p.summary ? ` (${p.summary.replace(/\n/g, ' ')})` : '';
+  const tail = ref.path ? ` The clip's file, for matching: ${ref.path}` : '';
+  return `\n\n${head}${summary}: keep its character, never its melody. ${lengthWords(p.source.duration_s)} long; ${said}. Measured: ${keyNumbers(p)}.${tail}`;
 }
 
 /** A request as typed, plus its reference's words. */

@@ -5,7 +5,7 @@
 // Every call is async so IPC and worker-backed adapters fit without changes.
 
 import type { BarRange, GeneratorClass, InstrumentKind, Key, NScore, Score, ScorePatch, TimeSignature } from '../score/types';
-import type { AnalyzeResult, CompareLevel, LibraryEntry, LibraryResult, ReferenceClip } from './reference';
+import type { AnalyzeResult, CompareLevel, LibraryEntry, LibraryResult, ReferenceClip, SoundProfile } from './reference';
 
 export type { AnalyzeResult, ClipKind, CompareLevel, LibraryEntry, LibraryResult, ReferenceClip, SoundProfile } from './reference';
 
@@ -345,8 +345,10 @@ export interface EngineAdapter {
   // Reference clips (FR-11, FR-12, FR-19, FR-30). A profile holds measurements, never audio.
   /** Measures a dropped audio or video clip: its Sound Profile, and a URL to play it for A/B. */
   analyzeClip(file: ClipFile): Promise<AnalyzeResult>;
-  /** The reference library, newest first. */
+  /** The reference library (entries without their profiles). */
   library(): Promise<LibraryEntry[]>;
+  /** One library entry's full profile (null when it is gone). */
+  libraryProfile(id: string): Promise<SoundProfile | null>;
   /** Saves a reference's profile (never its audio) to the library under a name, with tags. */
   saveReference(ref: ReferenceClip, name: string, tags: string[]): Promise<LibraryResult>;
   /** Replaces a library entry's tags. */

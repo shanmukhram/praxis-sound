@@ -74,7 +74,12 @@ class RefBridge implements Bridge {
       case 'takes':
         return { sound: PATH, revision: this.takes.length, current: this.takes.length, takes: this.takes, score: fixture(), can_undo: true, can_redo: false, views: [] } as T;
       case 'library_list':
-        return this.lib as T;
+        return this.lib.map((e) => ({ ...e, profile: null })) as T;
+      case 'library_show': {
+        const e = this.lib.find((x) => x.id === args!.id);
+        if (!e) throw { code: 'io', message: `no library entry ${String(args!.id)}` };
+        return e as T;
+      }
       case 'library_add': {
         const a = args as { name: string; tags: string[]; profile: unknown };
         if (this.lib.some((e) => e.name === a.name)) throw { code: 'error', message: `there is already a reference called ${a.name}` };
@@ -129,13 +134,14 @@ describe('TauriEngine reference clips', () => {
     const r = await e.ask({ text: 'Make something like this', reference: c.clip });
     const sent = b.calls.find((x) => x.cmd === 'ask')!.args as { req: { text: string } };
     expect(sent.req.text).toMatch(/^Make something like this\n\nReference clip "rain\.wav": keep its character, never its melody\./);
-    expect(sent.req.text).toContain('analyze_clip: C:\\Praxis\\clips\\0123-rain.wav');
+    expect(sent.req.text).toContain("The clip's file, for matching: C:\\Praxis\\clips\\0123-rain.wav");
+    expect(sent.req.text).not.toContain('frames_db');
     expect(r.ok && r.take?.ask).toBe('Make something like this');
     expect(r.ok && r.take?.reference).toBe('rain.wav');
     e.dispose();
   });
 
-  it('saves, tags, lists and removes library profiles (no audio, no file path)', async () => {
+  it('saves, tags, lists and removes library profiles; a listing has no profiles, "Use" fetches one', async () => {
     const b = new RefBridge();
     const e = new TauriEngine(b, { makeAudio: () => null });
     const c = await e.analyzeClip(file('rain.wav'));
@@ -143,10 +149,14 @@ describe('TauriEngine reference clips', () => {
     const s = await e.saveReference(c.clip, '  Rain loop ', ['rain', 'night']);
     expect(s).toMatchObject({ ok: true, entry: { id: 'rain-loop', name: 'Rain loop', tags: ['rain', 'night'], kind: 'music' } });
     const add = b.calls.find((x) => x.cmd === 'library_add')!.args as Record<string, unknown>;
-    expect(Object.keys(add).sort()).toEqual(['name', 'profile', 'tags']);
-    expect(JSON.stringify(add)).not.toContain('clips');
+    // The kept clip goes by its path (the shell adds its cached profile); the profile is the fallback.
+    expect(Object.keys(add).sort()).toEqual(['clip', 'name', 'profile', 'tags']);
+    expect(add.clip).toBe('C:\\Praxis\\clips\\0123-rain.wav');
     expect((await e.saveReference(c.clip, 'Rain loop', [])).ok).toBe(false);
-    expect((await e.library()).map((x) => x.name)).toEqual(['Rain loop']);
+    const list = await e.library();
+    expect(list.map((x) => [x.name, x.profile])).toEqual([['Rain loop', null]]);
+    expect((await e.libraryProfile('rain-loop'))?.class.kind).toBe('music');
+    expect(await e.libraryProfile('gone')).toBeNull();
     expect(await e.tagReference('rain-loop', ['bed'])).toMatchObject({ ok: true, entry: { tags: ['bed'] } });
     expect(await e.removeReference('rain-loop')).toBe(true);
     expect(await e.library()).toEqual([]);

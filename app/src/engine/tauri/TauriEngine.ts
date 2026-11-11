@@ -61,7 +61,7 @@ import {
   METER_FLOOR_DB,
 } from './protocol';
 import { blankProblem, DRAFT_ASK } from '../blank';
-import type { AnalyzeResult, ClipFile, CompareLevel, LibraryEntry, LibraryResult, ReferenceClip } from '../EngineAdapter';
+import type { AnalyzeResult, ClipFile, CompareLevel, LibraryEntry, LibraryResult, ReferenceClip, SoundProfile } from '../EngineAdapter';
 import { clipErrorWords, clipProblem, withReference } from '../reference';
 import { type ClipPayload, type LibraryEntryPayload, toLibraryEntry, toProfile } from './protocol';
 import { presetsFromPayload } from '../presets';
@@ -862,10 +862,23 @@ export class TauriEngine implements EngineAdapter {
     }
   }
 
+  async libraryProfile(id: string): Promise<SoundProfile | null> {
+    try {
+      const e = await this.bridge.invoke<LibraryEntryPayload>('library_show', { id });
+      return e.profile ? toProfile(e.profile) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Saves the profile to the library: the shell adds the kept clip's own cached profile (exact),
+   * or the profile as the window has it when the clip is no longer kept.
+   */
   async saveReference(ref: ReferenceClip, name: string, tags: string[]): Promise<LibraryResult> {
     if (!name.trim()) return { ok: false, message: 'Give the reference a name.' };
     try {
-      const e = await this.bridge.invoke<LibraryEntryPayload>('library_add', { name: name.trim(), tags, profile: ref.profile });
+      const e = await this.bridge.invoke<LibraryEntryPayload>('library_add', { name: name.trim(), tags, clip: ref.path, profile: ref.profile });
       return { ok: true, entry: toLibraryEntry(e) };
     } catch (e) {
       return { ok: false, message: `Could not save it to the library: ${message(e)}` };

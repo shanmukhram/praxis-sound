@@ -604,8 +604,14 @@ export class MockEngine implements EngineAdapter {
     return { ok: true, clip: { name: file.name, profile, audioUrl, path: `mock://clips/${file.name}`, libraryId: null } };
   }
 
+  /** Entries without their profiles, as the desktop lists them. */
   async library(): Promise<LibraryEntry[]> {
-    return this.lib.map((e) => clone(e));
+    return this.lib.map((e) => ({ ...clone(e), profile: null }));
+  }
+
+  async libraryProfile(id: string): Promise<SoundProfile | null> {
+    const e = this.lib.find((x) => x.id === id);
+    return e?.profile ? clone(e.profile) : null;
   }
 
   async saveReference(ref: ReferenceClip, name: string, tags: string[]): Promise<LibraryResult> {
@@ -623,7 +629,7 @@ export class MockEngine implements EngineAdapter {
     const e = this.lib.find((x) => x.id === id);
     if (!e) return { ok: false, message: 'That reference is no longer in the library.' };
     e.tags = cleanTags(tags);
-    e.profile.tags = [...e.tags];
+    if (e.profile) e.profile.tags = [...e.tags];
     return { ok: true, entry: clone(e) };
   }
 

@@ -306,9 +306,10 @@ export class Shell {
     if (this.making) return;
     const scope = this.selection ?? undefined;
     const label = scope ? ` (${scopeText(this.st, scope)})` : '';
-    const reference = withRef ?? this.attachedRef() ?? this.mentioned(text) ?? undefined;
+    // Claim the turn before looking anything up, so a second click waits.
     const m = newMaking(text + label, 'You');
     this.making = m;
+    const reference = withRef ?? this.attachedRef() ?? (await this.mentioned(text)) ?? undefined;
     this.makingRef = reference?.name ?? null;
     this.syncSend();
     this.renderThread(true);
@@ -326,7 +327,20 @@ export class Shell {
   }
 
   /** A library style the request names in quotes. */
-  private mentioned(text: string): ReferenceClip | null {
+  private async mentioned(text: string): Promise<ReferenceClip | null> {
+    const id = libraryMention(text, this.libraryList);
+    return id ? this.libraryRef(id) : null;
+  }
+
+  /** A library style as a reference, its profile fetched when the listing did not carry it. */
+  private async libraryRef(id: string): Promise<ReferenceClip | null> {
+    const e = this.libraryList.find((x) => x.id === id);
+    if (!e) return null;
+    const profile = e.profile ?? (await this.engine.libraryProfile(id));
+    if (!profile) return null;
+    e.profile = profile;
+    return { name: e.name, profile, audioUrl: null, path: null, libraryId: e.id };
+  }| null {
     const id = libraryMention(text, this.libraryList);
     const e = id ? this.libraryList.find((x) => x.id === id) : null;
     return e ? { name: e.name, profile: e.profile, audioUrl: null, path: null, libraryId: e.id } : null;
@@ -412,18 +426,22 @@ export class Shell {
     this.renderPanel();
   }
 
-  private useLibrary(id: string): void {
-    const e = this.libraryList.find((x) => x.id === id);
-    if (!e) return;
+  private async useLibrary(id: string): Promise<void> {
+    const ref = await this.libraryRef(id);
+    if (!ref) {
+      this.libraryNote = 'That reference is no longer in the library.';
+      await this.refreshLibrary();
+      return;
+    }
     this.stopAb();
-    this.reference = { name: e.name, profile: e.profile, audioUrl: null, path: null, libraryId: e.id };
+    this.reference = ref;
     this.attached = true;
     this.refError = null;
     this.libraryNote = null;
     this.renderChips();
     this.syncSend();
     this.renderPanel();
-    this.prompt.placeholder = `What should it be? It will be like "${e.name}".`;
+    this.prompt.placeholder = `What should it be? It will be like "${ref.name}".`;
     this.prompt.focus();
   }
 
@@ -1039,7 +1057,7 @@ export class Shell {
           this.renderPanel();
         },
         save: (name, tags) => void this.saveReference(name, tags),
-        use: (id) => this.useLibrary(id),
+        use: (id) => void this.useLibrary(id),
         remove: (id) => void this.removeLibrary(id),
         tag: (id, tags) => void this.tagLibrary(id, tags),
       },

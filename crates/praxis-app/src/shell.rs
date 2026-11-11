@@ -6,7 +6,7 @@ use crate::audio::{
     AudioService, CompareLevel, FakeOutput, LayerLive, Opener, TRANSPORT_EVENT, TransportStatus,
     cpal_opener,
 };
-use crate::clips::{self, Clip};
+use crate::clips::{self, Clip, LibraryEntry};
 use crate::commands::{self, AGENT_EVENT, AgentProgress, CmdError, CmdResult, ExportArgs};
 use crate::hand::{self, MakeTakeArgs, NewSound, NewSoundArgs};
 use crate::sounds::{self, SoundInfo};
@@ -230,6 +230,52 @@ async fn clip_analyze(
     blocking(move || clips::analyze_clip(&home, &name, &bytes)).await
 }
 
+/// The reference library: every entry (no profiles).
+#[tauri::command]
+async fn library_list(state: tauri::State<'_, AppState>) -> CmdResult<Vec<LibraryEntry>> {
+    let home = state.home.clone();
+    blocking(move || clips::library_list(&home)).await
+}
+
+/// One library entry with its profile.
+#[tauri::command]
+async fn library_show(state: tauri::State<'_, AppState>, id: String) -> CmdResult<LibraryEntry> {
+    let home = state.home.clone();
+    blocking(move || clips::library_show(&home, &id)).await
+}
+
+/// Saves a reference's profile (never its audio): the kept clip's (`clip`, its path) when it is
+/// one, else `profile` as the window has it.
+#[tauri::command]
+async fn library_add(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    tags: Vec<String>,
+    clip: Option<String>,
+    profile: Option<Value>,
+) -> CmdResult<LibraryEntry> {
+    let home = state.home.clone();
+    blocking(move || clips::library_add(&home, &name, &tags, clip.as_deref(), profile.as_ref()))
+        .await
+}
+
+/// Sets an entry's tags.
+#[tauri::command]
+async fn library_tag(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    tags: Vec<String>,
+) -> CmdResult<LibraryEntry> {
+    let home = state.home.clone();
+    blocking(move || clips::library_tag(&home, &id, &tags)).await
+}
+
+#[tauri::command]
+async fn library_remove(state: tauri::State<'_, AppState>, id: String) -> CmdResult<bool> {
+    let home = state.home.clone();
+    blocking(move || clips::library_remove(&home, &id)).await
+}
+
 // ---------------------------------------------------------------- the project (no take)
 
 #[tauri::command]
@@ -413,6 +459,11 @@ pub fn run() {
             transport_status,
             transport_compare,
             clip_analyze,
+            library_list,
+            library_show,
+            library_add,
+            library_tag,
+            library_remove,
         ])
         .run(tauri::generate_context!());
     if let Err(e) = result {

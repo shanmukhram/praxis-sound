@@ -76,6 +76,13 @@ describe('a profile in plain words', () => {
     // Between the threshold and 0.6 it is said, with "not sure".
     expect(keyLine(profile({ key: { key: { tonic: 'A', mode: 'major' }, confidence: 0.58, chroma: [] } })).words).toBe('A major (not sure)');
     expect(tempoLine(profile({ tempo: null })).words).toBe("Can't tell: the beat is not clear");
+    // A noise bed can carry a confident but spurious pulse (WP-D2): no beat without a groove.
+    const bed = { ...rain(), tempo: { bpm: 96, confidence: 0.75, beats_s: [], downbeat_s: 0, beats_per_bar: 4 } };
+    expect(tempoLine(bed)).toMatchObject({ words: "Can't tell: no steady beat", cantTell: true });
+    expect(profileSummary(bed)).not.toContain('BPM');
+    // An effect whose hits fall on a grid has a beat.
+    const ticks = { ...bed, class: { kind: 'sfx' as const, confidence: 0.8, scores: [0.1, 0.8, 0.1] as [number, number, number] }, groove: profile().groove };
+    expect(tempoLine(ticks).words).toBe('96 BPM');
     const words = Object.fromEntries(profileLines(p).map((l) => [l.id, l.words]));
     expect(words.kind).toBe('Ambience, or maybe sound effect');
     expect(words.groove).toBe('No hits, it flows');
@@ -137,7 +144,15 @@ describe('a reference with a request', () => {
     expect(t.startsWith('Make something like this, 30 seconds\n\nReference clip "rain.wav": keep its character, never its melody. 12 s long; ')).toBe(true);
     expect(t).toContain("tempo: can't tell: no steady beat");
     expect(t).toContain('brightness: dark');
-    expect(t).toContain('Its file, to measure in full with analyze_clip: C:\\Praxis\\clips\\0f-rain.wav');
+    expect(t).toContain("The clip's file, for matching: C:\\Praxis\\clips\\0f-rain.wav");
+    // A short version: the words and the key numbers, never the tracks or an invitation to fetch them all.
+    expect(t).toContain('Measured: tempo 201.2 BPM at confidence 0.12; key C# minor at confidence 0.20; -23.5 LUFS, range 1.2 LU');
+    expect(t).not.toContain('analyze_clip');
+    expect(t.length).toBeLessThan(1500);
+    // The analyzer's own summary leads when it sent one.
+    expect(referenceRequestText({ ...clip, profile: { ...rain(), summary: 'ambience (82% sure) · 12.0 s · -23.5 LUFS · noisy' } })).toContain(
+      'Reference clip "rain.wav" (ambience (82% sure) · 12.0 s · -23.5 LUFS · noisy): keep its character',
+    );
     // The words never name a length in seconds or bars the planner would take as the request's.
     expect(referenceRequestText(clip)).not.toMatch(/\bseconds?\b|\bbars?\b/);
     expect(withReference('plain', undefined)).toBe('plain');
@@ -279,7 +294,8 @@ describe('the mock engine measures roughly and says so', () => {
     const list = await e.library();
     expect(list).toHaveLength(1);
     expect(JSON.stringify(list)).not.toContain('blob:');
-    expect(list[0].profile.style_name).toBe('Rain bed');
+    expect(list[0].profile).toBeNull();
+    expect((await e.libraryProfile(list[0].id))?.style_name).toBe('Rain bed');
     if (!saved.ok) return;
     expect((await e.tagReference(saved.entry.id, ['loop'])).ok).toBe(true);
     expect((await e.library())[0].tags).toEqual(['loop']);

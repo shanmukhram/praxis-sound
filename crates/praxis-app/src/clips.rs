@@ -149,6 +149,7 @@ fn prune(dir: &Path, keep: usize, current: &Path) {
         .collect();
     files.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     for (_, p) in files.into_iter().skip(keep.saturating_sub(1)) {
+        let _ = std::fs::remove_file(profile_cache(&p));
         let _ = std::fs::remove_file(p);
     }
 }
@@ -166,20 +167,197 @@ fn clip_error(e: praxis_cli::OpError, name: &str, path: &Path) -> CmdError {
     err
 }
 
-/// Keeps and measures a dropped clip: its file and its Sound Profile.
+/// Where the profile of a kept clip is cached (`<home>/clips/profiles/<clip file>.profile.json`):
+/// saving the clip to the library adds exactly this profile, without measuring it again.
+pub fn profile_cache(clip: &Path) -> PathBuf {
+    let file = clip
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    clip.with_file_name(PROFILES_DIR)
+        .join(format!("{file}{PROFILE_EXT}"))
+}
+
+const PROFILES_DIR: &str = "profiles";
+const PROFILE_EXT: &str = ".profile.json";
+
+/// Keeps and measures a dropped clip: its file and its Sound Profile (the `analyze` payload).
 pub fn analyze_clip(home: &Path, name: &str, bytes: &[u8]) -> CmdResult<Clip> {
     let path = store_clip(home, name, bytes)?;
-    let profile = ops::analyze(&ops::AnalyzeRequest {
+    let cache = profile_cache(&path);
+    if let Some(dir) = cache.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| io(dir, e))?;
+    }
+    let mut profile = ops::analyze(&ops::AnalyzeRequest {
         clip: path.clone(),
-        out: None,
+        out: Some(cache),
         beats_per_bar: 4,
     })
     .map_err(|e| clip_error(e, name, &path))?;
+    if let Some(o) = profile.as_object_mut() {
+        o.remove("output");
+    }
     Ok(Clip {
         path: path.display().to_string(),
         name: name.rsplit(['/', '\\']).next().unwrap_or(name).to_string(),
         profile,
     })
+}
+
+// ------------------------------------------------------------------ the reference library
+
+/// A library entry as the window reads it: the `list` entry's fields, and the profile itself
+/// when it was asked for (`show`) or just saved.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct LibraryEntry {
+    pub id: String,
+    pub name: String,
+    pub tags: Vec<String>,
+    pub kind: String,
+    pub duration_s: f64,
+    /// One line in plain words (`ops::analyze::summary`).
+    pub summary: String,
+    /// The analyze payload of the saved profile; `None` in a listing.
+    pub profile: Option<Value>,
+    /// The same clip (by its decoded PCM hash) was already kept: that entry got the name and tags.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub already: bool,
+}
+
+fn entry_of(e: &Value, profile: Option<Value>, already: bool) -> LibraryEntry {
+    let s = |k: &str| e[k].as_str().unwrap_or("").to_string();
+    let id = s("id");
+    LibraryEntry {
+        name: e["name"].as_str().map(str::to_string).unwrap_or_else(|| id.clone()),
+        id,
+        tags: e["tags"]
+            .as_array()
+            .map(|t| t.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .unwrap_or_default(),
+        kind: s("kind"),
+        duration_s: e["duration_s"].as_f64().unwrap_or(0.0),
+        summary: s("summary"),
+        profile,
+        already,
+    }
+}
+
+/// The library folder of the app's home (`<home>/library`: `PRAXIS_HOME/library` unless the
+/// app keeps its sounds in the fallback home).
+pub fn library_dir(home: &Path) -> PathBuf {
+    home.join("library")
+}
+
+fn lib(home: &Path, action: ops::LibraryAction) -> CmdResult<Value> {
+    Ok(ops::library(&ops::LibraryRequest {
+        action,
+        dir: Some(library_dir(home)),
+    })?)
+}
+
+/// Every entry, in id order (as `list` gives them), without their profiles.
+pub fn library_list(home: &Path) -> CmdResult<Vec<LibraryEntry>> {
+    let v = lib(home, ops::LibraryAction::List)?;
+    Ok(v["entries"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|e| entry_of(e, None, false))
+        .collect())
+}
+
+/// One entry with its profile.
+pub fn library_show(home: &Path, id: &str) -> CmdResult<LibraryEntry> {
+    let v = lib(home, ops::LibraryAction::Show { id: id.into() })?;
+    Ok(entry_of(&v["entry"], Some(v["profile"].clone()), false))
+}
+
+/// The kept clip `clip` names, when it really is one of this home's dropped clips.
+fn kept_clip(home: &Path, clip: &str) -> Option<PathBuf> {
+    let root = std::fs::canonicalize(home.join(CLIPS_DIR)).ok()?;
+    let p = std::fs::canonicalize(clip).ok()?;
+    (p.starts_with(&root) && p.is_file()).then_some(p)
+}
+
+/// Saves a profile to the library under `name` with `tags`: the cached profile of the kept clip
+/// `clip` (measured again if the cache is gone), else `profile` as the window has it.
+pub fn library_add(
+    home: &Path,
+    name: &str,
+    tags: &[String],
+    clip: Option<&str>,
+    profile: Option<&Value>,
+) -> CmdResult<LibraryEntry> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(CmdError::new(ErrorCode::BadJson, "give the reference a name"));
+    }
+    let kept = clip.and_then(|c| kept_clip(home, c));
+    let mut temp = None;
+    let input = match (&kept, profile) {
+        (Some(c), _) if profile_cache(c).is_file() => profile_cache(c),
+        (Some(c), _) => c.clone(),
+        (None, Some(p)) => {
+            let t = std::env::temp_dir().join(format!(
+                "praxis-app-{}-{}{PROFILE_EXT}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+            let text = serde_json::to_string(p)
+                .map_err(|e| CmdError::new(ErrorCode::BadJson, e.to_string()))?;
+            std::fs::write(&t, text).map_err(|e| io(&t, e))?;
+            temp = Some(t.clone());
+            t
+        }
+        (None, None) => {
+            return Err(CmdError::new(
+                ErrorCode::BadJson,
+                "send the kept clip or its profile to save",
+            ));
+        }
+    };
+    let r = lib(
+        home,
+        ops::LibraryAction::Add {
+            input,
+            name: Some(name.into()),
+            tags: tags.to_vec(),
+            beats_per_bar: 4,
+        },
+    );
+    if let Some(t) = temp {
+        let _ = std::fs::remove_file(t);
+    }
+    let v = r?;
+    let id = v["id"].as_str().unwrap_or_default().to_string();
+    let mut entry = library_show(home, &id)?;
+    entry.already = v["already"].as_bool().unwrap_or(false);
+    Ok(entry)
+}
+
+/// Sets an entry's tags to exactly `tags` (the library's `tag` adds and removes).
+pub fn library_tag(home: &Path, id: &str, tags: &[String]) -> CmdResult<LibraryEntry> {
+    let now = library_show(home, id)?.tags;
+    let want: Vec<String> = tags.iter().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect();
+    let add = want.iter().filter(|t| !now.contains(t)).cloned().collect();
+    let remove = now.iter().filter(|t| !want.contains(t)).cloned().collect();
+    let v = lib(
+        home,
+        ops::LibraryAction::Tag {
+            id: id.into(),
+            add,
+            remove,
+        },
+    )?;
+    Ok(entry_of(&v["entry"], None, false))
+}
+
+pub fn library_remove(home: &Path, id: &str) -> CmdResult<bool> {
+    let v = lib(home, ops::LibraryAction::Remove { id: id.into() })?;
+    Ok(v["removed"].as_bool().unwrap_or(false))
 }
 
 #[cfg(test)]

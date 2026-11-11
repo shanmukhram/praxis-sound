@@ -287,7 +287,14 @@ export interface LibraryEntryPayload {
   id: string;
   name: string;
   tags?: string[];
-  profile: unknown;
+  kind?: string;
+  duration_s?: number;
+  /** The analyzer's one line in plain words. */
+  summary?: string;
+  /** The profile (`library_show`, `library_add`); null in a listing. */
+  profile?: unknown;
+  /** The same clip was already kept: that entry got the name and tags. */
+  already?: boolean;
 }
 
 const arr = <T>(v: unknown, f: (x: unknown) => T): T[] => (Array.isArray(v) ? v.map(f) : []);
@@ -351,10 +358,19 @@ export function toProfile(value: unknown): SoundProfile {
     features: arr(p.features, (x) => num(x)),
     tags: arr(p.tags, (x) => String(x)),
     style_name: typeof p.style_name === 'string' ? p.style_name : null,
+    ...(typeof p.summary === 'string' ? { summary: p.summary } : {}),
   };
 }
 
 export function toLibraryEntry(e: LibraryEntryPayload): LibraryEntry {
-  const profile = toProfile(e.profile);
-  return { id: String(e.id), name: String(e.name), tags: (e.tags ?? profile.tags ?? []).map(String), kind: profile.class.kind, summary: profileSummary(profile), profile };
+  const profile = e.profile ? toProfile(e.profile) : null;
+  const kind: ClipKind = profile?.class.kind ?? (KINDS.includes(e.kind as ClipKind) ? (e.kind as ClipKind) : 'music');
+  return {
+    id: String(e.id),
+    name: String(e.name ?? e.id),
+    tags: (e.tags ?? profile?.tags ?? []).map(String),
+    kind,
+    summary: e.summary || (profile ? (profile.summary ?? profileSummary(profile)) : ''),
+    profile,
+  };
 }
