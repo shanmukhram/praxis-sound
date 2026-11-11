@@ -8,9 +8,15 @@ sound effects as files. You cannot listen, so every render returns measurements:
 the ScorePlan schema, how-to and an example; (2) praxis_presets for preset names that render \
 here; (3) write the plan and call praxis_compose with `project` and `render` paths; (4) read the \
 checks, fix the plan, compose again; (5) praxis_export for WAV/FLAC/stems/MIDI. praxis_generate \
-takes a plain brief instead. Paths in, paths and measurements out; audio is never returned \
-inline. Errors come back with isError=true and `error.code` (io, bad_json, bad_score, \
-invalid_score, bad_format, render_failed, no_api_key, provider_failed, pack_missing, \
+takes a plain brief instead. Edits: praxis_edit changes only the bars and layers in scope \
+(locked layers never); praxis_variations makes alternates to audition. Shared history with the \
+person (a sound folder): praxis_ask makes a take (a brief on a new sound, then scoped edits; \
+`scope` {layer, bars} holds it to exactly those bars), praxis_takes lists them (watch \
+`revision`), praxis_restore goes back, praxis_keep_variation keeps an alternate, \
+praxis_open_view shows the person a panel view. Each take says what changed and which bars \
+stayed bit-identical. Paths in, paths and measurements out; audio is never returned inline. \
+Errors come back with isError=true and `error.code` (io, bad_json, bad_score, invalid_score, \
+bad_format, render_failed, no_api_key, provider_failed, pack_missing, pack_verify_failed, \
 decode_failed, patch_rejected, error); `error.issues[]` carry a JSON pointer `path` into your \
 input and the allowed values.";
 

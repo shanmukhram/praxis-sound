@@ -25,6 +25,9 @@ pub mod latency;
 pub mod master;
 pub mod sidechain;
 
+// ---- WP-R real-time engine ----
+pub mod realtime;
+
 pub use render::{RenderConfig, render_offline_with};
 
 pub use api::{RenderError, RenderOptions, RenderOutput, RenderReport, Stem};
@@ -32,4 +35,5 @@ pub use instrument::{
     Instrument, InstrumentContext, InstrumentError, InstrumentFactory, NoteOn, PresetInfo,
     PresetParam,
 };
+pub use realtime::{EngineControl, RealtimeEngine};
 pub use render::render_offline;

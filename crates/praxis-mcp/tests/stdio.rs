@@ -192,16 +192,23 @@ fn initialize(c: &mut Client) -> Value {
     init
 }
 
-const TOOLS: [&str; 9] = [
+const TOOLS: [&str; 16] = [
     "praxis_analyze",
+    "praxis_ask",
     "praxis_check",
     "praxis_compose",
+    "praxis_edit",
     "praxis_export",
     "praxis_generate",
+    "praxis_keep_variation",
+    "praxis_open_view",
     "praxis_plan_schema",
     "praxis_presets",
     "praxis_render",
+    "praxis_restore",
+    "praxis_takes",
     "praxis_validate",
+    "praxis_variations",
 ];
 
 #[test]
@@ -356,10 +363,14 @@ fn every_tool_over_stdio() {
         json!({"input": s(&workspace().join("fixtures/acceptance1.score.json"))}),
     );
     assert_eq!(v["valid"], true);
+    // A .praxis project is validated through its score.
+    let v = c.ok("praxis_validate", json!({"input": s(&project)}));
+    assert_eq!(v["valid"], true);
+    assert_eq!(v["input_kind"], "project");
     c.err(
         "praxis_validate",
-        json!({"input": s(&project)}),
-        "bad_score",
+        json!({"input": s(&at(&dir, "missing.praxis"))}),
+        "io",
     );
 
     // --- praxis_export (MIDI needs no instruments) ---
@@ -539,4 +550,182 @@ fn every_tool_over_stdio() {
     // response carried audio bytes.
     drop(c);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------- the shared take history
+
+/// The interleaved 24-bit samples of a WAV's `data` chunk and the frame size in bytes.
+fn wav_data(path: &str) -> (Vec<u8>, usize) {
+    let b = std::fs::read(path).expect("read wav");
+    assert_eq!(&b[0..4], b"RIFF");
+    assert_eq!(&b[8..12], b"WAVE");
+    let mut i = 12;
+    let mut block_align = 0usize;
+    while i + 8 <= b.len() {
+        let id = &b[i..i + 4];
+        let len = u32::from_le_bytes([b[i + 4], b[i + 5], b[i + 6], b[i + 7]]) as usize;
+        let body = &b[i + 8..(i + 8 + len).min(b.len())];
+        if id == b"fmt " {
+            block_align = u16::from_le_bytes([body[12], body[13]]) as usize;
+        }
+        if id == b"data" {
+            assert!(block_align > 0, "fmt before data");
+            return (body.to_vec(), block_align);
+        }
+        i += 8 + len + (len & 1);
+    }
+    panic!("no data chunk in {path}");
+}
+
+/// Bars (1-based) whose bytes are identical in both WAVs, for `bars` equal bars.
+fn identical_bars_in_bytes(a: &str, b: &str, bars: usize) -> Vec<usize> {
+    let (da, fa) = wav_data(a);
+    let (db, fb) = wav_data(b);
+    assert_eq!((da.len(), fa), (db.len(), fb), "same length and format");
+    let frames = da.len() / fa;
+    assert_eq!(frames % bars, 0, "whole bars");
+    let per = frames / bars * fa;
+    (0..bars)
+        .filter(|i| da[i * per..(i + 1) * per] == db[i * per..(i + 1) * per])
+        .map(|i| i + 1)
+        .collect()
+}
+
+#[test]
+fn takes_over_stdio() {
+    let Some(packs) = find_packs() else {
+        println!("SKIP takes_over_stdio: the upright-piano-kw pack is not installed");
+        return;
+    };
+    let dir = temp_dir("takes");
+    let mut c = Client::spawn(Some(&packs), &dir);
+    initialize(&mut c);
+    let sound = at(&dir, "sounds/loop");
+
+    let empty = c.ok("praxis_takes", json!({"sound": s(&sound)}));
+    assert_eq!(empty["takes"], json!([]));
+    assert_eq!(empty["current"], json!(0));
+
+    // Take 1: the acceptance-1 brief on a new sound, made by this MCP client.
+    let brief = "16 bars, 4/4, A minor, 30 seconds, seamless loop. Bars 1-8: one soft felt piano \
+                 playing a repeating rhythmic motif on an eighth-note grid with accents and \
+                 overlapping sustain. Bars 9-16: the identical piano part plus a soft muted kick \
+                 underneath. No new melody, no fills, no risers, sweeps, impacts or pads.";
+    let one = c.ok(
+        "praxis_ask",
+        json!({"sound": s(&sound), "text": brief, "provider": "offline"}),
+    );
+    assert_eq!(one["command"], json!("ask"));
+    let t1 = &one["take"];
+    assert_eq!(t1["n"], json!(1));
+    assert_eq!(t1["who"], json!("Agent · praxis-mcp-test"));
+    assert_eq!(t1["patch"], Value::Null);
+    assert_eq!(t1["checks"]["passed"], json!(true), "{:#}", t1["checks"]);
+    assert_eq!(one["revision"], json!(1));
+    let mix1 = t1["render"]["path"].as_str().unwrap().to_string();
+    assert_eq!(
+        PathBuf::from(&mix1),
+        at(&dir, "sounds/loop/takes/1/mix.wav")
+    );
+
+    // Take 2: a scoped edit, held to bars 13-16 of the piano (the melody is a new layer there).
+    let two = c.ok(
+        "praxis_ask",
+        json!({
+            "sound": s(&sound),
+            "text": "change the last four bars to add a subtle melody",
+            "who": "cut-assistant",
+            "scope": {"layer": "piano", "bars": {"start": 13, "end": 16}},
+            "provider": "offline",
+        }),
+    );
+    let t2 = &two["take"];
+    assert_eq!(t2["n"], json!(2));
+    assert_eq!(t2["who"], json!("Agent · cut-assistant"));
+    assert_eq!(t2["scope"]["bars"], json!({"start": 13, "end": 16}));
+    let changed = t2["changed"].as_object().unwrap();
+    assert_eq!(changed.len(), 1, "{changed:?}");
+    assert!(changed.values().all(|r| r == &json!([13, 16])));
+    assert_eq!(
+        t2["render"]["report"]["applied_gain_db"], t1["render"]["report"]["applied_gain_db"],
+        "the master gain is frozen after take 1"
+    );
+    // Bars 4-12 bit-identical in the WAV bytes (bars 1-3 hold the new melody's wrapped tail).
+    let same = identical_bars_in_bytes(&mix1, t2["render"]["path"].as_str().unwrap(), 16);
+    println!(
+        "bars byte-identical between take 1 and take 2: {same:?}; take says {}",
+        t2["untouched"]
+    );
+    for bar in 4..=12 {
+        assert!(same.contains(&bar), "bar {bar} differs: {same:?}");
+    }
+    assert!(!same.contains(&13), "bars 13-16 changed");
+    assert_eq!(t2["identical_bars"], json!([[4, 12]]));
+
+    // An agent opens the Notes view to show what it did.
+    let v = c.ok(
+        "praxis_open_view",
+        json!({"sound": s(&sound), "view": "notes", "who": "cut-assistant"}),
+    );
+    assert_eq!(v["by"], json!("cut-assistant"));
+    c.err(
+        "praxis_open_view",
+        json!({"sound": s(&sound), "view": "piano_roll"}),
+        "bad_json",
+    );
+
+    // The list, then going back to take 1.
+    let list = c.ok("praxis_takes", json!({"sound": s(&sound)}));
+    let ns: Vec<u64> = list["takes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["n"].as_u64().unwrap())
+        .collect();
+    assert_eq!(ns, [1, 2]);
+    assert_eq!(list["current"], json!(2));
+    assert_eq!(list["takes"][1]["opens"], json!("notes"));
+    assert!(list["score"]["layers"].is_array());
+    let back = c.ok("praxis_restore", json!({"sound": s(&sound), "n": 1}));
+    assert_eq!(back["restored"], json!(true));
+    assert_eq!(back["current"], json!(1));
+    let after = c.ok("praxis_takes", json!({"sound": s(&sound)}));
+    assert_eq!(after["current"], json!(1));
+    assert_eq!(
+        after["takes"].as_array().unwrap().len(),
+        2,
+        "restore adds no take"
+    );
+    assert_eq!(after["can_undo"], json!(true));
+    assert!(after["revision"].as_u64().unwrap() > list["revision"].as_u64().unwrap());
+    let layers = after["score"]["layers"].as_array().unwrap();
+    assert_eq!(layers.len(), 2, "the melody is gone again");
+    c.err(
+        "praxis_restore",
+        json!({"sound": s(&sound), "n": 7}),
+        "error",
+    );
+
+    // The same edit through praxis_edit on the project file (no take).
+    let project = at(&dir, "sounds/loop/project.praxis");
+    let e = c.ok(
+        "praxis_edit",
+        json!({"project": s(&project), "prompt": "make the kick a little softer", "provider": "offline"}),
+    );
+    assert_eq!(e["changed_layers"], json!(["kick"]));
+    // Two variations of the piano in bars 13-16, then keep the first as take 3.
+    // (The project edit above moved the sound past take 1, so restore first.)
+    c.ok("praxis_restore", json!({"sound": s(&sound), "n": 2}));
+    let vars = c.ok(
+        "praxis_variations",
+        json!({"sound": s(&sound), "bars": {"start": 13, "end": 16}, "layers": ["piano"], "n": 2}),
+    );
+    assert_eq!(vars["variations"].as_array().unwrap().len(), 2);
+    let kept = c.ok(
+        "praxis_keep_variation",
+        json!({"sound": s(&sound), "index": 1}),
+    );
+    assert_eq!(kept["take"]["n"], json!(3));
+    assert_eq!(kept["take"]["from"], json!(2));
+    assert_eq!(kept["take"]["changed"], json!({"piano": [13, 16]}));
 }

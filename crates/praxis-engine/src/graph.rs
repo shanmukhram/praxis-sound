@@ -54,7 +54,7 @@ pub struct ParamLane {
     pub lane: Lane,
     pub min: f64,
     pub max: f64,
-    last: Option<f32>,
+    pub(crate) last: Option<f32>,
 }
 
 impl ParamLane {
@@ -72,20 +72,20 @@ impl ParamLane {
 /// One layer of the graph.
 pub struct LayerNode {
     layer_id: String,
-    instrument: Box<dyn Instrument>,
-    seq: Sequencer,
-    chain: EffectChain,
+    pub(crate) instrument: Box<dyn Instrument>,
+    pub(crate) seq: Sequencer,
+    pub(crate) chain: EffectChain,
     gain_db: Lane,
     pan: Lane,
-    params: Vec<ParamLane>,
-    latency: u64,
+    pub(crate) params: Vec<ParamLane>,
+    pub(crate) latency: u64,
     key_only: bool,
     feeds: Vec<SidechainFeed>,
     sc_l: Vec<f32>,
     sc_r: Vec<f32>,
     out_l: Vec<f32>,
     out_r: Vec<f32>,
-    n: usize,
+    pub(crate) n: usize,
 }
 
 impl LayerNode {
@@ -264,12 +264,12 @@ impl LayerNode {
 
 /// All layers plus the master bus (sum and master effects; gain and limiter are in `master.rs`).
 pub struct Graph {
-    layers: Vec<LayerNode>,
+    pub(crate) layers: Vec<LayerNode>,
     order: Vec<usize>,
-    taps: Vec<Option<KeyTap>>,
-    master: EffectChain,
-    mix_l: Vec<f32>,
-    mix_r: Vec<f32>,
+    pub(crate) taps: Vec<Option<KeyTap>>,
+    pub(crate) master: EffectChain,
+    pub(crate) mix_l: Vec<f32>,
+    pub(crate) mix_r: Vec<f32>,
     max_block: usize,
     n: usize,
 }
@@ -358,13 +358,20 @@ impl Graph {
     /// Pre-rolls every latency-compensated layer over `[0, latency)`, keys first. Call once
     /// before the first block.
     pub fn preroll(&mut self) {
+        self.preroll_from(0);
+    }
+
+    /// [`Self::preroll`] for a graph that starts at grid time `start` instead of zero: every
+    /// latency-compensated layer runs its instrument over `[start, start + latency)`. The
+    /// sequencers must already be positioned at `start` (the real-time engine's seek).
+    pub(crate) fn preroll_from(&mut self, start: u64) {
         for oi in 0..self.order.len() {
             let i = self.order[oi];
-            let latency = self.layers[i].latency;
+            let end = start + self.layers[i].latency;
             let max = self.layers[i].out_l.len();
-            let mut t = 0u64;
-            while t < latency {
-                let n = ((latency - t) as usize).min(max);
+            let mut t = start;
+            while t < end {
+                let n = ((end - t) as usize).min(max);
                 let node = &mut self.layers[i];
                 node.run_instrument(t, n);
                 if let Some(tap) = self.taps[i].as_mut() {
@@ -381,6 +388,23 @@ impl Graph {
 
     /// Renders grid block `[grid_t, grid_t + n)`; `n <= max_block`.
     pub fn process_block(&mut self, grid_t: u64, n: usize) {
+        let n = self.process_layers(grid_t, n);
+        self.mix_l[..n].fill(0.0);
+        self.mix_r[..n].fill(0.0);
+        for l in &self.layers {
+            if l.key_only {
+                continue;
+            }
+            let (sl, sr) = l.output();
+            mixer::sum_into(&mut self.mix_l[..n], &mut self.mix_r[..n], sl, sr);
+        }
+        self.process_master_chain();
+    }
+
+    /// First part of [`Self::process_block`]: every layer (keys first) into its own output
+    /// buffer. Returns the block length actually processed. The real-time engine sums the layers
+    /// itself (live gain, mute and solo) and then calls [`Self::process_master_chain`].
+    pub(crate) fn process_layers(&mut self, grid_t: u64, n: usize) -> usize {
         let n = n.min(self.max_block);
         self.n = n;
         for oi in 0..self.order.len() {
@@ -393,15 +417,12 @@ impl Graph {
             }
             node.back(grid_t, &self.taps);
         }
-        self.mix_l[..n].fill(0.0);
-        self.mix_r[..n].fill(0.0);
-        for l in &self.layers {
-            if l.key_only {
-                continue;
-            }
-            let (sl, sr) = l.output();
-            mixer::sum_into(&mut self.mix_l[..n], &mut self.mix_r[..n], sl, sr);
-        }
+        n
+    }
+
+    /// Last part of [`Self::process_block`]: the master chain over the summed bus block.
+    pub(crate) fn process_master_chain(&mut self) {
+        let n = self.n;
         self.master
             .process(&mut self.mix_l[..n], &mut self.mix_r[..n]);
     }

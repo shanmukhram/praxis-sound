@@ -20,6 +20,8 @@ thiserror.workspace = true
 ureq = { workspace = true, optional = true }
 keyring = { workspace = true, optional = true }
 [dev-dependencies]
+# Render-level edit isolation tests (tests/edit_render_isolation.rs).
+praxis-engine.workspace = true
 
 [lints]
 workspace = true

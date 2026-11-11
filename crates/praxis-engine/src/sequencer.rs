@@ -26,9 +26,9 @@ pub enum SeqEventKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct SeqEvent {
+pub(crate) struct SeqEvent {
     /// Position within the period (loops) or absolute sample (one-shots).
-    pos: u64,
+    pub(crate) pos: u64,
     /// Number of whole periods between the note's cycle and the cycle the event sounds in.
     lag: u64,
     kind: SeqEventKind,
@@ -55,12 +55,12 @@ pub enum Delivered {
 /// Sorted event stream for one layer.
 #[derive(Clone, Debug)]
 pub struct Sequencer {
-    events: Vec<SeqEvent>,
+    pub(crate) events: Vec<SeqEvent>,
     notes: Vec<NoteTemplate>,
-    period: Option<u64>,
+    pub(crate) period: Option<u64>,
     min_lag: u64,
-    cycle: u64,
-    index: usize,
+    pub(crate) cycle: u64,
+    pub(crate) index: usize,
     /// Latest note-off position relative to the start of a note's own cycle (for tail planning).
     last_off: u64,
 }

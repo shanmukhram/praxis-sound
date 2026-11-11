@@ -49,14 +49,21 @@ With the MCP server (`praxis-mcp`):
 | `praxis_check` | Measure an existing render against its project. |
 | `praxis_analyze` | Measure any audio or video clip (tempo, key, loudness, onsets, seam). |
 | `praxis_export` | WAV 16/24/32f, FLAC 16/24, stems, or MIDI. |
-| `praxis_validate` | Validate a `.score.json`. |
-
-`praxis_edit` (scoped edits) and `praxis_variations` are not available yet. Until they land,
-edit by changing the plan and composing again with the same `seed` (see "Changing a sound").
+| `praxis_validate` | Validate a `.score.json` or a `.praxis` project's score. |
+| `praxis_edit` | Scoped edit of a project: an instruction (`prompt`) or an EditPlan you wrote (`plan`). |
+| `praxis_variations` | N alternates of some bars and layers, each rendered and checked; nothing committed. |
+| `praxis_ask` | Make a take in a sound's shared history: the brief on a new sound, then scoped edits. |
+| `praxis_takes` | A sound's takes, the current one, the live score; `revision` grows on every change. |
+| `praxis_restore` | Go back to take `n` (an undoable patch; no new take). |
+| `praxis_keep_variation` | Keep variation `index` of a sound as a new take. |
+| `praxis_open_view` | Show the person a panel view (overview, rhythm, notes, mix, export). |
 
 Without MCP, the CLI does the same with `--json`: `praxis generate --plan plan.json -o
 x.praxis --render x.wav --skip-missing --json`, `praxis check x.wav --score x.praxis --json`,
-`praxis presets --json`, `praxis schema --json` (the `plan` field), `praxis export-midi`.
+`praxis presets --json`, `praxis schema --json` (the `plan` field), `praxis export-midi`,
+`praxis edit x.praxis --prompt "..."`, `praxis variations x.praxis --bars 13-16 --layer piano`,
+`praxis ask <sound> "<text>" [--bars 13-16 --layer piano] [--who name]`, `praxis takes <sound>`,
+`praxis restore <sound> <n>`, `praxis keep-variation <sound> <i>`, `praxis open-view <sound> notes`.
 
 Every response is the CLI's JSON: `{"ok": true, "command": ..., ...payload}` or
 `{"ok": false, "command": ..., "error": {"code", "message", "issues"?}}` (MCP sets `isError`).
@@ -192,10 +199,42 @@ Pass `skip_missing: true`, or swap to an available preset from `praxis_presets`.
 
 ## Changing a sound
 
-Until `praxis_edit` exists: change only the part of the plan you mean to change, keep the same
-`seed`, and compose to a new project path. The arranger is a pure function of (plan, seed) and
-per-note randomness is keyed to each note, so with the same key, tempo and bars the untouched layers come out the same. To add a part,
-add a layer and list it in later sections only. Compare `score_summary` before and after.
+Edits change only what you scope; everything else stays as it was, down to the sample.
+
+- **A project file**: `praxis_edit {project, prompt}` ("change the last four bars to add a
+  subtle melody", "make the kick a little softer in bars 9-16", "thin out the piano in the second
+  half"). Or write the EditPlan yourself (`plan`; start from
+  `crates/praxis-planner/tests/prompts/edit_last_four_melody.plan.json`): `intent`,
+  `scope.phrase` or `scope.bars`, `scope.keep`, `layers` by id, `params`. The response gives the
+  `patch`, `changed_bars`, `changed_layers`, a plain `summary` and `refused` (locked layers are
+  never changed; say so if the person asked for one). The edit is undoable in the project.
+- **Alternates**: `praxis_variations {project|sound, bars, layers, n}` renders
+  `variations/<i>.wav` with checks for each; pick by the checks and the summary.
+- **Arrangement is layering**: prefer adding a layer in the bars to rewriting a part.
+
+## Working on a sound with the person (takes)
+
+A sound is a folder the person's app shows as a conversation: `project.praxis`, `takes.json`
+and `takes/<n>/mix.wav`. A bare name (`"rain loop"`) lives in
+`PRAXIS_HOME/sounds/<name>` (default `Documents/Praxis Sound/sounds/<name>`); a path is used as
+given. Your takes appear in the person's thread as "Agent · <your name>" (default: your MCP
+client's name; set `who` to choose).
+
+1. `praxis_takes {sound}` first: see what exists, which take is current, the layer ids.
+2. `praxis_ask {sound, text}` on a new sound makes take 1 from the brief. After that, `text` is a
+   change to the current take. To change exactly some bars of one layer, pass
+   `scope: {layer, bars: {start, end}}`: nothing outside it changes (a new layer inside those bars
+   is allowed); a request that would reach further is refused with `patch_rejected`.
+3. Read the take: `checks.passed` / `checks.failed`, `say` (what was done), `changed`
+   (`{layer: [from, to]}`), `untouched` and `identical_bars` (bars measured bit-identical to the
+   take before). The master gain is frozen after take 1, so untouched bars stay sample-identical
+   except where a changed layer's tail wraps round a loop.
+4. `praxis_open_view {sound, view: "notes"}` points the person at what you changed.
+5. `praxis_restore {sound, n}` goes back to a take (undoable). `praxis_variations {sound, ...}`
+   then `praxis_keep_variation {sound, index}` makes an alternate a take.
+
+Before acting on a sound, compare `revision` with what you saw last: the person (or another
+agent) may have made a take since.
 
 ## Worked example 1: the acceptance-1 loop
 
@@ -349,4 +388,6 @@ render once the preset lands. Say exactly that when you report it.
 (not a Score/project), `invalid_score` (plan or score fails validation; see `issues`),
 `bad_format` (unknown audio format), `render_failed`, `no_api_key` (praxis_generate with
 `provider: "claude"` and no key), `provider_failed`, `pack_missing` (install the pack or
-`skip_missing`), `decode_failed` (not audio), `patch_rejected`, `error`.
+`skip_missing`), `pack_verify_failed` (a pack archive does not match the index), `decode_failed`
+(not audio), `patch_rejected` (an edit, restore or kept variation cannot be applied: a locked
+layer, a scope it would leave, a stale variation; or an edit that changes nothing), `error`.

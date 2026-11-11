@@ -111,11 +111,29 @@ pub fn key(req: &KeyRequest) -> Result<Value, OpError> {
         }
         KeyAction::Clear => {
             require_keychain()?;
-            // The planner's helper stores a value; an empty value reads as "no key".
-            praxis_planner::claude::store_key_in_keychain("")
-                .map_err(|e| OpError::new(ErrorCode::Error, e.to_string()))?;
-            Ok(json!({ "cleared": true, "env_overrides": env_key().is_some() }))
+            let existed = delete_keychain_entry()?;
+            Ok(json!({
+                "cleared": true,
+                "existed": existed,
+                "env_overrides": env_key().is_some(),
+            }))
         }
+    }
+}
+
+/// Deletes the keychain entry (service `praxis-sound`, user `anthropic`). `Ok(false)` when there
+/// was none.
+fn delete_keychain_entry() -> Result<bool, OpError> {
+    use praxis_planner::claude::{KEYRING_SERVICE, KEYRING_USER};
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+        .map_err(|e| OpError::new(ErrorCode::Error, format!("keychain: {e}")))?;
+    match entry.delete_credential() {
+        Ok(()) => Ok(true),
+        Err(keyring::Error::NoEntry) => Ok(false),
+        Err(e) => Err(OpError::new(
+            ErrorCode::Error,
+            format!("could not delete the key from the keychain: {e}"),
+        )),
     }
 }
 

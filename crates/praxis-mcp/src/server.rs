@@ -4,8 +4,9 @@
 //! issues?}}`) as structured content. Failures set `isError` so the calling agent sees them.
 
 use crate::args::{
-    AnalyzeArgs, CheckArgs, ComposeArgs, Export, ExportArgs, GenerateArgs, NoArgs, PlanSchemaArgs,
-    RenderArgs, ValidateArgs, parse,
+    AnalyzeArgs, AskArgs, CheckArgs, ComposeArgs, EditArgs, Export, ExportArgs, GenerateArgs,
+    KeepVariationArgs, NoArgs, OpenViewArgs, PlanSchemaArgs, RenderArgs, RestoreArgs, TakesArgs,
+    ValidateArgs, VariationsArgs, parse,
 };
 use crate::guide;
 use praxis_cli::ops;
@@ -86,6 +87,16 @@ where
             .await;
     }
     tool_result(command, result)
+}
+
+/// Who a take is from when the agent does not say: `"Agent · <MCP client name>"`.
+pub fn client_who(peer: &Peer<RoleServer>) -> String {
+    let name = peer
+        .peer_info()
+        .map(|i| i.client_info.name.trim().to_string())
+        .filter(|n| !n.is_empty())
+        .unwrap_or_else(|| "mcp".to_string());
+    format!("Agent \u{b7} {name}")
 }
 
 /// The `praxis_plan_schema` payload: the ScorePlan schema, a how-to and a complete example.
@@ -271,8 +282,139 @@ impl PraxisServer {
     }
 
     #[tool(
+        name = "praxis_edit",
+        description = "Apply a scoped edit to a .praxis project (FR-7): `prompt` in words (\"change the last four bars to add a subtle melody\") or an EditPlan you wrote as `plan`. Only the bars and layers in the patch scope change; locked layers are never changed (listed in `refused`). Returns the patch, scope, changed_bars, changed_layers, a plain summary, and with `render` the checks. The edit is committed to the project's undo history. For a sound folder use praxis_ask instead, which also records a take.",
+        input_schema = input_schema::<EditArgs>(),
+        annotations(read_only_hint = false, destructive_hint = false, open_world_hint = true)
+    )]
+    async fn edit(
+        &self,
+        args: JsonObject,
+        meta: RequestMetaObject,
+        peer: Peer<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let req = match parse::<EditArgs>(args).and_then(|a| a.request()) {
+            Ok(r) => r,
+            Err(e) => return Ok(tool_result("edit", Err(e))),
+        };
+        Ok(run("edit", &meta, &peer, move || ops::edit(&req)).await)
+    }
+
+    #[tool(
+        name = "praxis_variations",
+        description = "Make N alternates (default 3) of a selection: `bars` and `layers` of a `project`, `score` or `sound`. Each is rendered to variations/<i>.wav next to the source and checked; nothing is committed. For a sound, keep one with praxis_keep_variation.",
+        input_schema = input_schema::<VariationsArgs>(),
+        annotations(read_only_hint = false, destructive_hint = false, open_world_hint = false)
+    )]
+    async fn variations(
+        &self,
+        args: JsonObject,
+        meta: RequestMetaObject,
+        peer: Peer<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let req = match parse::<VariationsArgs>(args).and_then(|a| a.request()) {
+            Ok(r) => r,
+            Err(e) => return Ok(tool_result("variations", Err(e))),
+        };
+        Ok(run("variations", &meta, &peer, move || ops::variations(&req)).await)
+    }
+
+    #[tool(
+        name = "praxis_ask",
+        description = "Make a take in a sound's shared history (the same thread the person sees in the app). On a new sound `text` is the brief (take 1); afterwards it is what to change, as a scoped edit of the current take. `scope` {layer, bars} holds the change to exactly those bars of that layer. Every take is rendered (takes/<n>/mix.wav), checked, and recorded with `changed` (bars per layer), `untouched` and `identical_bars` (bars measured bit-identical to the take before). The master gain is frozen after take 1, so untouched bars stay sample-identical.",
+        input_schema = input_schema::<AskArgs>(),
+        annotations(read_only_hint = false, destructive_hint = false, open_world_hint = true)
+    )]
+    async fn ask(
+        &self,
+        args: JsonObject,
+        meta: RequestMetaObject,
+        peer: Peer<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let who = client_who(&peer);
+        let req = match parse::<AskArgs>(args).and_then(|a| a.request(&who)) {
+            Ok(r) => r,
+            Err(e) => return Ok(tool_result("ask", Err(e))),
+        };
+        Ok(run("ask", &meta, &peer, move || ops::ask(&req)).await)
+    }
+
+    #[tool(
+        name = "praxis_takes",
+        description = "A sound's takes (who asked, what, the reply, what changed, the render path, the checks), the current take, the live score, the undo state and recent view requests. `revision` grows with every change, so compare it to see takes made by the person or other agents.",
+        input_schema = input_schema::<TakesArgs>(),
+        annotations(read_only_hint = true, open_world_hint = false)
+    )]
+    async fn takes(&self, args: JsonObject) -> Result<CallToolResult, ErrorData> {
+        let result = parse::<TakesArgs>(args).and_then(|a| ops::takes(&a.request()));
+        Ok(tool_result("takes", result))
+    }
+
+    #[tool(
+        name = "praxis_restore",
+        description = "Go back to take `n`: an undoable patch makes the score equal to that take again, and it becomes the current take (no new take is made).",
+        input_schema = input_schema::<RestoreArgs>(),
+        annotations(read_only_hint = false, destructive_hint = false, open_world_hint = false)
+    )]
+    async fn restore(
+        &self,
+        args: JsonObject,
+        meta: RequestMetaObject,
+        peer: Peer<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let req = match parse::<RestoreArgs>(args) {
+            Ok(a) => a.request(),
+            Err(e) => return Ok(tool_result("restore", Err(e))),
+        };
+        Ok(run("restore", &meta, &peer, move || ops::restore(&req)).await)
+    }
+
+    #[tool(
+        name = "praxis_keep_variation",
+        description = "Commit variation `index` from the sound's last praxis_variations run as a new take (rendered, checked and recorded like praxis_ask). Fails with patch_rejected when the sound changed since the variations were made.",
+        input_schema = input_schema::<KeepVariationArgs>(),
+        annotations(read_only_hint = false, destructive_hint = false, open_world_hint = false)
+    )]
+    async fn keep_variation(
+        &self,
+        args: JsonObject,
+        meta: RequestMetaObject,
+        peer: Peer<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let who = client_who(&peer);
+        let req = match parse::<KeepVariationArgs>(args) {
+            Ok(a) => a.request(&who),
+            Err(e) => return Ok(tool_result("keep-variation", Err(e))),
+        };
+        Ok(run("keep-variation", &meta, &peer, move || {
+            ops::keep_variation(&req)
+        })
+        .await)
+    }
+
+    #[tool(
+        name = "praxis_open_view",
+        description = "Ask the desktop app to show a panel view of the sound (overview, rhythm, notes, mix, export) to point the person at what you changed; the app shows \"<View> opened by <your name>\".",
+        input_schema = input_schema::<OpenViewArgs>(),
+        annotations(read_only_hint = false, destructive_hint = false, open_world_hint = false)
+    )]
+    async fn open_view(
+        &self,
+        args: JsonObject,
+        meta: RequestMetaObject,
+        peer: Peer<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let who = client_who(&peer);
+        let req = match parse::<OpenViewArgs>(args).and_then(|a| a.request(&who)) {
+            Ok(r) => r,
+            Err(e) => return Ok(tool_result("open-view", Err(e))),
+        };
+        Ok(run("open-view", &meta, &peer, move || ops::open_view(&req)).await)
+    }
+
+    #[tool(
         name = "praxis_validate",
-        description = "Validate a .score.json file: `valid`, `errors[]` and `warnings[]`, each issue with a code, a JSON pointer `path` and a message. Invalid scores fail with invalid_score and the errors under `error.issues`.",
+        description = "Validate a .score.json file or the score of a .praxis project: `valid`, `errors[]` and `warnings[]`, each issue with a code, a JSON pointer `path` and a message. Invalid scores fail with invalid_score and the errors under `error.issues`.",
         input_schema = input_schema::<ValidateArgs>(),
         annotations(read_only_hint = true, open_world_hint = false)
     )]

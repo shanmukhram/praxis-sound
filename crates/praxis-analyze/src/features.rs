@@ -7,6 +7,7 @@
 //! | Module | What it measures |
 //! | --- | --- |
 //! | [`stft`] | Hann-windowed short-time Fourier transform (realfft) |
+//! | [`attack`] | attack-start timing and swell rejection by linear prediction |
 //! | [`onset`] | log-magnitude spectral-flux onset envelope (10 ms hop) and peak-picked onsets |
 //! | [`tempo`] | tempo (60-200 BPM), beat tracking by dynamic programming, downbeat |
 //! | [`chroma`] | tuning-robust 12-bin chroma from a log-frequency mapping of the STFT |
@@ -14,6 +15,7 @@
 //! | [`loudness`] | BS.1770 integrated loudness, LRA, true peak (`ebur128`), sample peak, RMS |
 //! | [`seam`] | loop-seam continuity (sample jump, first-difference energy, spectral flux) |
 
+pub mod attack;
 pub mod chroma;
 pub mod key;
 pub mod loudness;
