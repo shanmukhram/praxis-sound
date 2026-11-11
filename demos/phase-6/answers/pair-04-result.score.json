@@ -1,0 +1,398 @@
+{
+  "schema_version": 1,
+  "title": "Made like the reference",
+  "seed": 7,
+  "meta": {
+    "emotion": "happy",
+    "intensity": 0.5,
+    "tags": [
+      "planned",
+      "matched"
+    ],
+    "reference_profiles": [
+      "mallet_bounce.wav"
+    ],
+    "provenance": {
+      "attempts": "0",
+      "matcher": "praxis-match 1",
+      "palette": "upright piano + sub bass",
+      "planner": "praxis-planner plan-v1",
+      "provider": "direct-plan",
+      "repairs": "0",
+      "seed": "7"
+    }
+  },
+  "tempo": {
+    "bpm": 103.99650000000001
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "Bb",
+    "mode": "major"
+  },
+  "bars": 9,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 4.0
+  },
+  "constraints": {
+    "avoid": [
+      "pad",
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "whoosh",
+      "fill"
+    ]
+  },
+  "sections": [
+    {
+      "id": "main",
+      "name": "Main",
+      "bars": {
+        "start": 1,
+        "end": 9
+      },
+      "role": "main",
+      "intensity": 0.5
+    }
+  ],
+  "patterns": [
+    {
+      "id": "lead_motif",
+      "grid": "quarter",
+      "length_steps": 8,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 77,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 1.6810566
+        },
+        {
+          "step": 1,
+          "pitch": 74,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.6810566
+        },
+        {
+          "step": 2,
+          "pitch": 70,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.6810566
+        },
+        {
+          "step": 3,
+          "pitch": 72,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.6810566
+        },
+        {
+          "step": 4,
+          "pitch": 74,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 1.6810566
+        },
+        {
+          "step": 5,
+          "pitch": 77,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.6810566
+        },
+        {
+          "step": 6,
+          "pitch": 79,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.6810566
+        },
+        {
+          "step": 7,
+          "pitch": 82,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.6810566
+        }
+      ],
+      "spoken": "din DON don DON"
+    },
+    {
+      "id": "bass_motif",
+      "grid": "quarter",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 1,
+          "pitch": 46,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 2,
+          "pitch": 46,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 3,
+          "pitch": 53,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 5,
+          "pitch": 50,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 6,
+          "pitch": 50,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 7,
+          "pitch": 45,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 9,
+          "pitch": 51,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 10,
+          "pitch": 51,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 11,
+          "pitch": 46,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 13,
+          "pitch": 41,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 14,
+          "pitch": 41,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 15,
+          "pitch": 48,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        }
+      ],
+      "spoken": "- DON don DON"
+    }
+  ],
+  "layers": [
+    {
+      "id": "lead",
+      "name": "upright piano",
+      "class": "motif",
+      "instrument": {
+        "kind": "sampler",
+        "preset": "upright_piano",
+        "params": {
+          "tone": 1.0
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 9
+          },
+          "pattern": "lead_motif",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "room",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 1.9158397550528186,
+            "mix": 0.3447779343774359,
+            "predelay_ms": 12.0,
+            "size": 0.34158397550528186
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "bass",
+      "name": "sub bass",
+      "class": "bass",
+      "instrument": {
+        "kind": "synth",
+        "preset": "sub_bass",
+        "params": {
+          "tone": 0.65
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 9
+          },
+          "pattern": "bass_motif",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": -6.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [
+      {
+        "id": "air",
+        "kind": "eq",
+        "params": {
+          "lp_hz": 22000.0
+        },
+        "bypass": false
+      },
+      {
+        "id": "width",
+        "kind": "width",
+        "params": {
+          "width": 1.1614835063519684
+        },
+        "bypass": false
+      }
+    ],
+    "loudness": {
+      "target_lufs": -15.187046715009004,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": [
+    {
+      "bars": {
+        "start": 1,
+        "end": 1
+      },
+      "beat": 0.0,
+      "symbol": "Bb"
+    },
+    {
+      "bars": {
+        "start": 2,
+        "end": 2
+      },
+      "beat": 0.0,
+      "symbol": "Dm"
+    },
+    {
+      "bars": {
+        "start": 3,
+        "end": 3
+      },
+      "beat": 0.0,
+      "symbol": "Eb"
+    },
+    {
+      "bars": {
+        "start": 4,
+        "end": 4
+      },
+      "beat": 0.0,
+      "symbol": "F"
+    },
+    {
+      "bars": {
+        "start": 5,
+        "end": 5
+      },
+      "beat": 0.0,
+      "symbol": "Bb"
+    },
+    {
+      "bars": {
+        "start": 6,
+        "end": 6
+      },
+      "beat": 0.0,
+      "symbol": "Dm"
+    },
+    {
+      "bars": {
+        "start": 7,
+        "end": 7
+      },
+      "beat": 0.0,
+      "symbol": "Eb"
+    },
+    {
+      "bars": {
+        "start": 8,
+        "end": 8
+      },
+      "beat": 0.0,
+      "symbol": "F"
+    },
+    {
+      "bars": {
+        "start": 9,
+        "end": 9
+      },
+      "beat": 0.0,
+      "symbol": "Bb"
+    }
+  ]
+}

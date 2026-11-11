@@ -110,6 +110,14 @@ pub fn step_words(tool: &str, input: &Value, score: Option<&Score>) -> String {
                 .unwrap_or(p);
             format!("Measuring {name}")
         }
+        "match_reference" => {
+            let p = s("path");
+            let name = std::path::Path::new(&p)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or(p);
+            format!("Making something like {name}")
+        }
         "ask_user" => "Asking you a question".into(),
         "discard_changes" => "Starting again from the current take".into(),
         other => format!("Running {other}"),
@@ -140,6 +148,11 @@ pub fn done_words(tool: &str, ok: bool, result: &Value, error: &str) -> String {
                 format!("Checking: {passed} of {total} passed, {cant} can't tell")
             }
         }
+        "match_reference" => format!(
+            "Made it: {} (similarity {:.2})",
+            result["made_with"].as_str().unwrap_or("a new sound"),
+            result["similarity"].as_f64().unwrap_or(0.0)
+        ),
         "make_variations" => format!(
             "Made {} variations",
             result["variations"].as_array().map_or(0, |v| v.len())

@@ -4,8 +4,6 @@
 //!
 //! This file only parses arguments. Every command is implemented once in `praxis_cli::ops`,
 //! which the MCP server (WP-X) calls too.
-//!
-//! Not here yet: `match` (WP-M).
 
 #![forbid(unsafe_code)]
 
@@ -195,6 +193,12 @@ enum Command {
         /// Include the take's full score in the output.
         #[arg(long)]
         include_score: bool,
+        /// A reference clip the request is about; "make something like this" runs the match loop.
+        #[arg(long, conflicts_with = "reference_library")]
+        reference: Option<PathBuf>,
+        /// A reference-library entry id instead of a clip.
+        #[arg(long)]
+        reference_library: Option<String>,
     },
     /// List a sound's takes, the current take and the live score.
     Takes {
@@ -243,6 +247,36 @@ enum Command {
     Library {
         #[command(subcommand)]
         action: LibraryCmd,
+    },
+    /// Make something like a reference clip: a new project with its character, refined by
+    /// rendering and measuring until the similarity stops improving (FR-14 to FR-18).
+    Match {
+        /// The reference clip (audio or video).
+        clip: PathBuf,
+        /// Mood brief, e.g. "melancholy".
+        #[arg(long)]
+        prompt: Option<String>,
+        /// Take the timbre from this second clip; the reference gives the groove.
+        #[arg(long)]
+        timbre: Option<PathBuf>,
+        #[arg(long)]
+        bars: Option<u32>,
+        /// Key, e.g. "A minor", "F#m", "Eb dorian".
+        #[arg(long)]
+        key: Option<String>,
+        #[arg(long)]
+        bpm: Option<f64>,
+        #[arg(long)]
+        seed: Option<u64>,
+        /// Most renders inside the match loop (default 40).
+        #[arg(long)]
+        max_iterations: Option<usize>,
+        /// Also render the result to this file and check it.
+        #[arg(long)]
+        render: Option<PathBuf>,
+        /// The new `.praxis` project.
+        #[arg(short, long)]
+        out: PathBuf,
     },
     /// Export a score (or project) as a Standard MIDI File.
     ExportMidi {
@@ -333,10 +367,31 @@ fn name(c: &Command) -> &'static str {
         Command::OpenView { .. } => "open-view",
         Command::Analyze { .. } => "analyze",
         Command::Library { .. } => "library",
+        Command::Match { .. } => "match",
         Command::ExportMidi { .. } => "export-midi",
         Command::Packs { .. } => "packs",
         Command::Presets => "presets",
         Command::Key { .. } => "key",
+    }
+}
+
+/// `--reference CLIP` or `--reference-library ID` as `ask`'s reference.
+fn reference_arg(clip: Option<PathBuf>, library: Option<String>) -> Option<ops::ReferenceArg> {
+    match (clip, library) {
+        (Some(c), _) => Some(ops::ReferenceArg {
+            name: c
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| c.display().to_string()),
+            clip: Some(c),
+            library_id: None,
+        }),
+        (None, Some(id)) => Some(ops::ReferenceArg {
+            name: id.clone(),
+            clip: None,
+            library_id: Some(id),
+        }),
+        (None, None) => None,
     }
 }
 
@@ -494,6 +549,8 @@ fn run(command: Command) -> Result<Value, OpError> {
             seed,
             skip_missing,
             include_score,
+            reference,
+            reference_library,
         } => {
             let mut agent = praxis_cli::agent::AgentConfig::default();
             if let Some(e) = effort {
@@ -554,6 +611,7 @@ fn run(command: Command) -> Result<Value, OpError> {
                     seed,
                     skip_missing,
                     include_score,
+                    reference: reference_arg(reference, reference_library),
                 },
                 &opts,
             )
@@ -621,6 +679,29 @@ fn run(command: Command) -> Result<Value, OpError> {
             };
             ops::library(&ops::LibraryRequest { action, dir: None })
         }
+        Command::Match {
+            clip,
+            prompt,
+            timbre,
+            bars,
+            key,
+            bpm,
+            seed,
+            max_iterations,
+            render,
+            out,
+        } => ops::match_clip(&ops::MatchClipRequest {
+            clip,
+            out,
+            prompt,
+            timbre,
+            bars,
+            key,
+            bpm,
+            seed,
+            max_iterations,
+            render,
+        }),
         Command::ExportMidi { input, out } => {
             ops::export_midi(&ops::ExportMidiRequest { input, out })
         }

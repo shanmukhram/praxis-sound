@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "title": "heavy_impact",
+  "seed": 21,
+  "meta": {
+    "tags": [
+      "reference-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {}
+  },
+  "tempo": {
+    "bpm": 120.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "bars": 2,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 1.5
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "fx",
+      "grid": "eighth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 45,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "fx",
+      "name": "fx",
+      "class": "impact",
+      "instrument": {
+        "kind": "sfx",
+        "preset": "impact",
+        "params": {
+          "brightness": 0.7,
+          "length": 0.35,
+          "pitch": 0.5,
+          "weight": 0.9
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 2
+          },
+          "pattern": "fx",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.1,
+      "effects": [
+        {
+          "id": "verb",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 2.5,
+            "mix": 0.3,
+            "predelay_ms": 20.0,
+            "size": 0.45
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -16.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

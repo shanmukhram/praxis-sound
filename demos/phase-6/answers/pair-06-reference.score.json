@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "title": "whoosh_by",
+  "seed": 21,
+  "meta": {
+    "tags": [
+      "reference-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {}
+  },
+  "tempo": {
+    "bpm": 120.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "bars": 2,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 1.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "fx",
+      "grid": "eighth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 57,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "fx",
+      "name": "fx",
+      "class": "whoosh",
+      "instrument": {
+        "kind": "sfx",
+        "preset": "whoosh",
+        "params": {
+          "brightness": 0.3,
+          "length": 0.75,
+          "pitch": 0.35,
+          "weight": 0.7
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 2
+          },
+          "pattern": "fx",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.1,
+      "effects": [
+        {
+          "id": "verb",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 1.0,
+            "mix": 0.2,
+            "predelay_ms": 20.0,
+            "size": 0.30000000000000004
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -18.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

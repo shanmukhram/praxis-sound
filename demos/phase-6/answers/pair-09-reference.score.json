@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "title": "low_drone",
+  "seed": 21,
+  "meta": {
+    "tags": [
+      "reference-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {}
+  },
+  "tempo": {
+    "bpm": 120.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "bars": 5,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 2.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "fx",
+      "grid": "quarter",
+      "length_steps": 20,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 50,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 18.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "fx",
+      "name": "fx",
+      "class": "drone",
+      "instrument": {
+        "kind": "sfx",
+        "preset": "drone",
+        "params": {
+          "brightness": 0.25,
+          "length": 0.4,
+          "pitch": 0.5,
+          "weight": 0.6
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 5
+          },
+          "pattern": "fx",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.1,
+      "effects": [
+        {
+          "id": "verb",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 3.0,
+            "mix": 0.25,
+            "predelay_ms": 20.0,
+            "size": 0.5
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -20.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

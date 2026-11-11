@@ -11,8 +11,12 @@ publish.workspace = true
 praxis-score.workspace = true
 praxis-dsp.workspace = true
 praxis-engine.workspace = true
-praxis-instruments.workspace = true
+# No pack installer (ureq, 7z): the matcher stays WebAssembly-safe.
+praxis-instruments = { workspace = true, default-features = false }
 praxis-analyze.workspace = true
+# The planner's validation, repairs and arranger turn the matched ScorePlan into a Score; without
+# the `claude` feature (no network, no keychain).
+praxis-planner = { workspace = true, default-features = false }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

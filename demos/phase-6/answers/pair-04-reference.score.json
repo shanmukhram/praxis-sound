@@ -1,0 +1,251 @@
+{
+  "schema_version": 1,
+  "title": "Reference: mallet bounce",
+  "seed": 14,
+  "meta": {
+    "tags": [
+      "reference-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {}
+  },
+  "tempo": {
+    "bpm": 104.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "Bb",
+    "mode": "major"
+  },
+  "bars": 8,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 2.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "tune",
+      "grid": "eighth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 70,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.2
+        },
+        {
+          "step": 1,
+          "pitch": 74,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.2,
+          "offset": 0.17
+        },
+        {
+          "step": 2,
+          "pitch": 77,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.2
+        },
+        {
+          "step": 3,
+          "pitch": 74,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.2,
+          "offset": 0.17
+        },
+        {
+          "step": 4,
+          "pitch": 75,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.2
+        },
+        {
+          "step": 6,
+          "pitch": 74,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 1.2
+        },
+        {
+          "step": 7,
+          "pitch": 72,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.2,
+          "offset": 0.17
+        },
+        {
+          "step": 8,
+          "pitch": 70,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.2
+        },
+        {
+          "step": 10,
+          "pitch": 67,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 1.2
+        },
+        {
+          "step": 11,
+          "pitch": 69,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.2,
+          "offset": 0.17
+        },
+        {
+          "step": 12,
+          "pitch": 70,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 2.5
+        }
+      ]
+    },
+    {
+      "id": "kick",
+      "grid": "sixteenth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 36,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 4,
+          "pitch": 36,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 8,
+          "pitch": 36,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 12,
+          "pitch": 36,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "tune",
+      "name": "tune",
+      "class": "motif",
+      "instrument": {
+        "kind": "synth",
+        "preset": "mallet",
+        "params": {
+          "tone": 0.55
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "tune",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": -0.2,
+      "effects": [
+        {
+          "id": "chorus",
+          "kind": "chorus",
+          "params": {
+            "depth_ms": 2.0,
+            "mix": 0.25,
+            "rate_hz": 0.6
+          },
+          "bypass": false
+        },
+        {
+          "id": "verb",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 1.2,
+            "mix": 0.18,
+            "predelay_ms": 20.0,
+            "size": 0.32
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "kick",
+      "name": "kick",
+      "class": "drums",
+      "instrument": {
+        "kind": "drum",
+        "preset": "soft_kick",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "kick",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": -3.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -15.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

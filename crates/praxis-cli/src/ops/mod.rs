@@ -19,6 +19,7 @@ pub mod generate;
 pub mod history;
 pub mod key;
 pub mod library;
+pub mod r#match;
 pub mod midi;
 pub mod packs;
 pub mod presets;
@@ -36,6 +37,7 @@ pub use generate::{GenerateRequest, ProviderChoice, generate};
 pub use history::{HistoryAction, UndoRedoRequest, undo_redo};
 pub use key::{KeyAction, KeyRequest, key};
 pub use library::{LibraryAction, LibraryRequest, library};
+pub use r#match::{MatchClipRequest, match_clip};
 pub use midi::{ExportMidiRequest, export_midi};
 pub use packs::{PacksInstallRequest, packs_install, packs_list};
 pub use presets::presets;
@@ -43,8 +45,8 @@ pub use render::{RenderRequest, RenderSettings, render};
 pub use schema::{SchemaRequest, schema};
 pub use sound::{TakeRecord, TakeScope, ViewName, praxis_home, resolve_sound};
 pub use takes::{
-    AskOptions, AskRequest, KeepVariationRequest, OpenViewRequest, RestoreRequest, TakesRequest,
-    ask, ask_with, keep_variation, open_view, restore, takes,
+    AskOptions, AskRequest, KeepVariationRequest, OpenViewRequest, ReferenceArg, RestoreRequest,
+    TakesRequest, ask, ask_with, keep_variation, open_view, restore, takes,
 };
 pub use validate::{ValidateRequest, validate};
 pub use variations::{VariationsRequest, variations};

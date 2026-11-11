@@ -1,0 +1,618 @@
+{
+  "schema_version": 1,
+  "title": "Made like the reference",
+  "seed": 7,
+  "meta": {
+    "emotion": "tense",
+    "intensity": 0.5,
+    "tags": [
+      "planned",
+      "matched"
+    ],
+    "reference_profiles": [
+      "bell_arp.wav"
+    ],
+    "provenance": {
+      "attempts": "0",
+      "matcher": "praxis-match 1",
+      "palette": "pluck + warm bass",
+      "planner": "praxis-planner plan-v1",
+      "provider": "direct-plan",
+      "repairs": "0",
+      "seed": "7"
+    }
+  },
+  "tempo": {
+    "bpm": 128.0105
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "F#",
+    "mode": "minor"
+  },
+  "bars": 12,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 4.0
+  },
+  "constraints": {
+    "avoid": [
+      "pad",
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "whoosh",
+      "fill"
+    ]
+  },
+  "sections": [
+    {
+      "id": "main",
+      "name": "Main",
+      "bars": {
+        "start": 1,
+        "end": 12
+      },
+      "role": "main",
+      "intensity": 0.5
+    }
+  ],
+  "patterns": [
+    {
+      "id": "lead_motif",
+      "grid": "sixteenth",
+      "length_steps": 32,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 61,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 6.0
+        },
+        {
+          "step": 1,
+          "pitch": 57,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 2,
+          "pitch": 54,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 3,
+          "pitch": 56,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 4,
+          "pitch": 57,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 6.0
+        },
+        {
+          "step": 5,
+          "pitch": 61,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 6,
+          "pitch": 62,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 7,
+          "pitch": 66,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 8,
+          "pitch": 61,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 6.0
+        },
+        {
+          "step": 9,
+          "pitch": 57,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 10,
+          "pitch": 54,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 11,
+          "pitch": 56,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 12,
+          "pitch": 57,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 6.0
+        },
+        {
+          "step": 13,
+          "pitch": 61,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 14,
+          "pitch": 62,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 15,
+          "pitch": 66,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 16,
+          "pitch": 61,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 6.0
+        },
+        {
+          "step": 17,
+          "pitch": 57,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 18,
+          "pitch": 54,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 19,
+          "pitch": 56,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 20,
+          "pitch": 57,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 6.0
+        },
+        {
+          "step": 21,
+          "pitch": 61,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 22,
+          "pitch": 62,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 23,
+          "pitch": 66,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 24,
+          "pitch": 61,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 6.0
+        },
+        {
+          "step": 25,
+          "pitch": 57,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 26,
+          "pitch": 54,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 27,
+          "pitch": 56,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 28,
+          "pitch": 57,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 6.0
+        },
+        {
+          "step": 29,
+          "pitch": 61,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 30,
+          "pitch": 62,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        },
+        {
+          "step": 31,
+          "pitch": 66,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 6.0
+        }
+      ],
+      "spoken": "DON din din din don din din din don din din din don din din din"
+    },
+    {
+      "id": "bass_motif",
+      "grid": "sixteenth",
+      "length_steps": 64,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 42,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 4,
+          "pitch": 42,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 8,
+          "pitch": 49,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 12,
+          "pitch": 42,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 16,
+          "pitch": 40,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 20,
+          "pitch": 40,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 24,
+          "pitch": 47,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 28,
+          "pitch": 40,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 32,
+          "pitch": 38,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 36,
+          "pitch": 38,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 40,
+          "pitch": 45,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 44,
+          "pitch": 38,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 48,
+          "pitch": 37,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 52,
+          "pitch": 37,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 56,
+          "pitch": 44,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 60,
+          "pitch": 37,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        }
+      ],
+      "spoken": "DON - - - don - - - don - - - don - - -"
+    }
+  ],
+  "layers": [
+    {
+      "id": "lead",
+      "name": "pluck",
+      "class": "motif",
+      "instrument": {
+        "kind": "synth",
+        "preset": "pluck",
+        "params": {
+          "tone": 0.0
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 12
+          },
+          "pattern": "lead_motif",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "room",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 3.5122177600860596,
+            "mix": 0.6,
+            "predelay_ms": 12.0,
+            "size": 0.501221776008606
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "bass",
+      "name": "warm bass",
+      "class": "bass",
+      "instrument": {
+        "kind": "synth",
+        "preset": "warm_bass",
+        "params": {
+          "tone": 0.2
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 12
+          },
+          "pattern": "bass_motif",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": -6.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [
+      {
+        "id": "air",
+        "kind": "eq",
+        "params": {
+          "lp_hz": 5744.562646538028
+        },
+        "bypass": false
+      },
+      {
+        "id": "width",
+        "kind": "width",
+        "params": {
+          "width": 0.5520278359955508
+        },
+        "bypass": false
+      }
+    ],
+    "loudness": {
+      "target_lufs": -16.01961368892347,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": [
+    {
+      "bars": {
+        "start": 1,
+        "end": 1
+      },
+      "beat": 0.0,
+      "symbol": "F#m"
+    },
+    {
+      "bars": {
+        "start": 2,
+        "end": 2
+      },
+      "beat": 0.0,
+      "symbol": "E"
+    },
+    {
+      "bars": {
+        "start": 3,
+        "end": 3
+      },
+      "beat": 0.0,
+      "symbol": "D"
+    },
+    {
+      "bars": {
+        "start": 4,
+        "end": 4
+      },
+      "beat": 0.0,
+      "symbol": "C#m"
+    },
+    {
+      "bars": {
+        "start": 5,
+        "end": 5
+      },
+      "beat": 0.0,
+      "symbol": "F#m"
+    },
+    {
+      "bars": {
+        "start": 6,
+        "end": 6
+      },
+      "beat": 0.0,
+      "symbol": "E"
+    },
+    {
+      "bars": {
+        "start": 7,
+        "end": 7
+      },
+      "beat": 0.0,
+      "symbol": "D"
+    },
+    {
+      "bars": {
+        "start": 8,
+        "end": 8
+      },
+      "beat": 0.0,
+      "symbol": "C#m"
+    },
+    {
+      "bars": {
+        "start": 9,
+        "end": 9
+      },
+      "beat": 0.0,
+      "symbol": "F#m"
+    },
+    {
+      "bars": {
+        "start": 10,
+        "end": 10
+      },
+      "beat": 0.0,
+      "symbol": "E"
+    },
+    {
+      "bars": {
+        "start": 11,
+        "end": 11
+      },
+      "beat": 0.0,
+      "symbol": "D"
+    },
+    {
+      "bars": {
+        "start": 12,
+        "end": 12
+      },
+      "beat": 0.0,
+      "symbol": "C#m"
+    }
+  ]
+}

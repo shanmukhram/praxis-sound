@@ -53,6 +53,7 @@ fn ask(sound: &str, text: &str, scope: Option<TakeScope>) -> ops::AskRequest {
         seed: None,
         skip_missing: false,
         include_score: false,
+        reference: None,
     }
 }
 

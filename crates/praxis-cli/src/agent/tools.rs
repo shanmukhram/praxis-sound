@@ -2,7 +2,7 @@
 //!
 //! Every schema is strict (`strict: true`, `additionalProperties: false`, every property
 //! required). The API allows at most 20 strict tools, 24 optional parameters and 16 union-typed
-//! parameters per request, so the table has 17 tools, no optional and no union parameters:
+//! parameters per request, so the table has 18 tools, no optional and no union parameters:
 //! "none" is said with an empty string or a 0. The three large documents (a ScorePlan, an
 //! EditPlan, a ScorePatch) travel as JSON text and are checked by the same code the CLI and MCP
 //! use (`compose_plan`, `compose_edit`, `apply`), whose errors point into the document; their
@@ -228,6 +228,42 @@ pub fn definitions() -> Vec<Value> {
             object(&[("path", string("The file's path."))]),
         ),
         tool(
+            "match_reference",
+            "Make something like a reference clip the person dropped (\"make something like \
+             this\"): the clip is measured (its audio is never used), a new sound with the same \
+             character is composed into the draft, rendered and refined until the similarity \
+             stops improving, and checked for originality (never the reference's melody). \
+             Replaces every layer that is not locked, like compose_sound. Mix and match: \
+             `timbre_path` takes the instruments and tone from a second clip, `mood` the \
+             feeling from words. Takes tens of seconds.",
+            object(&[
+                (
+                    "path",
+                    string("The reference clip's path, or \"library:<id>\" for a saved style."),
+                ),
+                (
+                    "timbre_path",
+                    string("A second clip to take the timbre from, or \"\" for none."),
+                ),
+                (
+                    "mood",
+                    string("Mood words, e.g. \"melancholy\", or \"\" to keep the clip's."),
+                ),
+                (
+                    "key",
+                    string("Key, e.g. \"A minor\" or \"F#m\", or \"\" for the clip's."),
+                ),
+                (
+                    "bpm",
+                    integer("Tempo in BPM (40-220), or 0 for the clip's."),
+                ),
+                (
+                    "bars",
+                    integer("Length in bars (music), or 0 for the clip's length."),
+                ),
+            ]),
+        ),
+        tool(
             "ask_user",
             "Ask the person one short clarifying question when the request could mean very \
              different things. Your turn ends at once and no take is made; their answer comes as \
@@ -398,6 +434,7 @@ pub(crate) fn run(name: &str, input: &Value, ctx: &mut ToolCtx) -> ToolResult {
             Ok(v) => ToolResult::ok(v),
             Err(e) => ToolResult::fail(err_text(&e)),
         },
+        "match_reference" => match_reference(ctx.draft, input),
         "ask_user" => {
             let q = s("question");
             if q.trim().is_empty() {
@@ -1039,6 +1076,92 @@ fn open_view(draft: &mut Draft, view: &str) -> ToolResult {
     }) {
         Ok(v) => ToolResult::ok(json!({"opened": v["view"], "take": v["take"]})),
         Err(e) => ToolResult::fail(err_text(&e)),
+    }
+}
+
+/// `match_reference`: the matcher's result becomes the draft's sound (FR-14 to FR-18).
+fn match_reference(draft: &mut Draft, input: &Value) -> ToolResult {
+    if let Some(why) = draft.frozen() {
+        return ToolResult::fail(why);
+    }
+    let text = |k: &str| {
+        let v = input[k].as_str().unwrap_or("").trim();
+        (!v.is_empty()).then(|| v.to_string())
+    };
+    let number = |k: &str| input[k].as_i64().filter(|n| *n > 0);
+    let Some(path) = text("path") else {
+        return ToolResult::fail("`path` is empty: give the reference clip's path");
+    };
+    let req = ops::MatchClipRequest {
+        clip: path.clone().into(),
+        out: std::path::PathBuf::new(),
+        prompt: text("mood"),
+        timbre: text("timbre_path").map(Into::into),
+        bars: number("bars").map(|n| n.min(512) as u32),
+        key: text("key"),
+        bpm: number("bpm").map(|n| n as f64),
+        seed: Some(draft.seed),
+        max_iterations: None,
+        render: None,
+    };
+    let result = match path.strip_prefix("library:") {
+        Some(id) => {
+            let r = ops::takes::ReferenceArg {
+                name: id.to_string(),
+                clip: None,
+                library_id: Some(id.to_string()),
+            };
+            ops::takes::load_reference(&r).and_then(|p| {
+                let timbre = req
+                    .timbre
+                    .as_deref()
+                    .map(|t| ops::analyze::profile_clip(t, 4).map(|x| x.0))
+                    .transpose()?;
+                let key = match req.key.as_deref() {
+                    Some(k) => Some(praxis_match::parse_key(k).ok_or_else(|| {
+                        OpError::new(
+                            crate::error::ErrorCode::Error,
+                            format!("cannot read the key `{k}`"),
+                        )
+                    })?),
+                    None => None,
+                };
+                ops::r#match::matched_profiles(p, timbre, key, &req)
+            })
+        }
+        None => ops::r#match::matched(&req),
+    };
+    let (request, out) = match result {
+        Ok(r) => r,
+        Err(e) => return ToolResult::fail(err_text(&e)),
+    };
+    let reference = request.reference.source.file_name.clone();
+    let summary = format!(
+        "Made like {reference}: {} (similarity {:.2})",
+        out.made_with, out.similarity
+    );
+    let new = NewSound {
+        summary: summary.clone(),
+        repairs: json!([]),
+    };
+    let trace: Vec<Value> = out
+        .iterations
+        .iter()
+        .map(|it| json!([it.stage, (it.similarity * 1000.0).round() / 1000.0]))
+        .collect();
+    match draft.replace(out.score.clone(), new) {
+        Ok(score) => ToolResult::ok(json!({
+            "summary": summary,
+            "kind": out.kind,
+            "made_with": out.made_with,
+            "similarity": out.similarity,
+            "similarities": out.similarities,
+            "iterations": trace,
+            "originality": out.originality,
+            "notes": out.notes,
+            "score": detailed_summary(score),
+        })),
+        Err(e) => ToolResult::fail(e),
     }
 }
 

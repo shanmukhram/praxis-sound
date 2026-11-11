@@ -20,7 +20,7 @@ the JSON payloads below only gain fields, never lose or rename them.
 | `analyze <clip> [-o profile.json] [--beats-per-bar N]` | audio/video file | the complete Sound Profile (see "Sound Profile and library") |
 | `library add <clip\|profile.json> [--name N] [--tag T]... \| list \| show <id> \| tag <id> [--add T]... [--remove T]... \| remove <id>` | clip, profile or id | see "Sound Profile and library" |
 | `check <wav> --score <score>` | render + score | `VerifyReport` (`checks[], tempo_bpm, key, grid_deviation_ms, onsets_on_grid, integrated_lufs, true_peak_dbtp, seam_*`) and `passed` |
-| `match <clip> [--prompt TEXT] [--bars N] [--key K] [--bpm N] -o project.praxis` | reference clip | `project, similarity, iterations[], originality` |
+| `match <clip> [--prompt TEXT] [--timbre CLIP] [--bars N] [--key K] [--bpm N] [--seed N] [--max-iterations N] [--render out.wav] -o project.praxis` | reference clip | `project, similarity, iterations[], originality` (see "Match (WP-M)") |
 | `export-midi <score\|project> -o out.mid` | score | `output, tracks` |
 | `packs list\|install <name>` | - | `packs[]` / `installed` |
 | `key set\|clear\|status` | key on stdin only (set) | `stored` / `cleared` / `available, source` |
@@ -44,7 +44,7 @@ Edits, variations and the shared take history (ADR-0011). Library functions in
 | --- | --- | --- |
 | `edit <project> (--prompt TEXT [--provider offline\|claude] [--model M] \| --plan FILE\|-) [--seed N] [--render out.wav]` | project + instruction, or an EditPlan | `project, changed, patch, scope, changed_bars ([from, to] or null), changed_layers[], changed_by_layer{layer: [from, to]}, summary, refused[], new_layers[], plan, provider, provider_note, attempts, rounds, repairs, seed, can_undo, render?` |
 | `variations (<project\|score> \| --sound S) [--bars A-B] [--layer ID]... [-n N] [--seed N] [--out-dir DIR]` | a selection | `source, out_dir, file, scope, seed, base_seq, base_take, passed, variations[{index (1-based), seed, summary, patch, changed_bars, changed_layers, changed_by_layer, render}]` |
-| `ask <sound> <text> [--bars A-B --layer ID] [--who NAME] [--patch FILE\|-] [--title T] [--provider ...] [--seed N] [--skip-missing] [--include-score]` | a request | `sound, project, revision, current, take, score_summary, can_undo, can_redo, provider_note, edit?{refused, new_layers, plan, changed_bars, attempts, repairs}, repairs? (take 1)` |
+| `ask <sound> <text> [--bars A-B --layer ID] [--who NAME] [--patch FILE\|-] [--title T] [--provider ...] [--seed N] [--skip-missing] [--include-score] [--reference CLIP \| --reference-library ID]` | a request | `sound, project, revision, current, take, score_summary, can_undo, can_redo, provider_note, edit?{refused, new_layers, plan, changed_bars, attempts, repairs}, repairs? (take 1)` |
 | `takes <sound> [--include-scores]` | - | `sound, project, revision, current, takes[], score (live, or null), can_undo, can_redo, views[]` |
 | `restore <sound> <n>` | - | `sound, project, revision, current, take, restored, patch, score_summary, can_undo, can_redo` |
 | `keep-variation <sound> <index> [--who NAME] [--skip-missing]` | - | as `ask`, plus `variation` |
@@ -157,7 +157,9 @@ that sees a new revision finds the project and audio it refers to. Writers take 
   holding the change's audible tail are left out). Each existing layer the take did not change is listed
   ("Soft kick unchanged.").
 - `provider`: the planner that answered, `hand` for an explicit patch, `variation` for a kept
-  variation. `seed`: defaults to the take number.
+  variation, `match` for a take the match loop made. `seed`: defaults to the take number.
+- `reference`: `{name, clip?, library_id?}` when the request came with a reference (omitted
+  otherwise).
 - `opens` / `scope`: omitted when absent.
 - `views[]` in `takes.json`: `{revision, view, by, take}`; `by` is `"Praxis"` for the person's
   own request, else the agent's name.
@@ -190,6 +192,22 @@ that sees a new revision finds the project and audio it refers to. Writers take 
 - An edit that changes nothing fails with `patch_rejected` (its summary is the message) and
   makes no take. The new take is rendered to `takes/<n>/mix.wav`, checked, saved as version
   `take-<n>` and becomes `current`.
+
+- **Reference** (`AskRequest.reference: Option<ReferenceArg {name, clip?, library_id?}>`,
+  CLI `--reference CLIP` / `--reference-library ID`, MCP `praxis_ask` `reference {name, clip?,
+  library_id?}`): a dropped clip (measured with `analyze`'s code) or a library style. When the
+  words ask for something like it ("like this", "something like", "similar", "in the style of",
+  "same vibe/feel/style/character", "match this/it", or no words at all) the request runs the
+  match loop (no model): on a new sound it makes take 1, on a sound with takes the matched sound
+  replaces the current one as one undoable patch (locked layers refuse it); the take's
+  `provider` is `match`, its `say` names the result and its similarity, the words are the mood.
+  Otherwise the reference goes along: the planner reads the brief followed by `Reference
+  "<name>": <analyze summary>. Around <bpm> BPM in <key>.` (new sounds), and the assistant's turn
+  starts with a synthetic `analyze_clip` call (`input.path` is the clip or `library:<id>`) whose
+  result is `{reference, profile}`, the profile trimmed to under 3 kB (no `pitch.midi`,
+  `envelope.frames_db`, `spectral.centroid_track_hz`, `onsets_s`, `tempo.beats_s` or `features`;
+  floats to three decimals; `summary` added). The take records `reference`. Plain words that
+  mention a clip are still accepted without the field.
 
 ### `restore`, `keep_variation`, `open_view`
 
@@ -325,3 +343,27 @@ MCP: `praxis_analyze {clip, out?, beats_per_bar?}` returns the analyze payload;
 `praxis_library {action: add|list|show|tag|remove, input?, name?, tags?, id?, add?, remove?,
 beats_per_bar?}` mirrors the CLI (same payloads; a missing `input` or `id` fails with
 `bad_json`).
+
+## Match (WP-M)
+
+`ops::match_clip(MatchClipRequest {clip, out, prompt?, timbre?, bars?, key?, bpm?, seed?,
+max_iterations?, render?})`; CLI `match`; MCP `praxis_match {clip, project, prompt?, timbre?,
+bars?, key?, bpm?, seed?, max_iterations?, render?}` (same payload). The clip (and `timbre`) is
+measured with `analyze`'s code and dropped: only its Sound Profile reaches the matcher
+(docs/contracts/sound-profile.md, "Matching"). `key` is free text ("A minor", "F#m", "Eb
+dorian"); `bars` 1-512, `bpm` 40-220, `max_iterations` 10-200 (default 40), `seed` default 0.
+
+Payload: `project, similarity, iterations[] {n, stage, tried, similarity, best, accepted},
+originality {passed, melodic_similarity, rhythmic_similarity, reason, reference},
+originality_attempts, kind (music|sfx|ambience), made_with, similarities[] {reference, role,
+similarity}, params{}, notes[], reference {file_name, duration_s, kind, tempo_bpm, key},
+score_summary, render?` (the `render` payload with its checks when `--render` is given).
+
+Errors: a missing clip `io`; an unreadable clip `decode_failed`; an unreadable key or a value out
+of range `error`; every attempt too close to the reference's melody `error` ("every attempt was
+too close to the reference's melody: ..."); a render failure `render_failed` / `pack_missing`.
+
+The assistant's tool `match_reference {path, timbre_path, mood, key, bpm, bars}` (`""` / `0` for
+none; `path` may be `library:<id>`) runs the same matcher and puts the result in the draft like
+`compose_sound` (every unlocked layer replaced); its result has `summary, kind, made_with,
+similarity, similarities, iterations [[stage, similarity], ...], originality, notes, score`.

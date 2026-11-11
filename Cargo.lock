@@ -3801,6 +3801,7 @@ dependencies = [
  "praxis-dsp",
  "praxis-engine",
  "praxis-instruments",
+ "praxis-planner",
  "praxis-score",
  "serde",
  "serde_json",
