@@ -2,7 +2,7 @@
 
 Updated after every merge. Newest first. Branch: `build/integration` (pushed to `origin`).
 
-## Current phase: 4 (Phases 0-3 closed; Phase 3 signed off by the owner 2026-11-11). Next: the assistant's live run
+## Current phase: 5-8 in progress (Phases 0-4 closed 2026-11-11)
 
 Wave 1 (WP-A, B1, B2, C1, D1, E, F, P) runs as background agents in worktrees. From wave 2 on,
 work packages run as visible sessions (owner's choice), briefed from `docs/briefs/`. WP-X (MCP
@@ -36,6 +36,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- **Phase 4 closed.** Merged WP-P4 live planner quality (41274f1, 7c6c4f0): quality lints and unrequested-layer / layer-bars issues go back to the model in the repair loop (never rejecting a valid plan), restraint rules in the system and edit prompts, prompt caching and per-call cost in ClaudeProvider, fair suite checks (emotion synonyms, normalised spoken rhythms, "make it pop" may be a note-preserving brighter tone). Live through Claude: briefs 27/27 and edits 20/20, in both runs, US$1.09 + US$1.20. Exit: acceptance 1 from one prompt (all six phrasings, live and offline), "change the last four bars" keeps bars 1-12 (edit suite and render-level isolation test), prompt suite passes. Rerun here offline: planner tests, acceptance 1, agent and takes tests, clippy, wasm. Note: the model sometimes wraps its plan in {"parameters": ...}, costing a repair round; WP-P3 unwraps it.
 
 - Second live run (docs/agents/live-run-results.md): the assistant's 11 requests all right (about $0.51); its take replies fell back to change summaries, fixed by the WP-AG2 follow-up (ffe1ce5, merged) and confirmed live. The one-shot Claude planner had never worked live (strict schema `oneOf`, then grammar too large); fixed in efbdedd. Live planner suites: briefs 15/27 (all 6 acceptance-1 phrasings pass), edits 19/20 (last-four-bars isolation passes). Phase 4 not closed: unrequested layers, isolated notes not fed back to the model, layers not playing throughout, plus suite expectations too strict for a model (synonyms, padded rhythms).
 
