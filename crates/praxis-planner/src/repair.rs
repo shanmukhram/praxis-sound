@@ -378,8 +378,12 @@ pub fn fix_plan(plan: &ScorePlan, ctx: &PlanContext) -> (ScorePlan, Vec<Repair>)
     }
 
     fix_layers(&mut p, ctx, bars, &mut f);
-    fix_sections(&mut p, bars, &mut f);
+    // With a form the sections are derived from it (crate::scoring::realise).
+    if p.form.is_empty() {
+        fix_sections(&mut p, bars, &mut f);
+    }
     fix_chords(&mut p, bars, &mut f);
+    f.repairs.extend(crate::scoring::fix(&mut p, bars));
     (p, f.repairs)
 }
 

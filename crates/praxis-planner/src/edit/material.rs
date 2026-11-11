@@ -133,6 +133,10 @@ pub fn build(
         chords: plan_chords(score, bars),
         notes: vec![],
         requested: requested.iter().copied().collect(),
+        form: vec![],
+        hits: vec![],
+        progression: None,
+        tempo_range: None,
     };
     let ctx = PlanContext {
         catalogue,

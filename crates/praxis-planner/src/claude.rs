@@ -523,7 +523,8 @@ fn api_error(status: u16, body: &str) -> String {
 }
 
 /// Wrapper keys a model sometimes puts around a whole tool input.
-const WRAPPER_KEYS: [&str; 3] = ["parameters", "input", "arguments"];
+/// "args" was seen in the WP-P3 live run of 2026-11-12 (a scored cue).
+const WRAPPER_KEYS: [&str; 4] = ["parameters", "input", "arguments", "args"];
 
 /// Removes a wrapper a model put around the whole tool input. In the live runs of 2026-11-11 the
 /// planner answered `{"parameters": {...the plan...}}` in about one brief in six, which cost a
@@ -683,6 +684,10 @@ mod tests {
         );
         assert_eq!(
             unwrap_tool_input(json!({"input": plan.to_string()}), &schema),
+            plan
+        );
+        assert_eq!(
+            unwrap_tool_input(json!({"args": plan.clone()}), &schema),
             plan
         );
         // Unchanged: a plain plan, an unknown wrapper, a wrapper beside other fields, a wrapped

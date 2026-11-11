@@ -1,0 +1,52 @@
+{
+  "brief": "A 2-minute tense cue in D minor: intro, build, peak and release, with hits at 0:42, 1:05 and 1:38. A felt piano motif, a warm bass and a soft kick. No risers.",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "D",
+      "mode": "minor"
+    },
+    "emotion": "tense",
+    "layer_count": 3,
+    "layers": [
+      {
+        "preset": "felt_piano"
+      },
+      {
+        "preset": "warm_bass"
+      },
+      {
+        "preset": "soft_kick"
+      }
+    ],
+    "section_roles": [
+      "intro",
+      "build",
+      "peak",
+      "release"
+    ],
+    "hits": 3,
+    "hits_within_ms": 20,
+    "duration_within": [
+      120,
+      2.0
+    ],
+    "bpm_range": [
+      88,
+      120
+    ],
+    "layers_enter_in_order": true,
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ],
+    "avoid_contains": [
+      "riser"
+    ]
+  }
+}

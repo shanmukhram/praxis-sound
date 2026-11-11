@@ -1548,6 +1548,11 @@ fn resolve_preset(f: &Family, mentions: &[Mention]) -> String {
 pub fn parse_brief(brief: &str, catalogue: &Catalogue, seed: u64) -> ScorePlan {
     let mut notes: Vec<String> = Vec::new();
     let norm = normalize(brief);
+    // Scoring depth (crate::scoring): hit timecodes are read and blanked first, so "hits at
+    // 1:05" is never read as the piece's length; `cue.scored` switches the scored readings on.
+    let (hits, norm) = crate::scoring::words::extract_hits(&norm);
+    let cue = crate::scoring::words::read(&norm);
+    let scored = cue.scored || !hits.is_empty();
     let (spoken, blanked) = extract_spoken(&norm);
     let chords_explicit = explicit_chords(&blanked);
     let work = lower_and_negate(&blanked);
@@ -1560,12 +1565,35 @@ pub fn parse_brief(brief: &str, catalogue: &Catalogue, seed: u64) -> ScorePlan {
     let duration_s = find_duration(t);
     let emotion = match find_emotion(t, &a.negated) {
         Some(e) => e.to_string(),
+        None if scored && cue.preset.is_some() => {
+            cue.preset.map(|p| p.name.to_string()).unwrap_or_default()
+        }
         None => {
             notes.push("no emotion word found; used \"calm\"".into());
             "calm".to_string()
         }
     };
-    let key = find_key(t, &emotion, &mut notes);
+    let mood = crate::scoring::emotion::preset_for(&emotion);
+    let mut key = find_key(t, &emotion, &mut notes);
+    if scored && notes.last().is_some_and(|n| n.starts_with("no key given")) {
+        key = Key {
+            tonic: mood.tonic,
+            mode: mood.mode,
+        };
+        notes.pop();
+        notes.push(format!(
+            "no key given; chose {} from the {} preset",
+            key.display(),
+            mood.name
+        ));
+    }
+    if scored && cue.borrowed {
+        notes.push(
+            "borrowed chords are outside the key, and a Score keeps every note in the key; the \
+             progression stays in the key"
+                .into(),
+        );
+    }
     let playback = find_playback(t, &a.negated);
     let intensity = find_intensity(t);
     let global_grid = (0..t.len()).find_map(|i| grid_word(t, i));
@@ -1573,10 +1601,24 @@ pub fn parse_brief(brief: &str, catalogue: &Catalogue, seed: u64) -> ScorePlan {
     // Timing (the parser needs the total to read "second half").
     let mut tempo_bpm = tempo;
     let mut bars = bars_total;
+    let mut tempo_range = None;
     if tempo_bpm.is_none() && !(bars.is_some() && duration_s.is_some()) {
-        let bpm = find_tempo_word(t).unwrap_or_else(|| emotion_tempo(&emotion));
+        let bpm = find_tempo_word(t).unwrap_or_else(|| {
+            if scored {
+                mood.tempo.1
+            } else {
+                emotion_tempo(&emotion)
+            }
+        });
         notes.push(format!("no tempo given; used {bpm} BPM"));
         tempo_bpm = Some(bpm);
+        // Hit points may then move the tempo anywhere in the preset's range.
+        if !hits.is_empty() {
+            tempo_range = Some(crate::plan::TempoRange {
+                min: mood.tempo.0.min(bpm),
+                max: mood.tempo.2.max(bpm),
+            });
+        }
     }
     let total = match (bars, tempo_bpm, duration_s) {
         (Some(b), _, _) => b,
@@ -1783,6 +1825,32 @@ pub fn parse_brief(brief: &str, catalogue: &Catalogue, seed: u64) -> ScorePlan {
         }
         layer_specs.push((f.family.clone(), preset_name, active, f.mentions.clone()));
     }
+    if layer_specs.is_empty() && scored {
+        // A cue that names no instrument gets its emotion preset's instruments, which enter
+        // in order as the intensity rises.
+        let names: Vec<&str> = mood
+            .instruments
+            .iter()
+            .copied()
+            .filter(|p| {
+                catalogue
+                    .get(p)
+                    .is_some_and(|spec| !classes.banned.contains(&spec.class))
+            })
+            .collect();
+        notes.push(format!(
+            "no instrument named; used the {} preset's instruments: {}",
+            mood.name,
+            names.join(", ").replace('_', " ")
+        ));
+        for p in names {
+            let family = preset_families(p)
+                .first()
+                .map(|f| f.to_string())
+                .unwrap_or_else(|| p.to_string());
+            layer_specs.push((family, p.to_string(), (1..=total).collect(), vec![]));
+        }
+    }
     if layer_specs.is_empty() {
         notes.push("no instrument named; used one felt piano (restraint)".into());
         layer_specs.push((
@@ -1797,7 +1865,30 @@ pub fn parse_brief(brief: &str, catalogue: &Catalogue, seed: u64) -> ScorePlan {
     let templates = motif_templates();
     let template = &templates[(seed % templates.len() as u64) as usize];
     let mut chords: Vec<PlanChord> = Vec::new();
-    let symbols: Vec<String> = if !chords_explicit.is_empty() {
+    // A scored cue repeats a progression from each section's start (the brief's chords, else
+    // one of its emotion preset's), realised into chords by crate::scoring::realise.
+    let progression = if scored {
+        let romans = crate::scoring::words::roman_progression(&blanked);
+        let (symbols, bars_per_chord) = if !chords_explicit.is_empty() {
+            (chords_explicit.clone(), 1)
+        } else if !romans.is_empty() {
+            (romans, 1)
+        } else {
+            (
+                crate::scoring::harmony::library_symbols(&key, mood, seed),
+                mood.bars_per_chord,
+            )
+        };
+        Some(crate::plan::PlanProgression {
+            chords: symbols,
+            bars_per_chord,
+        })
+    } else {
+        None
+    };
+    let symbols: Vec<String> = if scored {
+        vec![]
+    } else if !chords_explicit.is_empty() {
         chords_explicit.clone()
     } else {
         template
@@ -1814,7 +1905,7 @@ pub fn parse_brief(brief: &str, catalogue: &Catalogue, seed: u64) -> ScorePlan {
             },
             symbol: symbols[0].clone(),
         });
-    } else {
+    } else if !symbols.is_empty() {
         for b in 1..=total {
             chords.push(PlanChord {
                 bars: BarRange { start: b, end: b },
@@ -1846,6 +1937,9 @@ pub fn parse_brief(brief: &str, catalogue: &Catalogue, seed: u64) -> ScorePlan {
             Register::Low
         } else if has(&HIGH_WORDS, &mods) {
             Register::High
+        } else if scored && layers.is_empty() && preset.pitched {
+            // The lead layer of a cue sits in its emotion preset's register.
+            mood.register
         } else {
             Register::Mid
         };
@@ -1906,7 +2000,14 @@ pub fn parse_brief(brief: &str, catalogue: &Catalogue, seed: u64) -> ScorePlan {
         let spoken_text = chosen.map(|k| spoken[k].text.clone());
 
         let motif_like = role == crate::motifs::RhythmRole::Motif;
-        let (mut length_bars, degrees, follow) = if motif_like && chords_explicit.is_empty() {
+        let (mut length_bars, degrees, follow) = if scored && preset.pitched {
+            // Scored cues follow the progression with chord-relative motifs.
+            if motif_like {
+                (2, crate::motifs::SCORED_MOTIF.to_vec(), true)
+            } else {
+                (1, default_degrees(role), true)
+            }
+        } else if motif_like && chords_explicit.is_empty() {
             (template.length_bars, template.degrees.clone(), false)
         } else if motif_like {
             (1, CHORD_RELATIVE_MOTIF.to_vec(), true)
@@ -2070,6 +2171,23 @@ pub fn parse_brief(brief: &str, catalogue: &Catalogue, seed: u64) -> ScorePlan {
         .filter(|c| TRAILER_CLASSES.contains(c))
         .collect();
 
+    // Scored cues: the brief's form words, else the emotion preset's form (unless the brief
+    // places its layers in bars itself). With a form the sections are derived from it.
+    let form = if !scored {
+        vec![]
+    } else if !cue.form.is_empty() {
+        let mut f = cue.form.clone();
+        crate::scoring::words::fill_intensities(&mut f, mood);
+        f
+    } else if families.iter().any(|f| !f.global && !f.entries.is_empty()) {
+        vec![]
+    } else {
+        crate::scoring::words::preset_form(mood)
+    };
+    if !form.is_empty() {
+        sections = vec![];
+    }
+
     let mut plan_notes = notes;
     plan_notes.dedup();
     ScorePlan {
@@ -2087,6 +2205,10 @@ pub fn parse_brief(brief: &str, catalogue: &Catalogue, seed: u64) -> ScorePlan {
         chords,
         notes: plan_notes,
         requested,
+        form,
+        hits,
+        progression,
+        tempo_range,
     }
 }
 
