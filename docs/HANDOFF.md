@@ -118,9 +118,9 @@ messages to these sessions.
 | WP | Session | State | Brief | Release when |
 | --- | --- | --- | --- | --- |
 | WP-P4 live planner quality | `local_9d36f82c-3389-4b79-bcd5-49ee65dc6bfb` | **merged**, Phase 4 closed | WP-P4-live-planner-quality.md | (running) |
-| WP-D2 Sound Profile + library | `local_d4822b8f-57b1-47ae-b93b-d705b8a08ca4` | building | WP-D2-sound-profile.md | (running) |
+| WP-D2 Sound Profile + library | `local_d4822b8f-57b1-47ae-b93b-d705b8a08ca4` | **merged** | WP-D2-sound-profile.md | (running) |
 | WP-H2 realistic sfx | `local_e181048d-d661-4de8-9bd3-62cfb7c11812` | building | WP-H2-sfx-realism.md | first free slot |
-| WP-P3 scoring depth + hit points | `local_26d5ea83-cf3a-4e26-9484-d34526546f88` | coding (P4 merged), builds at next slot | WP-P3-scoring-depth.md | after WP-P4 merges: "WP-P4 merged, slot free" |
+| WP-P3 scoring depth + hit points | `local_26d5ea83-cf3a-4e26-9484-d34526546f88` | building | WP-P3-scoring-depth.md | after WP-P4 merges: "WP-P4 merged, slot free" |
 | WP-U6 reference clips in the app | `local_2c567f48-72fa-4ff1-8380-8e5ee1c2cc5f` | queued | WP-U6-reference-clips-ui.md | after WP-D2: "WP-D2 merged, slot free" |
 | WP-M match loop | `local_c25d0d15-36a9-439c-84d9-450faee7771e` | queued | WP-M-match.md | after WP-D2 and WP-H2: "WP-D2 and WP-H2 merged, slot free" |
 | WP-W browser build | `local_1eaf0bdd-3166-4fc0-bbf7-2f97f3dea4ba` | queued | WP-W-browser.md | after WP-U6: "WP-U6 merged, slot free" |
