@@ -13,6 +13,7 @@ members = [
     "crates/praxis-mcp",
     "crates/praxis-wasm",
     "crates/praxis-testkit",
+    "crates/praxis-app",
 ]
 default-members = [
     "crates/praxis-score",
@@ -76,6 +77,10 @@ wasm-bindgen = "0.2.130"
 rmcp = { version = "3.9.0", features = ["server", "transport-io"] }
 # rmcp runs on tokio and does not re-export it; same version rmcp already pulls in.
 tokio = { version = "1.54.1", default-features = false, features = ["rt"] }
+# Desktop shell (ADR-0002, WP-U3): Tauri 2, Apache-2.0 OR MIT. Only praxis-app uses them.
+# protocol-asset serves rendered takes to the WebView's <audio> element.
+tauri = { version = "2.12.5", features = ["protocol-asset"] }
+tauri-build = "2.7.4"
 # dev
 proptest = "1.12.0"
 jsonschema = { version = "0.61.1", default-features = false }
