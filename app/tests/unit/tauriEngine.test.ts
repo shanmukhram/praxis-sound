@@ -3,11 +3,11 @@
 // "The take record"), with an in-memory sound folder standing in for takes.json.
 
 import { describe, expect, it } from 'vitest';
-import { TauriEngine, TAKES_EVENT, type AudioLike } from '../../src/engine/tauri/TauriEngine';
+import { TauriEngine, TAKES_EVENT, TRANSPORT_EVENT, type AudioLike, type PlaybackInfo } from '../../src/engine/tauri/TauriEngine';
 import type { Bridge } from '../../src/engine/tauri/bridge';
-import type { AskPayload, SoundInfo, TakeRecord, TakesPayload, ViewRequest } from '../../src/engine/tauri/protocol';
+import type { AskPayload, SoundInfo, TakeRecord, TakesPayload, TransportEventPayload, TransportStatusPayload, ViewRequest } from '../../src/engine/tauri/protocol';
 import { toTake, toWho } from '../../src/engine/tauri/protocol';
-import type { Take, TakeState } from '../../src/engine/EngineAdapter';
+import type { Meters, Take, TakeState, TransportPosition } from '../../src/engine/EngineAdapter';
 import { applyPatch } from '../../src/engine/mock/apply';
 import { muteLayer } from '../../src/score/patchBuilder';
 import type { NScore, ScorePatch } from '../../src/score/types';
@@ -110,6 +110,8 @@ class FakeBridge implements Bridge {
   sounds = new Map<string, FakeSound>();
   calls: { cmd: string; args?: Record<string, unknown> }[] = [];
   watched: string | null = null;
+  /** The audio service (crates/praxis-app/src/audio.rs); null answers like a shell without it. */
+  transport: { available: boolean; error: string | null } | null = null;
   private listeners = new Map<string, ((p: unknown) => void)[]>();
   readonly root = 'C:\\Users\\me\\Documents\\Praxis Sound\\sounds';
 
@@ -227,9 +229,51 @@ class FakeBridge implements Bridge {
         const a = args!.args as { sound: string; take: number; kinds: string[]; destination: string; base_name: string };
         return { ok: true, files: a.kinds.map((k) => ({ kind: k, path: `${a.sound}\\${a.destination}\\${a.base_name}.${k}` })), message: `Wrote ${a.kinds.length} files.` } as T;
       }
-      default:
-        throw { code: 'error', message: `unknown command ${cmd}` };
+      case 'transport_sync':
+      case 'transport_play':
+      case 'transport_status':
+        if (!this.transport) break;
+        return this.status() as T;
+      case 'transport_stop':
+      case 'transport_seek':
+      case 'transport_set_loop':
+      case 'transport_layer':
+        if (!this.transport) break;
+        return undefined as T;
     }
+    throw { code: 'error', message: `unknown command ${cmd}` };
+  }
+
+  /** What the audio service sends (`TransportEvent`), with overrides. */
+  event(over: Partial<TransportEventPayload> = {}): TransportEventPayload {
+    const t = this.transport ?? { available: false, error: 'no service' };
+    return {
+      available: t.available,
+      device: t.available ? 'Speakers (Realtek(R) Audio)' : null,
+      sample_rate: t.available ? 48000 : 0,
+      error: t.error,
+      playing: false,
+      ended: false,
+      position: 0,
+      seconds: 0,
+      peak_db: [-120, -120],
+      rms_db: [-120, -120],
+      xruns: 0,
+      xruns_total: 0,
+      late_wakeups: 0,
+      device_errors: 0,
+      min_callback_frames: 480,
+      max_callback_frames: 480,
+      callbacks: 10,
+      swaps: 1,
+      preparing: false,
+      stalled: false,
+      ...over,
+    };
+  }
+
+  status(): TransportStatusPayload {
+    return { ...this.event(), requested_buffer_frames: 256, loaded: true, prepare_ms: 12, warnings: [], max_render_ms: 0.4, p99_render_ms: 0.2, layers: {}, loop_range: null };
   }
 }
 
@@ -450,5 +494,120 @@ describe('TauriEngine over a fake Tauri bridge', () => {
     expect(t.scope).toEqual(rec.scope);
     expect(t.checks.grid_deviation_ms).toBe(1.7);
     expect(Object.keys(t).sort()).toEqual(['ask', 'changed', 'checks', 'n', 'opens', 'patch', 'render', 'say', 'scope', 'score', 'title', 'untouched', 'who'].sort());
+  });
+
+  it('plays through the real-time engine: transport commands, position and meters from its events', async () => {
+    const { bridge, engine, audio } = setup();
+    bridge.transport = { available: true, error: null };
+    const s = bridge.sound(`${bridge.root}\\calm`);
+    s.addTake('You', 'calm loop', fixture(), null);
+    await engine.openSound(s.path);
+    await tick();
+    expect(bridge.calls.filter((c) => c.cmd === 'transport_sync').map((c) => c.args)).toEqual([{ sound: s.path }]);
+    const positions: TransportPosition[] = [];
+    const meters: Meters[] = [];
+    engine.onPosition((p) => positions.push(p));
+    engine.onMeters((m) => meters.push(m));
+
+    await engine.play();
+    expect(bridge.calls.at(-1)!.cmd).toBe('transport_play');
+    expect(audio.paused).toBe(true); // no <audio>: the engine plays
+    expect(engine.playback()).toMatchObject({ mode: 'engine', message: null, device: 'Speakers (Realtek(R) Audio)', callbackFrames: [480, 480] });
+
+    // 128 BPM in 4/4: a bar is 1.875 s, so 3.75 s is the start of bar 3.
+    bridge.emit(TRANSPORT_EVENT, bridge.event({ playing: true, seconds: 3.75, position: 180000, peak_db: [-6, -7.5], rms_db: [-18, -120] }));
+    expect(positions.at(-1)).toEqual({ playing: true, seconds: 3.75, bar: 3, loop: null });
+    expect(meters.at(-1)).toEqual({ peakL: -6, peakR: -7.5, rmsL: -18, rmsR: -Infinity });
+
+    await engine.seek(7.5);
+    await engine.setLoop({ start: 5, end: 6 });
+    expect(bridge.calls.slice(-2)).toEqual([
+      { cmd: 'transport_seek', args: { seconds: 7.5 } },
+      { cmd: 'transport_set_loop', args: { range: { start: 5, end: 6 } } },
+    ]);
+    await engine.setLayerLive('piano', { gain_db: -3 });
+    expect(bridge.calls.at(-1)).toEqual({ cmd: 'transport_layer', args: { layer: 'piano', live: { gain_db: -3 } } });
+    await engine.stop();
+    expect(bridge.calls.at(-1)!.cmd).toBe('transport_stop');
+    expect(positions.at(-1)!.playing).toBe(false);
+    expect(audio.src).toBe('');
+  });
+
+  it('sends every change of the live score to the engine (take, mute, undo, go back), once each', async () => {
+    const { bridge, engine } = setup();
+    bridge.transport = { available: true, error: null };
+    const s = bridge.sound(`${bridge.root}\\calm`);
+    s.addTake('You', 'calm loop', fixture(), null);
+    await engine.openSound(s.path);
+    await tick();
+    const syncs = () => bridge.calls.filter((c) => c.cmd === 'transport_sync').length;
+    expect(syncs()).toBe(1);
+
+    await engine.ask({ text: 'a little faster' }); // a new take while playing
+    await tick();
+    expect(syncs()).toBe(2);
+    const mute = await engine.applyPatch(muteLayer(engine.state().score!, 'piano', true));
+    expect(mute.ok).toBe(true);
+    await tick();
+    expect(syncs()).toBe(3);
+    await engine.undo();
+    await tick();
+    expect(syncs()).toBe(4);
+    await engine.restore(1);
+    await tick();
+    expect(syncs()).toBe(5);
+    // Re-reading an unchanged history sends nothing.
+    s.revision += 1;
+    bridge.touch(s);
+    await tick();
+    await tick();
+    expect(syncs()).toBe(5);
+    // A take by an agent is swapped in too.
+    bridge.calls.length = 0;
+    await bridge.invoke<AskPayload>('ask', { req: { sound: s.path, text: 'lift the ending', who: 'cut-assistant' } });
+    bridge.touch(s);
+    await tick();
+    await tick();
+    expect(engine.state().current).toBe(s.current);
+    expect(bridge.calls.filter((c) => c.cmd === 'transport_sync')).toHaveLength(1);
+    // Closing the sound clears the engine.
+    await engine.openSound(null);
+    await tick();
+    expect(bridge.calls.at(-1)).toEqual({ cmd: 'transport_sync', args: { sound: null } });
+  });
+
+  it("falls back to the take's file and says so when no output device opens", async () => {
+    const { bridge, engine, audio } = setup();
+    bridge.transport = { available: false, error: 'No audio output: no default output device' };
+    const info: PlaybackInfo[] = [];
+    engine.onPlayback((p) => info.push(p));
+    const s = bridge.sound(`${bridge.root}\\calm`);
+    s.addTake('You', 'calm loop', fixture(), null);
+    await engine.openSound(s.path);
+    await engine.play();
+    expect(audio.paused).toBe(false);
+    expect(audio.src).toBe(engine.state().takes[0].render.audioUrl);
+    expect(info.at(-1)).toMatchObject({ mode: 'audio', message: "No audio output: no default output device. Playing the take's own file instead." });
+    // The device comes back: the next play goes through the engine.
+    bridge.transport = { available: true, error: null };
+    await engine.stop();
+    await engine.play();
+    expect(audio.paused).toBe(true);
+    expect(info.at(-1)).toMatchObject({ mode: 'engine', message: null });
+  });
+
+  it('shows device trouble: xruns, errors and a stalled device in the playback info', async () => {
+    const { bridge, engine } = setup();
+    bridge.transport = { available: true, error: null };
+    const s = bridge.sound(`${bridge.root}\\calm`);
+    s.addTake('You', 'calm loop', fixture(), null);
+    await engine.openSound(s.path);
+    const info: PlaybackInfo[] = [];
+    engine.onPlayback((p) => info.push(p));
+    bridge.emit(TRANSPORT_EVENT, bridge.event({ playing: true, xruns: 2, late_wakeups: 5, device_errors: 1, stalled: true }));
+    expect(info.at(-1)).toMatchObject({ mode: 'engine', xruns: 2, lateWakeups: 5, deviceErrors: 1, stalled: true });
+    // The sound cannot be built for playback: the take's file plays instead, and the reason shows.
+    bridge.emit(TRANSPORT_EVENT, bridge.event({ error: 'Could not build the sound to play: missing pack' }));
+    expect(info.at(-1)).toMatchObject({ mode: 'audio', message: "Could not build the sound to play: missing pack. Playing the take's own file instead." });
   });
 });

@@ -23,12 +23,12 @@ tauri-build.workspace = true
 [dependencies]
 praxis-cli.workspace = true
 praxis-score.workspace = true
+praxis-engine.workspace = true
+praxis-audio-io.workspace = true
+praxis-instruments.workspace = true
 tauri.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-
-[dev-dependencies]
-praxis-instruments.workspace = true
 
 [lints]
 workspace = true

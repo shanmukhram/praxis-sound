@@ -2,7 +2,7 @@
 // Sound panel. Every request makes a take through the EngineAdapter; the thread and the panel
 // are drawn from the adapter's TakeState, so people and agents share one history.
 
-import type { AgentInfo, AskResult, EngineAdapter, Take, TakeScope, TakeState, ViewName, Who } from '../engine/EngineAdapter';
+import type { AgentInfo, AskResult, EngineAdapter, Take, TakeScope, TakeState, TransportPosition, ViewName, Who } from '../engine/EngineAdapter';
 import { patchErrorMessage } from '../engine/EngineAdapter';
 import { changedText, layerLabel } from '../engine/takes';
 import type { ScorePatch } from '../score/types';
@@ -64,7 +64,13 @@ export class Shell {
   private chips: string[] = [];
   private agentList: AgentInfo[] = [];
   private soundId = '';
-  private playing: { n: number; audio: HTMLAudioElement; length: number } | null = null;
+  /**
+   * What is playing: the current take through the engine (`audio` null; the real-time engine on
+   * the desktop), or an earlier take's own render in an <audio> element.
+   */
+  private playing: { n: number; audio: HTMLAudioElement | null; length: number; loop: boolean; started: boolean } | null = null;
+  /** The engine's last transport position (drives the playhead while the engine plays). */
+  private enginePos: TransportPosition | null = null;
   private lastTakeCount = -1;
   /** True while a sound is being opened: views opened then do not pop the phone sheet up. */
   private opening = false;
@@ -143,25 +149,37 @@ export class Shell {
 
     engine.onState((s) => {
       this.st = s;
+      // The engine plays the live score: a new take, a go-back or an undo while playing is heard
+      // at once, so the playhead moves to the take that is now current.
+      const cur = s.takes.find((t) => t.n === s.current);
+      if (this.playing && !this.playing.audio && cur) Object.assign(this.playing, { n: cur.n, ...takeLength(cur) });
       this.update();
       void engine.suggestions().then((c) => {
         this.chips = c;
         this.renderSuggestions();
       });
+      // Agents connect by making takes: re-read them whenever the take state moves.
+      this.refreshAgents();
     });
+    engine.onPosition((p) => this.onEnginePosition(p));
     engine.onOpenView((e) => {
       this.view = e.view;
       this.flash = { view: e.view, by: e.by };
       if (matchMedia(PHONE).matches && !this.opening) this.toggleSheet(true);
       this.renderPanel();
     });
-    void engine.agents().then((a) => {
-      this.agentList = a;
-      this.renderSide();
-    });
+    this.refreshAgents();
     this.wireDrop();
     window.addEventListener('keydown', (e) => this.onKey(e));
     requestAnimationFrame(() => this.tick());
+  }
+
+  private refreshAgents(): void {
+    void this.engine.agents().then((a) => {
+      if (JSON.stringify(a) === JSON.stringify(this.agentList)) return;
+      this.agentList = a;
+      this.renderSide();
+    });
   }
 
   async openSound(id: string): Promise<void> {
@@ -514,19 +532,39 @@ export class Shell {
     const was = this.playing?.n;
     this.stopPlaying();
     if (was === t.n) return;
-    const audio = new Audio(t.render.audioUrl);
-    audio.loop = t.render.report.is_loop;
-    this.playing = { n: t.n, audio, length: t.render.report.length_samples / t.render.report.sample_rate };
-    void audio.play().catch(() => undefined);
+    if (t.n === this.st.current) {
+      // The current take plays through the engine: live mute / solo and new takes are heard.
+      this.playing = { n: t.n, audio: null, ...takeLength(t), started: false };
+      void this.engine.play();
+    } else {
+      const audio = new Audio(t.render.audioUrl);
+      audio.loop = t.render.report.is_loop;
+      this.playing = { n: t.n, audio, ...takeLength(t), started: true };
+      void audio.play().catch(() => undefined);
+    }
     this.refreshPlayButtons();
   }
 
   private stopPlaying(): void {
     if (!this.playing) return;
-    this.playing.audio.pause();
+    if (this.playing.audio) this.playing.audio.pause();
+    else void this.engine.stop();
+    this.clearPlaying();
+  }
+
+  private clearPlaying(): void {
     this.playing = null;
     document.querySelectorAll<SVGRectElement>('svg .ph').forEach((p) => p.setAttribute('opacity', '0'));
     this.refreshPlayButtons();
+  }
+
+  /** The engine stopped by itself (a one-shot ended, the sound closed): the buttons follow. */
+  private onEnginePosition(p: TransportPosition): void {
+    this.enginePos = p;
+    const pl = this.playing;
+    if (!pl || pl.audio) return;
+    if (p.playing) pl.started = true;
+    else if (pl.started) this.clearPlaying();
   }
 
   private refreshPlayButtons(): void {
@@ -539,10 +577,11 @@ export class Shell {
 
   private tick(): void {
     const p = this.playing;
+    const at = p ? (p.audio ? p.audio.currentTime : (this.enginePos?.seconds ?? 0)) : 0;
     if (p) {
-      if (p.audio.ended) this.stopPlaying();
+      if (p.audio?.ended) this.stopPlaying();
       else {
-        const f = (p.audio.currentTime % p.length) / p.length;
+        const f = p.loop ? (at % p.length) / p.length : Math.min(at, p.length) / p.length;
         document.querySelectorAll<SVGRectElement>(`svg[data-take="${p.n}"] .ph`).forEach((r) => {
           r.setAttribute('x', String(f * 1000));
           r.setAttribute('opacity', '1');
@@ -627,4 +666,10 @@ function round(n: number): number {
 function clock(s: number): string {
   const m = Math.floor(s / 60);
   return `${m}:${String(Math.round(s - m * 60)).padStart(2, '0')}`;
+}
+
+/** A take's musical length in seconds and whether it loops (the playhead's range). */
+function takeLength(t: Take): { length: number; loop: boolean } {
+  const r = t.render.report;
+  return { length: Math.max(1e-3, r.length_samples / (r.sample_rate || 48000)), loop: r.is_loop };
 }
