@@ -6,12 +6,12 @@
 //!
 //! | Measure | Method |
 //! | --- | --- |
-//! | centroid | magnitude-weighted mean frequency of the summed magnitude spectrum |
+//! | centroid | power-weighted mean frequency of the summed power spectrum (so it sits with the rolloff) |
 //! | rolloff | frequency under which 85 % of the summed power lies |
 //! | flatness | mean over sounding frames of geometric / arithmetic mean power, 20 Hz .. 16 kHz |
 //! | bands | summed power in 10 octave bands centred 31.5 Hz .. 16 kHz (edges `fc / sqrt 2 .. fc * sqrt 2`), dB relative to the power of all ten |
 //! | tilt | least-squares slope of the band levels against octave number, dB per octave |
-//! | centroid track | per-frame centroid (0 for silent frames) |
+//! | centroid track | per-frame power-weighted centroid (0 for silent frames) |
 //! | tonality | per sounding frame `0.5 * (1 - whitened flatness / 0.5615) + 0.5 * peak ratio`, then the mean |
 //! | MFCC | 40 mel bands 40 Hz .. 8 kHz, log power, DCT-II, coefficients 0..12 |
 //!
@@ -140,7 +140,6 @@ pub fn analyze(signal: &[f32], sample_rate: u32, hop: usize) -> SpectrumAnalysis
     let half = (n / 2) as isize;
     let mut mags = vec![0.0f32; bins];
     let mut power = vec![0.0f64; bins];
-    let mut sum_mag = vec![0.0f64; bins];
     let mut sum_pow = vec![0.0f64; bins];
     let filters = mel_filters(bins, bin_hz, nyquist);
     let k_of = |hz: f64| ((hz / bin_hz).round() as usize).clamp(1, bins - 1);
@@ -176,11 +175,10 @@ pub fn analyze(signal: &[f32], sample_rate: u32, hop: usize) -> SpectrumAnalysis
             let p = m * m;
             power[k] = p;
             total += p;
-            sum_mag[k] += m;
             sum_pow[k] += p;
             if k > 0 {
-                cw += k as f64 * bin_hz * m;
-                cm += m;
+                cw += k as f64 * bin_hz * p;
+                cm += p;
             }
         }
         frame_power.push(total);
@@ -289,15 +287,15 @@ pub fn analyze(signal: &[f32], sample_rate: u32, hop: usize) -> SpectrumAnalysis
     let tonality = if fc > 0 { tn / fc as f64 } else { 0.0 };
 
     // Long-term spectrum.
-    let mag_total: f64 = sum_mag[1..].iter().sum();
-    let centroid_hz = if mag_total > 0.0 {
-        sum_mag
+    let pow_sum: f64 = sum_pow[1..].iter().sum();
+    let centroid_hz = if pow_sum > 0.0 {
+        sum_pow
             .iter()
             .enumerate()
             .skip(1)
             .map(|(k, m)| k as f64 * bin_hz * m)
             .sum::<f64>()
-            / mag_total
+            / pow_sum
     } else {
         0.0
     };

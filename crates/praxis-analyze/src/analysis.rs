@@ -47,6 +47,10 @@ pub fn profile_tempo_config() -> tempo::TempoConfig {
     }
 }
 
+/// Onsets less regular than this (see [`groove::regularity`]) have no groove. Random onsets
+/// read about 0.4 to 0.7 (noise beds, grains), sequenced music 0.99 or more.
+pub const MIN_GROOVE_REGULARITY: f64 = 0.75;
+
 /// Fewer onsets than this: no tempo is reported (there is no pulse to measure).
 const MIN_ONSETS_FOR_TEMPO: usize = 4;
 /// The active span: frames within this many dB of the loudest 10 ms frame.
@@ -182,7 +186,11 @@ pub fn sound_profile(
     let reverb_est = reverb::estimate(&energy, hop_s, &onset_times);
 
     // Groove and sections.
-    let groove_est = tempo_est.as_ref().and_then(|t| groove::analyze(t, &onsets));
+    // A groove needs onsets on the grid: irregular onsets (noise, grains) have none.
+    let groove_est = tempo_est
+        .as_ref()
+        .filter(|t| groove::regularity(t, &onsets) >= MIN_GROOVE_REGULARITY)
+        .and_then(|t| groove::analyze(t, &onsets));
     let beats: &[f64] = tempo_est.as_ref().map_or(&[], |t| &t.beats_s);
     let section_list = sections::analyze(
         &chromagram.frames,

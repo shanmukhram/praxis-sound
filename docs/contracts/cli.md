@@ -17,7 +17,8 @@ the JSON payloads below only gain fields, never lose or rename them.
 | `schema [--write]` | - | `score, patch, plan` schemas, or `written[]` |
 | `generate (--prompt TEXT [--provider offline\|claude] \| --plan FILE\|-) [--seed N] -o project.praxis [--render out.wav]` | brief or agent-written ScorePlan | `project, score_summary{key, bpm, bars, layers[], sections[]}, provider, provider_note, attempts, repairs[], render?` |
 | `edit <project> --prompt TEXT [--provider ...]` | project + instruction | `project, patch, scope, changed_bars, changed_layers` |
-| `analyze <clip> [-o profile.json]` | audio/video file | the Sound Profile |
+| `analyze <clip> [-o profile.json] [--beats-per-bar N]` | audio/video file | the complete Sound Profile (see "Sound Profile and library") |
+| `library add <clip\|profile.json> [--name N] [--tag T]... \| list \| show <id> \| tag <id> [--add T]... [--remove T]... \| remove <id>` | clip, profile or id | see "Sound Profile and library" |
 | `check <wav> --score <score>` | render + score | `VerifyReport` (`checks[], tempo_bpm, key, grid_deviation_ms, onsets_on_grid, integrated_lufs, true_peak_dbtp, seam_*`) and `passed` |
 | `match <clip> [--prompt TEXT] [--bars N] [--key K] [--bpm N] -o project.praxis` | reference clip | `project, similarity, iterations[], originality` |
 | `export-midi <score\|project> -o out.mid` | score | `output, tracks` |
@@ -290,3 +291,37 @@ low|medium|high|xhigh|max] [--max-steps N]`. **MCP.** `praxis_ask` takes `effort
 **Also new:** `ops::undo_redo(UndoRedoRequest {sound, action: undo|redo})` -> `{sound, moved,
 description, revision, current, score_summary, can_undo, can_redo}`: one step of the project
 history, as the app's undo and redo; landing on a take's score makes it current.
+
+## Sound Profile and library (WP-D2)
+
+`analyze` returns the complete `SoundProfile` of docs/contracts/sound-profile.md (every field;
+`complete: true`, `missing: []`), plus `source.path`, `source.source_kind` (`audio` or
+`video`), `key.name` (e.g. `"a minor"`), `feature_names` (the names of `features`, in order),
+`loop_seam {passed, jump_ratio, excess_db}`, a one-line `summary` in plain words (e.g. `"music
+(93% sure) · 30.0 s · 128 BPM · a minor · -16.0 LUFS · tonal"`; tempo only for music, key only
+for tonal clips) and, with `-o`, `output`. The `-o` file holds the same payload and reads back as
+a `SoundProfile` (extra fields are ignored). Library functions: `ops::analyze`,
+`ops::analyze::{profile_clip, profile_decoded, payload, summary}`. The payload of a 30 s clip is
+about 120 kB (pitch track at 10 ms, envelope and centroid tracks up to 2000 frames each).
+
+`library` keeps profiles, never audio, in `PRAXIS_HOME/library/<id>.profile.json` (one
+`SoundProfile` per file; the style name in `style_name`, tags in `tags`). Library function
+`ops::library(LibraryRequest {action, dir})` with `LibraryAction::{Add {input, name, tags,
+beats_per_bar}, List, Show {id}, Tag {id, add, remove}, Remove {id}}` (`dir` overrides the
+folder; the CLI and MCP leave it unset). Every payload has `action` and `library` (the folder).
+
+| Action | Payload |
+| --- | --- |
+| `add` | `id, already, entry`. `input` is a clip (analysed) or a profile JSON (`.json`, as `analyze -o` writes). The id is the name (default: the file name) in lowercase letters, digits and dashes, made unique with `-2`, `-3` .... A clip whose decoded PCM hash is already kept is not added again: that entry gains the new tags (and name, when given) and `already` is `true`. |
+| `list` | `count, entries[] {id, path, name, tags, kind, duration_s, tempo_bpm, key, file_name, pcm_hash, summary}` in id order, `unreadable[] {id, error}` |
+| `show` | `id, entry, profile` (the analyze payload of the saved profile, without `source.path` and `loop_seam`) |
+| `tag` | `id, entry` after removing `remove` and adding `add` (trimmed, duplicates dropped, order kept) |
+| `remove` | `id, removed: true` |
+
+An unknown id fails with `io` ("no library entry ..."); an id with anything but lowercase
+letters, digits and dashes fails with `error`.
+
+MCP: `praxis_analyze {clip, out?, beats_per_bar?}` returns the analyze payload;
+`praxis_library {action: add|list|show|tag|remove, input?, name?, tags?, id?, add?, remove?,
+beats_per_bar?}` mirrors the CLI (same payloads; a missing `input` or `id` fails with
+`bad_json`).

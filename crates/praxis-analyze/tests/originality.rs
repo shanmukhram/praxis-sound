@@ -116,7 +116,11 @@ fn close_copies_fail_and_unrelated_melodies_pass() {
         let mut r = Pcg32::new(seed + 1);
         for _ in 0..2 {
             let k = (r.next_u32() % 16) as usize;
-            changed.notes[k].0 += if r.next_u32().is_multiple_of(2) { 2 } else { -2 };
+            changed.notes[k].0 += if r.next_u32().is_multiple_of(2) {
+                2
+            } else {
+                -2
+            };
         }
         push(
             format!("{i:02} copy: two notes changed"),

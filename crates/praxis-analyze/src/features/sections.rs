@@ -1,15 +1,21 @@
 //! Section boundaries from the novelty of a chroma + MFCC self-similarity matrix (Foote 2000).
 //!
 //! 1. Features are averaged into blocks of 0.5 s (longer for clips over 5 minutes, so there are
-//!    at most 600 blocks): the 12 chroma bins (L2-normalised) and MFCC 1..12 (each standardised
-//!    over the clip, scaled by `1 / sqrt(12)`), concatenated with equal weight.
-//! 2. The self-similarity matrix is the cosine similarity of every pair of blocks.
+//!    at most 600 blocks): the 12 chroma bins (L2-normalised) and MFCC 1..12 divided by
+//!    [`MFCC_SCALE`].
+//! 2. Each block's feature is averaged over +-2 s around it (texture, not single notes); the
+//!    self-similarity of two blocks is `exp(-d^2 / 0.2)` with `d` their Euclidean distance,
+//!    so a steady sound (noise bed, drone) is self-similar everywhere instead of having its tiny
+//!    fluctuations blown up.
 //! 3. A checkerboard kernel (Gaussian taper, half-width 4 s) slid along the diagonal gives the
-//!    novelty curve; peaks at least 4 s apart that stand above `mean + 0.5 sd` of the curve and
-//!    above 10 % of its maximum are boundaries.
-//! 4. Boundaries snap to the nearest beat (within half a beat) when there are beats.
+//!    novelty curve, normalised to `mean within-side similarity - mean cross similarity`
+//!    (-1..1). Peaks at least 4 s apart that reach [`MIN_NOVELTY`], stand above `mean + 0.5 sd`
+//!    of the curve and above 10 % of its maximum are boundaries.
+//! 4. A boundary is the middle of the region around its peak where the novelty stays above
+//!    60 % of the peak (a change shows as twin peaks around it); boundaries snap to the nearest
+//!    beat (within half a beat) when there are beats.
 //! 5. Sections are labelled A, B, C ... in order of appearance; a section whose mean feature is
-//!    within cosine 0.95 of an earlier section's reuses that letter.
+//!    at least 0.8 similar (the same measure) to an earlier section's reuses that letter.
 //!
 //! A clip shorter than two kernel widths (16 s) is one section; so is one without clear peaks.
 
@@ -18,7 +24,19 @@ use crate::profile::SectionBoundary;
 const BLOCK_S: f64 = 0.5;
 const MAX_BLOCKS: usize = 600;
 const KERNEL_HALF_S: f64 = 4.0;
-const SAME_SECTION_COS: f64 = 0.95;
+const SAME_SECTION: f64 = 0.8;
+/// MFCCs (log10 mel power, orthonormal DCT) are divided by this before distances.
+pub const MFCC_SCALE: f64 = 2.0;
+/// Weakest normalised novelty that can mark a boundary.
+pub const MIN_NOVELTY: f64 = 0.15;
+const SIM_TAU: f64 = 0.2;
+/// Features are averaged over +- this many seconds before comparing.
+const SMOOTH_S: f64 = 2.0;
+
+fn similar(a: &[f64], b: &[f64]) -> f64 {
+    let d2: f64 = a.iter().zip(b.iter()).map(|(x, y)| (x - y) * (x - y)).sum();
+    (-d2 / SIM_TAU).exp()
+}
 
 fn mean_rows<const N: usize>(rows: &[[f32; N]], from: usize, to: usize) -> [f64; N] {
     let mut acc = [0.0f64; N];
@@ -36,20 +54,6 @@ fn mean_rows<const N: usize>(rows: &[[f32; N]], from: usize, to: usize) -> [f64;
         *a /= n;
     }
     acc
-}
-
-fn cosine(a: &[f64], b: &[f64]) -> f64 {
-    let (mut ab, mut aa, mut bb) = (0.0, 0.0, 0.0);
-    for (x, y) in a.iter().zip(b.iter()) {
-        ab += x * y;
-        aa += x * x;
-        bb += y * y;
-    }
-    if aa > 0.0 && bb > 0.0 {
-        ab / (aa * bb).sqrt()
-    } else {
-        0.0
-    }
 }
 
 /// Section boundaries covering `0 .. duration_s`.
@@ -97,31 +101,34 @@ pub fn analyze<const M: usize>(
         let cn = c.iter().map(|v| v * v).sum::<f64>().sqrt();
         let mut f = Vec::with_capacity(dims);
         f.extend(c.iter().map(|v| if cn > 0.0 { v / cn } else { 0.0 }));
-        f.extend(m.iter().skip(1));
+        f.extend(m.iter().skip(1).map(|v| v / MFCC_SCALE));
         feats.push(f);
     }
-    // Standardise the MFCC part.
-    let scale = 1.0 / ((M - 1) as f64).sqrt();
-    for d in 12..dims {
-        let mean = feats.iter().map(|f| f[d]).sum::<f64>() / blocks as f64;
-        let sd = (feats.iter().map(|f| (f[d] - mean).powi(2)).sum::<f64>() / blocks as f64).sqrt();
-        for f in feats.iter_mut() {
-            f[d] = if sd > 1e-9 {
-                (f[d] - mean) / sd * scale
-            } else {
-                0.0
-            };
-        }
-    }
+    // Texture, not single notes: each block's feature is the mean over +-2 s around it.
+    let r = ((SMOOTH_S / block_s).round() as usize).max(1);
+    let feats: Vec<Vec<f64>> = (0..blocks)
+        .map(|i| {
+            let a = i.saturating_sub(r);
+            let b = (i + r + 1).min(blocks);
+            let mut m = vec![0.0; dims];
+            for f in &feats[a..b] {
+                for (x, v) in m.iter_mut().zip(f.iter()) {
+                    *x += v / (b - a) as f64;
+                }
+            }
+            m
+        })
+        .collect();
     let ssm: Vec<Vec<f64>> = feats
         .iter()
-        .map(|a| feats.iter().map(|b| cosine(a, b)).collect())
+        .map(|a| feats.iter().map(|b| similar(a, b)).collect())
         .collect();
     let k = ((KERNEL_HALF_S / block_s).round() as usize).max(2);
     let sigma = k as f64 / 2.0;
     let mut novelty = vec![0.0f64; blocks];
     for (i, nv) in novelty.iter_mut().enumerate() {
         let mut s = 0.0;
+        let mut wsum = 0.0;
         for u in 0..k {
             for v in 0..k {
                 let g = (-((u * u + v * v) as f64) / (2.0 * sigma * sigma)).exp();
@@ -133,14 +140,15 @@ pub fn analyze<const M: usize>(
                 }
                 let (bu, bv) = (bu as usize, bv as usize);
                 s += g * (ssm[bu][bv] + ssm[au][av] - ssm[bu][av] - ssm[au][bv]);
+                wsum += 2.0 * g;
             }
         }
-        *nv = s.max(0.0);
+        *nv = if wsum > 0.0 { (s / wsum).max(0.0) } else { 0.0 };
     }
     let mean = novelty.iter().sum::<f64>() / blocks as f64;
     let sd = (novelty.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / blocks as f64).sqrt();
     let max = novelty.iter().fold(0.0f64, |m, v| m.max(*v));
-    let thr = (mean + 0.5 * sd).max(0.1 * max);
+    let thr = (mean + 0.5 * sd).max(0.1 * max).max(MIN_NOVELTY);
     let mut peaks: Vec<usize> = Vec::new();
     for i in k..blocks.saturating_sub(k) {
         let lo = i.saturating_sub(k);
@@ -155,7 +163,24 @@ pub fn analyze<const M: usize>(
             peaks.push(i);
         }
     }
-    let mut bounds: Vec<f64> = peaks.iter().map(|p| *p as f64 * block_s).collect();
+    // Smoothing makes the blocks of a transition unlike both sides, so a change shows as twin
+    // peaks around it (or a flat top): the boundary is the middle of the region around the
+    // peak that stays above 60 % of it.
+    let mut bounds: Vec<f64> = peaks
+        .iter()
+        .map(|p| {
+            let top = 0.6 * novelty[*p];
+            let mut a = *p;
+            while a > 0 && novelty[a - 1] >= top {
+                a -= 1;
+            }
+            let mut b = *p;
+            while b + 1 < blocks && novelty[b + 1] >= top {
+                b += 1;
+            }
+            0.5 * (a + b) as f64 * block_s
+        })
+        .collect();
     if beats_s.len() >= 2 {
         let period = (beats_s[beats_s.len() - 1] - beats_s[0]) / (beats_s.len() - 1) as f64;
         for b in bounds.iter_mut() {
@@ -193,7 +218,7 @@ pub fn analyze<const M: usize>(
     let mut labels: Vec<char> = Vec::with_capacity(means.len());
     let mut next = b'A';
     for i in 0..means.len() {
-        let reuse = (0..i).find(|j| cosine(&means[i], &means[*j]) >= SAME_SECTION_COS);
+        let reuse = (0..i).find(|j| similar(&means[i], &means[*j]) >= SAME_SECTION);
         match reuse {
             Some(j) => labels.push(labels[j]),
             None => {
