@@ -21,7 +21,11 @@ import { defaultBlank, renderBlankForm, type BlankDraft } from './views/blankFor
 import { addToBatch, batchAsk, batchKey, batchScope, hasUnsaved, type BatchEdit } from './handEdits';
 import { clock } from './views/overview';
 import { applyProgress, making as newMaking, type Making } from './agentWork';
+import type { ClipFile, LibraryEntry, ReferenceClip } from '../engine/EngineAdapter';
+import { type AbLevels, abLevels, clipProblem, libraryMention } from '../engine/reference';
+import { type AbSide, referenceChip, renderReference } from './views/reference';
 import './hand.css';
+import './reference.css';
 
 export interface SoundEntry {
   id: string;
@@ -31,12 +35,16 @@ export interface SoundEntry {
   open(): Promise<void>;
 }
 
-const VIEWS: { id: ViewName; name: string }[] = [
+/** The panel's views: the take views agents can open, plus the person's Reference view. */
+type PanelView = ViewName | 'reference';
+
+const VIEWS: { id: PanelView; name: string }[] = [
   { id: 'overview', name: 'Overview' },
   { id: 'rhythm', name: 'Rhythm' },
   { id: 'notes', name: 'Notes' },
   { id: 'mix', name: 'Mix' },
   { id: 'export', name: 'Export' },
+  { id: 'reference', name: 'Reference' },
 ];
 
 interface Reply {
@@ -47,6 +55,8 @@ interface Reply {
   message: string;
   /** Set for the sound assistant's answer to a request that made no take (a question, a refusal, an undo). */
   noTake?: NoTake;
+  /** The reference the request carried. */
+  reference?: string;
 }
 
 
@@ -64,12 +74,29 @@ const CLIP =
 
 export class Shell {
   private st: TakeState;
-  private view: ViewName = 'overview';
+  private view: PanelView = 'overview';
   private flash: { view: ViewName; by: string } | null = null;
   private selection: TakeScope | null = null;
   private making: Making | null = null;
+  /** The reference the request being made carries (shown under it). */
+  private makingRef: string | null = null;
   private replies: Reply[] = [];
-  private clip: File | null = null;
+
+  // Reference clips (WP-U6).
+  /** The dropped clip (or library style) the Reference view shows and the A/B plays. */
+  private reference: ReferenceClip | null = null;
+  /** The reference goes with the next request (its chip shows in the composer). */
+  private attached = false;
+  /** The file being measured. */
+  private measuring: string | null = null;
+  private refError: string | null = null;
+  private refNumbers = false;
+  private refSaving = false;
+  private libraryList: LibraryEntry[] = [];
+  private libraryNote: string | null = null;
+  /** The A/B side to hear, and the running comparison (the clip's <audio>, the matched levels). */
+  private abSide: AbSide = 'A';
+  private abRun: { audio: HTMLAudioElement; levels: AbLevels; looped: boolean } | null = null;
   private knobs: Record<string, number> = { ...MACRO_DEFAULTS };
   private chips: string[] = [];
   private agentList: AgentInfo[] = [];
@@ -144,9 +171,9 @@ export class Shell {
       }
     });
     this.fileInput.addEventListener('change', () => {
-      this.clip = this.fileInput.files?.[0] ?? null;
-      this.renderChips();
-      this.syncSend();
+      const f = this.fileInput.files?.[0];
+      this.fileInput.value = '';
+      if (f) void this.takeClip(f);
     });
 
     const sheetToggle = h('button', { class: 'ghost sheet-toggle', 'aria-controls': 'panel', 'data-testid': 'sheet-toggle', onclick: () => this.toggleSheet() }, 'Sound');
@@ -200,6 +227,7 @@ export class Shell {
       })
       .catch(() => undefined);
     this.wireDrop();
+    void this.refreshLibrary();
     window.addEventListener('keydown', (e) => this.onKey(e));
     requestAnimationFrame(() => this.tick());
   }
@@ -257,28 +285,218 @@ export class Shell {
 
   private submit(): void {
     const text = this.prompt.value.trim();
-    if (!text && !this.clip) return;
+    const ref = this.attachedRef();
+    if (!text && !ref) return;
+    if (this.measuring && !text) return;
     this.prompt.value = '';
     this.prompt.style.height = 'auto';
-    void this.ask(text || `Start from ${this.clip!.name}`);
+    void this.ask(text || `Make something like ${ref!.name}`);
   }
 
-  private async ask(text: string): Promise<void> {
+  /** The reference attached to the next request, if any. */
+  private attachedRef(): ReferenceClip | null {
+    return this.attached ? this.reference : null;
+  }
+
+  /**
+   * A request in words. It carries the attached reference, or a library style it names in quotes
+   * ("make something like 'rain loop'"), so its profile reaches the planner and the assistant.
+   */
+  private async ask(text: string, withRef?: ReferenceClip): Promise<void> {
     if (this.making) return;
     const scope = this.selection ?? undefined;
     const label = scope ? ` (${scopeText(this.st, scope)})` : '';
-    const clip = this.clip;
+    const reference = withRef ?? this.attachedRef() ?? this.mentioned(text) ?? undefined;
     const m = newMaking(text + label, 'You');
     this.making = m;
+    this.makingRef = reference?.name ?? null;
     this.syncSend();
     this.renderThread(true);
-    const r = await this.engine.ask({ text, scope, clipFile: clip ?? undefined, onProgress: (p) => this.progress(m, p) });
-    this.finish(r, text + label, 'You');
+    const r = await this.engine.ask({ text, scope, reference, onProgress: (p) => this.progress(m, p) });
+    this.makingRef = null;
+    this.finish(r, text + label, 'You', reference?.name);
     if (r.ok && r.take) {
       this.selection = null;
-      this.clip = null;
+      // The reference stays in the Reference view for the A/B; the next request goes without it.
+      if (reference) this.attached = false;
       this.renderChips();
+      this.syncSend();
+      if (this.view === 'reference') this.renderPanel();
     }
+  }
+
+  /** A library style the request names in quotes. */
+  private mentioned(text: string): ReferenceClip | null {
+    const id = libraryMention(text, this.libraryList);
+    const e = id ? this.libraryList.find((x) => x.id === id) : null;
+    return e ? { name: e.name, profile: e.profile, audioUrl: null, path: null, libraryId: e.id } : null;
+  }
+
+  // ------------------------------------------------------------ reference clips
+
+  /** A dropped or chosen clip: measured, shown in the Reference view, attached to the next request. */
+  private async takeClip(file: ClipFile): Promise<void> {
+    const problem = clipProblem(file);
+    if (problem) {
+      this.refError = problem;
+      this.replies.push({ after: this.st.takes.length, who: 'You', ask: null, message: problem });
+      this.renderThread(true);
+      this.showReference();
+      return;
+    }
+    if (this.measuring) return;
+    this.stopAb();
+    this.measuring = file.name;
+    this.refError = null;
+    this.refSaving = false;
+    this.renderChips();
+    this.syncSend();
+    this.showReference();
+    const r = await this.engine.analyzeClip(file);
+    this.measuring = null;
+    if (r.ok) {
+      this.reference = r.clip;
+      this.attached = true;
+      this.abSide = 'A';
+    } else {
+      this.refError = r.message;
+      this.replies.push({ after: this.st.takes.length, who: 'You', ask: null, message: r.message });
+      this.renderThread(true);
+    }
+    this.renderChips();
+    this.syncSend();
+    this.renderPanel();
+  }
+
+  /** Opens the Reference view (the phone's sheet too). */
+  private showReference(): void {
+    this.view = 'reference';
+    this.flash = null;
+    if (matchMedia(PHONE).matches) this.toggleSheet(true);
+    this.renderPanel();
+  }
+
+  private clearReference(): void {
+    this.stopAb();
+    this.reference = null;
+    this.attached = false;
+    this.refError = null;
+    this.refSaving = false;
+    this.renderChips();
+    this.syncSend();
+    this.renderPanel();
+  }
+
+  private async refreshLibrary(): Promise<void> {
+    try {
+      this.libraryList = await this.engine.library();
+    } catch {
+      this.libraryList = [];
+    }
+    if (this.view === 'reference') this.renderPanel();
+  }
+
+  private async saveReference(name: string, tags: string[]): Promise<void> {
+    const ref = this.reference;
+    if (!ref) return;
+    const r = await this.engine.saveReference(ref, name, tags);
+    if (!r.ok) {
+      this.libraryNote = r.message;
+      this.renderPanel();
+      return;
+    }
+    this.libraryNote = `Saved "${r.entry.name}" to the library: its profile, not its audio.`;
+    this.refSaving = false;
+    if (this.reference === ref) this.reference = { ...ref, libraryId: r.entry.id };
+    await this.refreshLibrary();
+    this.renderPanel();
+  }
+
+  private useLibrary(id: string): void {
+    const e = this.libraryList.find((x) => x.id === id);
+    if (!e) return;
+    this.stopAb();
+    this.reference = { name: e.name, profile: e.profile, audioUrl: null, path: null, libraryId: e.id };
+    this.attached = true;
+    this.refError = null;
+    this.libraryNote = null;
+    this.renderChips();
+    this.syncSend();
+    this.renderPanel();
+    this.prompt.placeholder = `What should it be? It will be like "${e.name}".`;
+    this.prompt.focus();
+  }
+
+  private async removeLibrary(id: string): Promise<void> {
+    const e = this.libraryList.find((x) => x.id === id);
+    const ok = await this.engine.removeReference(id);
+    this.libraryNote = ok ? `Removed "${e?.name ?? id}" from the library.` : 'Could not remove it from the library.';
+    if (ok && this.reference?.libraryId === id) this.reference = this.reference.audioUrl ? { ...this.reference, libraryId: null } : this.reference;
+    await this.refreshLibrary();
+    this.renderPanel();
+  }
+
+  private async tagLibrary(id: string, tags: string[]): Promise<void> {
+    const r = await this.engine.tagReference(id, tags);
+    this.libraryNote = r.ok ? `Tags of "${r.entry.name}": ${r.entry.tags.join(', ') || 'none'}.` : r.message;
+    await this.refreshLibrary();
+  }
+
+  /** The take's loudness for the A/B: the check report's, else the render's. */
+  private abLevelsFor(take: Take | null): AbLevels | null {
+    const ref = this.reference;
+    if (!take || !ref) return null;
+    const takeLufs = take.checks.integrated_lufs ?? take.render.report.loudness_lufs;
+    return abLevels(takeLufs, ref.profile.loudness.integrated_lufs);
+  }
+
+  /**
+   * Plays the loudness-matched A/B: the current take through the engine (trimmed when it is the
+   * louder one) and the clip's own file (turned down when it is), together from the start, both
+   * looping; only the chosen side is heard.
+   */
+  private playAb(): void {
+    const ref = this.reference;
+    const take = this.current();
+    if (!ref?.audioUrl || !take) return;
+    this.stopPlaying();
+    const levels = this.abLevelsFor(take)!;
+    const audio = new Audio(ref.audioUrl);
+    audio.loop = true;
+    audio.volume = levels.clipVolume;
+    audio.muted = this.abSide === 'A';
+    const looped = take.score.playback.mode !== 'loop' && !this.loopRange;
+    this.abRun = { audio, levels, looped };
+    void this.engine.setCompare({ gainDb: levels.takeDb, muted: this.abSide === 'B' });
+    // A one-shot take repeats while comparing, as the clip does.
+    if (looped) void this.engine.setLoop({ start: 1, end: take.score.bars });
+    void this.engine.seek(0);
+    this.playing = { n: take.n, audio: null, ...takeLength(take), loop: true, started: false };
+    void this.engine.play();
+    void audio.play().catch(() => undefined);
+    this.refreshPlayButtons();
+    this.renderPanel();
+  }
+
+  private setAbSide(side: AbSide): void {
+    this.abSide = side;
+    const run = this.abRun;
+    if (run) {
+      run.audio.muted = side === 'A';
+      void this.engine.setCompare({ gainDb: run.levels.takeDb, muted: side === 'B' });
+    }
+    this.renderPanel();
+  }
+
+  /** Ends the comparison: the clip stops and the take plays at its own level again. */
+  private stopAb(): void {
+    const run = this.abRun;
+    if (!run) return;
+    this.abRun = null;
+    run.audio.pause();
+    run.audio.removeAttribute('src');
+    void this.engine.setCompare(null);
+    if (run.looped) void this.engine.setLoop(this.loopRange);
   }
 
   /** The assistant's next step, shown under the request while it works. */
@@ -296,11 +514,11 @@ export class Shell {
     this.finish(r, ask, 'You');
   }
 
-  private finish(r: AskResult, ask: string, who: Who): void {
+  private finish(r: AskResult, ask: string, who: Who, reference?: string): void {
     this.making = null;
-    if (!r.ok) this.replies.push({ after: this.st.takes.length, who, ask, message: r.message });
+    if (!r.ok) this.replies.push({ after: this.st.takes.length, who, ask, message: r.message, reference });
     // A reply without a take is the assistant's answer, shown like any reply (never as an error).
-    else if (!r.take) this.replies.push({ after: this.st.takes.length, who, ask, message: r.reply, noTake: r.noTake });
+    else if (!r.take) this.replies.push({ after: this.st.takes.length, who, ask, message: r.reply, noTake: r.noTake, reference });
     this.syncSend();
     this.update();
   }
@@ -450,7 +668,7 @@ export class Shell {
       : 'Describe a sound, or drop in a clip to start from';
   }
 
-  private openView(view: ViewName): void {
+  private openView(view: PanelView): void {
     this.view = view;
     this.flash = null;
     if (matchMedia(PHONE).matches) this.toggleSheet(true);
@@ -556,7 +774,7 @@ export class Shell {
     if (draft && !takes.length) this.thread.append(this.draftCard());
     repliesAfter(0);
     takes.forEach((t, i) => {
-      this.thread.append(h('div', { class: 'msg-user' }, h('small', {}, t.who), t.ask));
+      this.thread.append(userMsg(t.who, t.ask, t.reference));
       this.thread.append(t.n === this.st.current ? this.takeCard(t) : this.pastRow(t));
       repliesAfter(i + 1);
     });
@@ -573,7 +791,7 @@ export class Shell {
     }
     if (this.making) {
       const m = this.making;
-      this.thread.append(h('div', { class: 'msg-user' }, h('small', {}, m.who), m.ask));
+      this.thread.append(userMsg(m.who, m.ask, this.makingRef));
       if (m.steps.length || m.said) {
         // The sound assistant at work: its steps in plain words, replaced by the take or reply.
         this.thread.append(
@@ -684,18 +902,21 @@ export class Shell {
         h('button', { type: 'button', onclick: () => this.select(null) }, 'Clear'),
       );
     }
-    if (this.clip) {
+    if (this.measuring) {
+      this.chipRow.append(h('span', { class: 'clip-chip', 'data-testid': 'clip-chip' }, `Measuring ${this.measuring}…`));
+    } else if (this.attached && this.reference) {
       this.chipRow.append(
-        h('span', { class: 'clip-chip', 'data-testid': 'clip-chip' }, `Clip: ${this.clip.name}`),
+        h('button', { type: 'button', class: 'ref-chip', 'data-testid': 'clip-chip', title: 'Show its profile', onclick: () => this.showReference() }, referenceChip(this.reference)),
         h(
           'button',
           {
             type: 'button',
+            'data-testid': 'clip-detach',
             onclick: () => {
-              this.clip = null;
-              this.fileInput.value = '';
+              this.attached = false;
               this.renderChips();
               this.syncSend();
+              if (this.view === 'reference') this.renderPanel();
             },
           },
           'Remove',
@@ -710,7 +931,7 @@ export class Shell {
   }
 
   private syncSend(): void {
-    this.send.disabled = !!this.making || (!this.prompt.value.trim() && !this.clip);
+    this.send.disabled = !!this.making || (!this.prompt.value.trim() && (!this.attachedRef() || !!this.measuring));
     this.prompt.style.height = 'auto';
     this.prompt.style.height = `${Math.min(160, this.prompt.scrollHeight)}px`;
   }
@@ -727,6 +948,12 @@ export class Shell {
     const scroll = this.body.scrollTop;
     clear(this.body);
     const score = this.st.score;
+    if (this.view === 'reference') {
+      // Works before any take: a clip can be the start of a sound.
+      this.body.append(this.referenceView(take));
+      this.body.scrollTop = scroll;
+      return;
+    }
     if (!score || (!take && !this.st.draft)) {
       this.body.append(h('p', { class: 'hint', style: 'margin-top:0' }, 'The first take appears here: where each layer plays, its rhythm, notes, mix and export. Or start a blank sound and build it here by hand.'));
       return;
@@ -774,6 +1001,49 @@ export class Shell {
     const view = { overview: renderOverview, rhythm: renderRhythm, notes: renderNotes, mix: renderMix, export: renderExport }[this.view];
     this.body.append(view(ctx));
     this.body.scrollTop = scroll;
+  }
+
+  private referenceView(take: Take | null): HTMLElement {
+    return renderReference(
+      {
+        reference: this.reference,
+        measuring: this.measuring,
+        error: this.refError,
+        attached: this.attached,
+        take,
+        ab: { playing: !!this.abRun, side: this.abSide, levels: this.abRun?.levels ?? this.abLevelsFor(take) },
+        library: this.libraryList,
+        libraryNote: this.libraryNote,
+        numbers: this.refNumbers,
+        saving: this.refSaving,
+      },
+      {
+        chooseClip: () => this.fileInput.click(),
+        clear: () => this.clearReference(),
+        likeThis: () => {
+          const ref = this.reference;
+          if (!ref) return;
+          this.attached = true;
+          void this.ask(`Make something like ${ref.name}`, ref);
+        },
+        toggleNumbers: () => {
+          this.refNumbers = !this.refNumbers;
+          this.renderPanel();
+        },
+        playAb: () => this.playAb(),
+        stopAb: () => this.stopPlaying(),
+        side: (s) => this.setAbSide(s),
+        openSave: (open) => {
+          this.refSaving = open;
+          this.libraryNote = null;
+          this.renderPanel();
+        },
+        save: (name, tags) => void this.saveReference(name, tags),
+        use: (id) => this.useLibrary(id),
+        remove: (id) => void this.removeLibrary(id),
+        tag: (id, tags) => void this.tagLibrary(id, tags),
+      },
+    );
   }
 
   // ------------------------------------------------------------ playback (the take's own render)
@@ -824,13 +1094,22 @@ export class Shell {
   }
 
   private stopPlaying(): void {
-    if (!this.playing) return;
-    if (this.playing.audio) this.playing.audio.pause();
-    else void this.engine.stop();
-    this.clearPlaying();
+    const ab = !!this.abRun;
+    this.stopAb();
+    if (this.playing) {
+      if (this.playing.audio) this.playing.audio.pause();
+      else void this.engine.stop();
+      this.clearPlaying();
+    }
+    if (ab) this.renderPanel();
   }
 
   private clearPlaying(): void {
+    if (this.abRun) {
+      // The engine stopped (the sound closed, the device went away): the comparison ends too.
+      this.stopAb();
+      if (this.view === 'reference') this.renderPanel();
+    }
     this.playing = null;
     document.querySelectorAll<SVGRectElement>('svg .ph').forEach((p) => p.setAttribute('opacity', '0'));
     this.refreshPlayButtons();
@@ -929,11 +1208,7 @@ export class Shell {
       depth = 0;
       this.drop.classList.remove('on');
       const f = e.dataTransfer?.files?.[0];
-      if (f) {
-        this.clip = f;
-        this.renderChips();
-        this.syncSend();
-      }
+      if (f) void this.takeClip(f);
     });
   }
 
@@ -967,9 +1242,14 @@ export class Shell {
   }
 }
 
+/** A request as the thread shows it: who, the words, and the reference it carried. */
+function userMsg(who: string, ask: string, reference?: string | null): HTMLElement {
+  return h('div', { class: 'msg-user' }, h('small', {}, who), ask, reference ? h('span', { class: 'ref-tag', 'data-testid': 'ref-tag' }, `Reference: ${reference}`) : null);
+}
+
 function replyEls(r: Reply): HTMLElement[] {
   const out: HTMLElement[] = [];
-  if (r.ask) out.push(h('div', { class: 'msg-user' }, h('small', {}, r.who), r.ask));
+  if (r.ask) out.push(userMsg(r.who, r.ask, r.reference));
   const attrs: Record<string, string> = { class: r.noTake ? 'msg-reply assistant' : 'msg-reply', 'data-testid': 'reply' };
   if (r.noTake) attrs['data-no-take'] = r.noTake;
   out.push(h('div', attrs, h('small', {}, r.noTake ? (r.noTake === 'live' ? 'Praxis' : 'Assistant') : 'Praxis'), r.message));

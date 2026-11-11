@@ -8,6 +8,7 @@
 #![forbid(unsafe_code)]
 
 pub mod audio;
+pub mod clips;
 pub mod commands;
 pub mod hand;
 mod shell;
