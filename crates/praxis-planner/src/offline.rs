@@ -1575,11 +1575,7 @@ pub fn parse_brief(brief: &str, catalogue: &Catalogue, seed: u64) -> ScorePlan {
     };
     let mood = crate::scoring::emotion::preset_for(&emotion);
     let mut key = find_key(t, &emotion, &mut notes);
-    if scored
-        && notes
-            .last()
-            .is_some_and(|n| n.starts_with("no key given"))
-    {
+    if scored && notes.last().is_some_and(|n| n.starts_with("no key given")) {
         key = Key {
             tonic: mood.tonic,
             mode: mood.mode,

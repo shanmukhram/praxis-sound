@@ -27,9 +27,11 @@ pub struct CueWords {
 fn is_sentence_end(bytes: &[u8], i: usize) -> bool {
     match bytes[i] {
         b'!' | b'?' | b';' | b'\n' => true,
-        b'.' => !(i > 0
-            && bytes[i - 1].is_ascii_digit()
-            && bytes.get(i + 1).is_some_and(|c| c.is_ascii_digit())),
+        b'.' => {
+            !(i > 0
+                && bytes[i - 1].is_ascii_digit()
+                && bytes.get(i + 1).is_some_and(|c| c.is_ascii_digit()))
+        }
         _ => false,
     }
 }
@@ -214,12 +216,22 @@ pub fn read(text: &str) -> CueWords {
         }
         if matches!(
             *w,
-            "cue" | "cues" | "evolving" | "evolve" | "evolves" | "progression" | "progressions"
+            "cue"
+                | "cues"
+                | "evolving"
+                | "evolve"
+                | "evolves"
+                | "progression"
+                | "progressions"
                 | "underscore"
         ) {
             out.scored = true;
         }
-        if matches!(*w, "borrowed" | "modal") && words.get(i + 1).is_some_and(|n| n.starts_with("chord") || *n == "mixture") {
+        if matches!(*w, "borrowed" | "modal")
+            && words
+                .get(i + 1)
+                .is_some_and(|n| n.starts_with("chord") || *n == "mixture")
+        {
             out.borrowed = true;
         }
         if out.preset.is_none() && !negated {
@@ -349,13 +361,20 @@ mod tests {
                 SectionRole::Release
             ]
         );
-        assert!(!read("Tense 8-bar build in D minor at 120 bpm with a felt piano and a riser").scored);
-        assert!(!read("an epic cinematic trailer-style intro with a dark felt piano, 8 bars").scored);
+        assert!(
+            !read("Tense 8-bar build in D minor at 120 bpm with a felt piano and a riser").scored
+        );
+        assert!(
+            !read("an epic cinematic trailer-style intro with a dark felt piano, 8 bars").scored
+        );
         assert!(read("a calm 90 second cue on felt piano").scored);
         let ab = read("an A/B/A form for felt piano");
         assert_eq!(ab.form.len(), 3);
         assert_eq!(ab.form[1].name, "B");
-        assert_eq!(read("an epic but restrained cue").preset.map(|p| p.name), Some("epic-but-restrained"));
+        assert_eq!(
+            read("an epic but restrained cue").preset.map(|p| p.name),
+            Some("epic-but-restrained")
+        );
         assert!(read("a cue with borrowed chords").borrowed);
         assert_eq!(
             roman_progression("with the chord progression I V vi IV on warm keys"),

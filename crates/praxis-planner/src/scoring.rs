@@ -78,7 +78,10 @@ pub fn validate(out: &mut Vec<PlanIssue>, plan: &ScorePlan, bars: u32, secs: Opt
         out.push(PlanIssue::new(
             K::Form,
             "/form",
-            format!("{} form parts is too many; use at most {MAX_PARTS}", plan.form.len()),
+            format!(
+                "{} form parts is too many; use at most {MAX_PARTS}",
+                plan.form.len()
+            ),
         ));
     }
     if !plan.form.is_empty() && plan.form.len() as u32 > bars {
@@ -159,7 +162,10 @@ pub fn validate(out: &mut Vec<PlanIssue>, plan: &ScorePlan, bars: u32, secs: Opt
         out.push(PlanIssue::new(
             K::Hit,
             "/hits",
-            format!("{} hit points is too many; use at most {MAX_HITS}", plan.hits.len()),
+            format!(
+                "{} hit points is too many; use at most {MAX_HITS}",
+                plan.hits.len()
+            ),
         ));
     }
     for (i, h) in plan.hits.iter().enumerate() {
@@ -261,28 +267,48 @@ pub fn fix(p: &mut ScorePlan, bars: u32) -> Vec<Repair> {
     };
     if p.form.len() > MAX_PARTS {
         p.form.truncate(MAX_PARTS);
-        note(K::Form, "/form".into(), format!("kept the first {MAX_PARTS} parts"));
+        note(
+            K::Form,
+            "/form".into(),
+            format!("kept the first {MAX_PARTS} parts"),
+        );
     }
     if !p.form.is_empty() && p.form.len() as u32 > bars {
         p.form.truncate(bars.max(1) as usize);
-        note(K::Form, "/form".into(), format!("kept the first {bars} parts"));
+        note(
+            K::Form,
+            "/form".into(),
+            format!("kept the first {bars} parts"),
+        );
     }
     let ids: Vec<String> = p.layers.iter().map(|l| l.id.clone()).collect();
     for (i, part) in p.form.iter_mut().enumerate() {
         let pp = format!("/form/{i}");
         if !(part.weight.is_finite() && part.weight > 0.0 && part.weight <= 100.0) {
             part.weight = 1.0;
-            note(K::Form, format!("{pp}/weight"), "set the weight to 1".into());
+            note(
+                K::Form,
+                format!("{pp}/weight"),
+                "set the weight to 1".into(),
+            );
         }
         if part.bars == Some(0) || part.bars.is_some_and(|b| b > bars) {
             part.bars = None;
-            note(K::Form, format!("{pp}/bars"), "shared bars by weight instead".into());
+            note(
+                K::Form,
+                format!("{pp}/bars"),
+                "shared bars by weight instead".into(),
+            );
         }
         if let Some(x) = part.intensity
             && !(x.is_finite() && (0.0..=1.0).contains(&x))
         {
             part.intensity = x.is_finite().then(|| x.clamp(0.0, 1.0));
-            note(K::Intensity, format!("{pp}/intensity"), "clamped to 0..=1".into());
+            note(
+                K::Intensity,
+                format!("{pp}/intensity"),
+                "clamped to 0..=1".into(),
+            );
         }
         let before = part.layers.len();
         part.layers.retain(|l| ids.contains(l));
@@ -299,7 +325,11 @@ pub fn fix(p: &mut ScorePlan, bars: u32) -> Vec<Repair> {
         for part in &mut p.form {
             part.bars = None;
         }
-        note(K::Form, "/form".into(), "shared bars by weight instead of fixed bars".into());
+        note(
+            K::Form,
+            "/form".into(),
+            "shared bars by weight instead of fixed bars".into(),
+        );
     }
     // Layers no part plays: give them every part that lists layers (auto parts already
     // include every layer at their loudest).
@@ -315,7 +345,9 @@ pub fn fix(p: &mut ScorePlan, bars: u32) -> Vec<Repair> {
                 note(
                     K::InactiveLayer,
                     "/form".into(),
-                    format!("layer `{id}` was in no part; it now plays in every part that lists layers"),
+                    format!(
+                        "layer `{id}` was in no part; it now plays in every part that lists layers"
+                    ),
                 );
             }
         }
@@ -331,7 +363,10 @@ pub fn fix(p: &mut ScorePlan, bars: u32) -> Vec<Repair> {
     p.hits.sort_by(|a, b| a.time_s.total_cmp(&b.time_s));
     let mut kept: Vec<crate::plan::HitPoint> = Vec::new();
     for h in p.hits.drain(..) {
-        if kept.last().is_none_or(|k| h.time_s - k.time_s >= MIN_HIT_GAP_S) {
+        if kept
+            .last()
+            .is_none_or(|k| h.time_s - k.time_s >= MIN_HIT_GAP_S)
+        {
             kept.push(h);
         }
     }
@@ -340,7 +375,10 @@ pub fn fix(p: &mut ScorePlan, bars: u32) -> Vec<Repair> {
         note(
             K::Hit,
             "/hits".into(),
-            format!("kept {} of {before} hit points (inside the piece, at least {MIN_HIT_GAP_S} s apart)", kept.len()),
+            format!(
+                "kept {} of {before} hit points (inside the piece, at least {MIN_HIT_GAP_S} s apart)",
+                kept.len()
+            ),
         );
     }
     p.hits = kept;
@@ -348,7 +386,8 @@ pub fn fix(p: &mut ScorePlan, bars: u32) -> Vec<Repair> {
     if let Some(prog) = &mut p.progression {
         let key = p.key;
         let before = prog.chords.len();
-        prog.chords.retain(|c| harmony::progression_symbol(&key, c).is_ok());
+        prog.chords
+            .retain(|c| harmony::progression_symbol(&key, c).is_ok());
         prog.chords.truncate(16);
         if prog.chords.len() != before {
             note(
@@ -382,7 +421,11 @@ pub fn fix(p: &mut ScorePlan, bars: u32) -> Vec<Repair> {
             && range.max <= MAX_BPM)
     {
         p.tempo_range = None;
-        note(K::Timing, "/tempo_range".into(), "removed an invalid tempo range".into());
+        note(
+            K::Timing,
+            "/tempo_range".into(),
+            "removed an invalid tempo range".into(),
+        );
     }
     r
 }
@@ -455,7 +498,11 @@ pub fn realise(plan: &ScorePlan, seed: u64) -> ScorePlan {
     let one_shot = p.playback == crate::plan::PlanPlayback::OneShot;
     if p.progression.is_some() {
         let symbols = harmony::progression_symbols(&p);
-        let bpc = p.progression.as_ref().map(|x| x.bars_per_chord).unwrap_or(1);
+        let bpc = p
+            .progression
+            .as_ref()
+            .map(|x| x.bars_per_chord)
+            .unwrap_or(1);
         let chords = harmony::chords_over_sections(&p, &symbols, bpc, one_shot, bars);
         if !chords.is_empty() {
             p.chords = chords;
@@ -567,7 +614,9 @@ mod tests {
         for h in [42.0, 65.0, 98.0] {
             let l = hits::landing(h, r.time_signature, bpm, Grid::Sixteenth).unwrap();
             assert!(
-                r.sections.iter().any(|s| s.bars.start == l.bar || s.bars.start == l.bar + 1),
+                r.sections
+                    .iter()
+                    .any(|s| s.bars.start == l.bar || s.bars.start == l.bar + 1),
                 "{h} -> bar {}",
                 l.bar
             );

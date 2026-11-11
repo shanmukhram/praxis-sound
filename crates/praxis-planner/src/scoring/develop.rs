@@ -82,7 +82,7 @@ pub fn cutoff_hz(x: f32) -> f64 {
 
 /// Steps of `grid` per beat of `ts` (dotted quarter in compound metres).
 pub fn beat_steps(ts: praxis_score::TimeSignature, spb: u32) -> u32 {
-    let beats = if ts.denominator == 8 && ts.numerator % 3 == 0 && ts.numerator > 3 {
+    let beats = if ts.denominator == 8 && ts.numerator.is_multiple_of(3) && ts.numerator > 3 {
         (ts.numerator / 3) as u32
     } else {
         ts.numerator.max(1) as u32
@@ -115,7 +115,12 @@ fn max_gap(notes: &[Note], len: u32) -> f32 {
     }
     let mut v: Vec<(f32, f32)> = notes
         .iter()
-        .map(|n| (n.step as f32 + n.offset, n.step as f32 + n.offset + n.length))
+        .map(|n| {
+            (
+                n.step as f32 + n.offset,
+                n.step as f32 + n.offset + n.length,
+            )
+        })
         .collect();
     v.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut ring = v[0].1;
@@ -175,7 +180,11 @@ fn lifted(p: &Pattern, preset: &PresetSpec, id: &str) -> Option<Pattern> {
             continue;
         }
         let up = n.pitch as i32 + 12;
-        if up > preset.range.1 as i32 || notes.iter().any(|m| m.step == n.step && m.pitch as i32 == up) {
+        if up > preset.range.1 as i32
+            || notes
+                .iter()
+                .any(|m| m.step == n.step && m.pitch as i32 == up)
+        {
             continue;
         }
         notes.push(Note {
@@ -256,12 +265,7 @@ fn transition_into(plan: &ScorePlan, secs: &[&PlanSection], k: usize) -> Transit
 
 /// Expands the scored plan's arrangement into the layers' clips, variant patterns, filter
 /// curves and hit accents, and adds the hit markers.
-pub fn develop(
-    score: &mut Score,
-    plan: &ScorePlan,
-    infos: &[LayerInfo],
-    chord_roots: &[i32],
-) {
+pub fn develop(score: &mut Score, plan: &ScorePlan, infos: &[LayerInfo], chord_roots: &[i32]) {
     let total = score.bars;
     let ts = score.time_signature;
     let key = score.key;
@@ -322,7 +326,10 @@ pub fn develop(
     let order: Vec<&str> = plan.layers.iter().map(|l| l.id.as_str()).collect();
     let lead_at = |b: u32| -> Option<&str> {
         let s = secs[sec_of[(b - 1) as usize]];
-        order.iter().copied().find(|id| s.layers.iter().any(|l| l == id))
+        order
+            .iter()
+            .copied()
+            .find(|id| s.layers.iter().any(|l| l == id))
     };
 
     // Per layer: the slot of every bar.
@@ -450,8 +457,7 @@ pub fn develop(
         let b = l.bar;
         let bi = (b - 1) as usize;
         let sounding = |li: usize| !matches!(slots[li][bi], Slot::Silent);
-        let pitched =
-            |li: usize| infos[li].preset.pitched && !unpitched_class(infos[li].class);
+        let pitched = |li: usize| infos[li].preset.pitched && !unpitched_class(infos[li].class);
         let anchor = (0..infos.len())
             .filter(|li| pitched(*li) && sounding(*li) && forms[*li].is_some())
             .filter_map(|li| anchor_rank(infos[li].class).map(|r| (r, li)))
@@ -482,7 +488,7 @@ pub fn develop(
             let mut notes: Vec<Note> = Vec::new();
             for n in old {
                 let num = n.step * hit_spb;
-                if num % from_spb != 0 {
+                if !num.is_multiple_of(from_spb) {
                     continue;
                 }
                 let factor = hit_spb as f32 / from_spb as f32;
@@ -565,7 +571,11 @@ pub fn develop(
                     if notes.is_empty() {
                         None
                     } else {
-                        let tag = if *slot == Slot::Pickup { "pickup" } else { "hold" };
+                        let tag = if *slot == Slot::Pickup {
+                            "pickup"
+                        } else {
+                            "hold"
+                        };
                         let id = format!("{layer_id}_{tag}_b{b}");
                         one_bar.insert(
                             id.clone(),
@@ -651,7 +661,9 @@ pub fn develop(
                 push(s.bars.start as f64, c);
                 let end = s.bars.end as f64 + 1.0;
                 match secs.get(k + 1) {
-                    Some(next) if s.role == SectionRole::Build => push(end, cutoff_hz(next.intensity)),
+                    Some(next) if s.role == SectionRole::Build => {
+                        push(end, cutoff_hz(next.intensity))
+                    }
                     Some(_) => push(end - 0.5, c),
                     None => push(end, c),
                 }

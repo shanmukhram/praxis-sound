@@ -271,13 +271,17 @@ pub fn strong_onsets(score: &Score) -> Vec<f64> {
         .collect()
 }
 
-/// Notes (layer, start) starting in bar `bar` (1-based).
+/// Notes (layer, start) starting in bar `bar` (1-based). A note nudged up to 20 ms early onto
+/// the next bar line (a hit accent) belongs to the next bar.
 fn bar_onsets(score: &Score, bar: u32) -> Vec<(usize, f64)> {
     let tm = TimeMap::new(score, SR);
-    let (a, b) = (tm.bar_pos_to_s(bar as f64), tm.bar_pos_to_s(bar as f64 + 1.0));
+    let (a, b) = (
+        tm.bar_pos_to_s(bar as f64),
+        tm.bar_pos_to_s(bar as f64 + 1.0),
+    );
     expand_notes(score, SR)
         .iter()
-        .filter(|e| e.start_s >= a - 1e-9 && e.start_s < b - 1e-9)
+        .filter(|e| e.start_s >= a - 0.02 && e.start_s < b - 0.02)
         .map(|e| (e.layer, e.start_s))
         .collect()
 }
@@ -291,10 +295,7 @@ fn role_name(r: praxis_score::SectionRole) -> String {
 
 /// Root pitch class (semitones above C) of a chord symbol.
 fn chord_root(symbol: &str) -> Option<u8> {
-    let two = symbol
-        .chars()
-        .nth(1)
-        .is_some_and(|x| x == '#' || x == 'b');
+    let two = symbol.chars().nth(1).is_some_and(|x| x == '#' || x == 'b');
     let n = if two { 2 } else { 1 };
     symbol
         .get(..n)

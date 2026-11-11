@@ -239,11 +239,7 @@ pub fn sections(plan: &ScorePlan, total: u32, targets: &[u32]) -> Vec<PlanSectio
     let mut out = Vec::with_capacity(n);
     for i in 0..n {
         let start = starts[i];
-        let end = if i + 1 < n {
-            starts[i + 1] - 1
-        } else {
-            total
-        };
+        let end = if i + 1 < n { starts[i + 1] - 1 } else { total };
         let p = &parts[i];
         let layers: Vec<String> = if p.layers.is_empty() {
             ids[..layer_count(intens[i], min, max, ids.len())].to_vec()

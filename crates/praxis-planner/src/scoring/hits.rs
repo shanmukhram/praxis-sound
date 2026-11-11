@@ -32,7 +32,7 @@ pub struct Solved {
 
 fn beats_per_bar(ts: TimeSignature) -> f64 {
     // Compound metres (6/8, 9/8, 12/8) count dotted-quarter beats.
-    if ts.denominator == 8 && ts.numerator % 3 == 0 && ts.numerator > 3 {
+    if ts.denominator == 8 && ts.numerator.is_multiple_of(3) && ts.numerator > 3 {
         (ts.numerator / 3) as f64
     } else {
         ts.numerator.max(1) as f64

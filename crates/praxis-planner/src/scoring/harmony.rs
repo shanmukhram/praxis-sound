@@ -144,7 +144,11 @@ pub fn chords_over_sections(
 }
 
 /// A library progression for an emotion preset, chosen by seed, as symbols in the key.
-pub fn library_symbols(key: &Key, preset: &super::emotion::EmotionPreset, seed: u64) -> Vec<String> {
+pub fn library_symbols(
+    key: &Key,
+    preset: &super::emotion::EmotionPreset,
+    seed: u64,
+) -> Vec<String> {
     let progs = preset.progressions;
     let prog = progs[(seed % progs.len() as u64) as usize];
     prog.iter().map(|d| diatonic_symbol(key, *d)).collect()
@@ -188,12 +192,22 @@ pub fn voice_lead(pcs: &[i32], prev: Option<&[i32]>, center: i32, lo: i32, hi: i
             }
             let cost: i64 = match prev {
                 Some(p) if p.len() == v.len() => {
-                    v.iter().zip(p).map(|(a, b)| (a - b).abs() as i64).sum::<i64>() * 4
+                    v.iter()
+                        .zip(p)
+                        .map(|(a, b)| (a - b).abs() as i64)
+                        .sum::<i64>()
+                        * 4
                         + ((v.iter().sum::<i32>() / n as i32) - center).abs() as i64
                 }
-                _ => ((v.iter().sum::<i32>() / n as i32) - center).abs() as i64 * 4 + v[0] as i64 / 128,
+                _ => {
+                    ((v.iter().sum::<i32>() / n as i32) - center).abs() as i64 * 4
+                        + v[0] as i64 / 128
+                }
             };
-            if best.as_ref().is_none_or(|(c, bv)| cost < *c || (cost == *c && v < *bv)) {
+            if best
+                .as_ref()
+                .is_none_or(|(c, bv)| cost < *c || (cost == *c && v < *bv))
+            {
                 best = Some((cost, v));
             }
         }
@@ -244,7 +258,11 @@ mod tests {
         assert_eq!(progression_symbol(&k, "iv7").as_deref(), Ok("Dm7"));
         assert_eq!(progression_symbol(&k, "ii°").as_deref(), Ok("Bdim"));
         assert_eq!(progression_symbol(&k, "F").as_deref(), Ok("F"));
-        assert!(progression_symbol(&k, "bVII").unwrap_err().contains("borrowed"));
+        assert!(
+            progression_symbol(&k, "bVII")
+                .unwrap_err()
+                .contains("borrowed")
+        );
         assert!(progression_symbol(&k, "F#").is_err());
         assert!(progression_symbol(&k, "xyz").is_err());
     }

@@ -7,9 +7,7 @@ mod common;
 
 use common::check_scoring;
 use praxis_planner::plan::TOOL_NAME;
-use praxis_planner::{
-    Catalogue, Provider, ProviderError, ToolRequest, compose_plan, plan_brief,
-};
+use praxis_planner::{Catalogue, Provider, ProviderError, ToolRequest, compose_plan, plan_brief};
 use praxis_score::lint::{LintContext, lint};
 use praxis_score::validate::validate;
 use serde_json::{Value, json};
@@ -81,16 +79,30 @@ fn a_hand_written_scored_plan_composes_and_recomposes() {
             "progression_start": ["F", "C", "G", "Am"],
             "voice_leading_max": 5,
             "bass_passing_tones": true,
-            "drop_before": "peak"
+            "hold_before": "release"
         }),
     )
     .expect("scoring checks");
+    // The hit at 0:58 falls late in the bar before the peak, so that bar keeps its hit accent
+    // instead of the drop (a transition never takes a bar that holds a hit), and the peak
+    // starts on the next bar line, just after the hit.
+    let peak = score
+        .sections
+        .iter()
+        .find(|s| s.role == praxis_score::SectionRole::Peak)
+        .expect("peak");
+    let keys = score.layer("keys").expect("keys");
+    assert!(
+        keys.clips
+            .iter()
+            .any(|c| c.bars.start == peak.bars.start - 1 && c.pattern.ends_with("_hit2"))
+    );
     // A one-shot ends on the tonic chord.
     assert_eq!(score.chords.last().map(|c| c.symbol.as_str()), Some("C"));
     // The returned plan is realised (sections, tempo, chords) and arranges to the same Score.
     assert!(!out.plan.sections.is_empty());
-    let again = compose_plan(&serde_json::to_value(&out.plan).expect("json"), &c, 7)
-        .expect("recompose");
+    let again =
+        compose_plan(&serde_json::to_value(&out.plan).expect("json"), &c, 7).expect("recompose");
     assert_eq!(again.score.patterns, score.patterns);
     assert_eq!(again.score.layers, score.layers);
     assert_eq!(again.score.markers, score.markers);

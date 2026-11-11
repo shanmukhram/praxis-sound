@@ -34,10 +34,7 @@ fn on_test_instruments(score: &mut Score) {
 fn onset_strength(mono: &[f32], sr: u32) -> Vec<f64> {
     let hop = (sr / 1000) as usize;
     let win = 4 * hop;
-    let diff: Vec<f64> = mono
-        .windows(2)
-        .map(|w| (w[1] - w[0]) as f64)
-        .collect();
+    let diff: Vec<f64> = mono.windows(2).map(|w| (w[1] - w[0]) as f64).collect();
     let frames = diff.len() / hop;
     let energy: Vec<f64> = (0..frames)
         .map(|f| {
@@ -109,6 +106,9 @@ fn a_two_minute_cue_lands_three_hits_on_their_markers() {
         let at_s = (best as f64 + 2.0) / 1000.0;
         let err_ms = (at_s - t).abs() * 1000.0;
         println!("hit {t:.3} s: strongest onset at {at_s:.3} s ({err_ms:.1} ms)");
-        assert!(err_ms <= 20.0, "hit at {t} s: onset at {at_s:.3} s, {err_ms:.1} ms away");
+        assert!(
+            err_ms <= 20.0,
+            "hit at {t} s: onset at {at_s:.3} s, {err_ms:.1} ms away"
+        );
     }
 }
