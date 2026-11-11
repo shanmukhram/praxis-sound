@@ -1,6 +1,6 @@
 # ADR-0008: Project licence pending
 
-Status: accepted for now (owner, 2026-11-10: closed source; final licence decided later)
+Status: superseded by ADR-0012 (owner, 2026-11-12: closed-source commercial, one-time purchase)
 
 The PRD leaves open source vs closed and the licence open. Until decided, crates declare
 `license = "LicenseRef-Proprietary-Pending"`, the repository is private, and all dependencies and
