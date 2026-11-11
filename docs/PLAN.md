@@ -196,7 +196,9 @@ Depends: WP-D1, WP-E. Done: profile per contract; classification; labelled-set a
 ## Phase 6: Similar-sound generation (exit: each generated sound closest to its own reference, passes originality, survives blind listening)
 
 ### WP-H sfx patches
-FR-16. Owns: `crates/praxis-instruments/src/sfx.rs` + dir. Depends: WP-B1, WP-B2.
+FR-16. Owns: `crates/praxis-instruments/src/sfx.rs` + dir, `tests/sfx_*.rs`, `demos/sfx/**`.
+Depends: WP-B1, WP-B2. Brief: `docs/briefs/WP-H-sfx-patches.md`. Done: six presets with
+monotonic, measured macros, tuned to the key, riser landing on its end sample, demos.
 ### WP-M match
 FR-14, FR-15, FR-17, FR-18. Owns: `crates/praxis-match/**`. Depends: WP-D2, WP-H, WP-F2, WP-P.
 
