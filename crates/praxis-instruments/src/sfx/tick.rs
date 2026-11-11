@@ -1,25 +1,30 @@
 //! `tick`: a short clicky transient, usable as a clock (class tick, unpitched one-shot).
 //!
-//! A click (a 0.15 ms pulse plus a little noise, through a resonant band-pass, so every click
-//! has the same shape and level), a short ping on the key's tonic or
-//! fifth (so even the click's ring sits in key) and an optional low knock on the tonic. The
-//! attack starts on the note's first sample every time; the seed varies only the level (+/-0.5
-//! dB) and the click band (+/-3%), never the timing, so a stream of ticks keeps time exactly.
-//! The tick ends in exact silence at the end of `length` (a `cos^2` fade over its last 30%).
-//! Note-offs do not cut it, and the note's pitch is ignored (tick is unpitched).
+//! A short modal click, like a small hard part of a mechanism striking another: a 0.15 ms contact
+//! force rings six modes of a small body (spread from 0.55 to 2.4 times the click band, the
+//! upper ones shorter, 3..22 ms), with the contact's grit (the pulse plus a little noise through a
+//! resonant band-pass) on top; a short ping on the key's tonic or fifth (so even the click's ring
+//! sits in key), an optional low knock on the tonic and the first part of a room around it. Every click has
+//! the same shape: the attack starts on the note's first sample every time; the seed varies only
+//! the level (+/-0.5 dB), the click band (+/-3%) and each mode's tuning (+/-0.4%), never the
+//! timing, so a stream of ticks keeps time exactly. The tick ends in exact silence at the end of
+//! `length` (a `cos^2` fade over its last 30%). Note-offs do not cut it, and the note's pitch is
+//! ignored (tick is unpitched).
 //!
 //! Macros:
 //! - `length`: total duration, 10..250 ms (exponential; 0.5 = 50 ms).
-//! - `brightness`: click band centre 1.5..8 kHz (exponential) and the ping's overtone.
+//! - `brightness`: click band centre 1.5..8 kHz (exponential; the modes follow), contact grit and
+//!   the ping's overtone.
 //! - `weight`: the knock, a 41..78 Hz tonic body (0 at weight 0).
 //! - `pitch`: the ping moves over tonic / fifth positions from the tonic in octave 5 to the
-//!   tonic in octave 7 (0.5 = the tonic in octave 6); the click band shifts continuously, an
-//!   octave down at 0 to one up at 1.
+//!   tonic in octave 7 (0.5 = the tonic in octave 6); the click band and modes shift
+//!   continuously, an octave down at 0 to one up at 1.
 
 use super::common::{
     Macros, Phasor, colour_shift, dc_blocker, expmap, fall, fifth_pc, info, low_layer, midi_hz,
     pitch_steps, t60_coeff, to_samples, tonic_pc,
 };
+use super::space::{Contact, Mode, Room};
 use crate::synth::common::{Params, vel_gain};
 use crate::synth::poly::{Note, Patch, Voice, context_rate};
 use praxis_dsp::filter::{DcBlocker, Svf, SvfMode};
@@ -38,9 +43,22 @@ const CLICK_LEVEL: f64 = 3.0;
 /// The click's excitation: a Hann pulse of this length and height, plus noise.
 const PULSE_S: f64 = 0.00015;
 const PULSE_LEVEL: f64 = 1.0;
-const CLICK_NOISE: f64 = 0.35;
+const CLICK_NOISE: f64 = 0.25;
 const PING_LEVEL: f64 = 0.12;
 const KNOCK_LEVEL: f64 = 0.2;
+/// Body modes: position in the spread (ratio to the click band), level, 60 dB decay (s).
+const MODES: [(f64, f64, f64); 6] = [
+    (0.55, 0.7, 0.022),
+    (0.8, 1.0, 0.016),
+    (1.1, 0.8, 0.012),
+    (1.45, 0.6, 0.008),
+    (1.9, 0.4, 0.005),
+    (2.4, 0.25, 0.003),
+];
+const MODE_LEVEL: f64 = 0.6;
+/// Contact pulse driving the modes, seconds.
+const CONTACT_S: f64 = 0.00015;
+const ROOM_WET: f64 = 0.4;
 
 /// The `tick` preset.
 #[derive(Clone, Debug)]
@@ -68,6 +86,12 @@ pub struct TickVoice {
     knock_amp: f64,
     knock_decay: f64,
     knock_dc: DcBlocker,
+    contact: Contact,
+    modes: [Mode; 6],
+    mode_dc: DcBlocker,
+    mode_last: f64,
+    mode_scale: f64,
+    room: Room,
     gain: f64,
     done: bool,
 }
@@ -131,6 +155,12 @@ impl Patch for Tick {
             knock_amp: 0.0,
             knock_decay: 0.0,
             knock_dc: dc_blocker(self.sr as f32),
+            contact: Contact::default(),
+            modes: [Mode::default(); 6],
+            mode_dc: dc_blocker(self.sr as f32),
+            mode_last: 0.0,
+            mode_scale: 1.0,
+            room: Room::new(self.sr),
             gain: 0.0,
             done: true,
         }
@@ -178,6 +208,21 @@ impl Voice<Tick> for TickVoice {
         self.knock_decay = t60_coeff((0.025 * sr).min(0.8 * n));
         self.knock_dc.reset();
 
+        self.contact.strike(to_samples(CONTACT_S, sr, 2));
+        let limit = super::common::NOISE_CEILING_HZ.min(0.45 * sr);
+        for (md, (ratio, amp, t60)) in self.modes.iter_mut().zip(MODES) {
+            let f = centre * ratio * (1.0 + 0.004 * rng.next_bipolar() as f64);
+            let t60 = t60.min(0.6 * n / sr);
+            let a = if f < limit { amp } else { 0.0 };
+            md.set(f.min(limit), t60, a, sr);
+        }
+        self.mode_dc.reset();
+        self.mode_last = 0.0;
+        self.mode_scale = sr / (std::f64::consts::TAU * centre);
+        self.room
+            .set(1.0, 0.5, expmap(bright, 4000.0, 10_000.0), sr);
+        self.room.clear();
+
         let jitter = 2f64.powf(rng.next_bipolar() as f64 * 0.5 / 6.02);
         self.gain = LEVEL * vel_gain(note.velocity) as f64 * jitter;
         self.i = 0;
@@ -222,9 +267,24 @@ impl Voice<Tick> for TickVoice {
         let knock = self.knock_dc.tick(knock as f32) as f64;
         self.knock.advance();
         self.knock_amp *= self.knock_decay;
+        let force = self.contact.next();
+        let mut body = 0.0;
+        for md in self.modes.iter_mut() {
+            body += md.tick(force);
+        }
+        // The body radiates its velocity (the displacement's first difference, scaled back to
+        // the click band): no net push, so no DC.
+        let vel = (body - self.mode_last) * self.mode_scale;
+        self.mode_last = body;
+        let body = MODE_LEVEL * self.mode_dc.tick(vel as f32) as f64;
         self.i += 1;
-        let y = ((click + ping + knock) * self.gain * env) as f32;
-        (y, y)
+        let dry = click + body + ping + knock;
+        let (wl, wr) = self.room.tick(dry, dry);
+        let g = self.gain * env;
+        (
+            ((dry + ROOM_WET * wl) * g) as f32,
+            ((dry + ROOM_WET * wr) * g) as f32,
+        )
     }
 
     fn level(&self) -> f32 {
