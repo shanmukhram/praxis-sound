@@ -2,7 +2,7 @@
 
 Updated after every merge. Newest first. Branch: `build/integration` (pushed to `origin`).
 
-## Current phase: 3 (Phases 0-2 closed; Phase 2 signed off by the owner 2026-11-11)
+## Current phase: 3 exit passed on this machine; waiting for the owner's real-hardware check (docs/NEEDS_OWNER.md item 3)
 
 Wave 1 (WP-A, B1, B2, C1, D1, E, F, P) runs as background agents in worktrees. From wave 2 on,
 work packages run as visible sessions (owner's choice), briefed from `docs/briefs/`. WP-X (MCP
@@ -36,6 +36,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- **Phase 3 exit (machine side) passed.** Merged WP-U5 build a sound by hand (912b997): blank sounds, sound settings, layers by hand, batched note entry with one "Make a take", spoken-rhythm bars, seek, loop strip, keyboard transport, phone layout. Its exit run built acceptance 1 entirely by hand in the release app (fake output): 18 notes identical to acceptance 1, take 1 8/8 checks, 60 s with 0 xruns, WAV/FLAC/stems/MIDI exported, `praxis check` passes. Full suite here (keychain off, Chromium muted, no device tests): fmt, workspace clippy, `cargo test --workspace --release` 594 passed / 0 failed / 6 ignored (device opt-ins), acceptance 1 all 8 checks (grid 100%), wasm release build, tsc, Vitest 172/172, Playwright 11/11. Release app rebuilt with `npm run tauri -- build --no-bundle` (a cargo-only build embeds no current front end). Full three-OS CI by hand is blocked by Actions billing until the free minutes reset. Remaining for the phase: the owner's real-hardware check.
 
 - Merged WP-AG sound assistant agent (b038acd): with a key, `ops::ask` (CLI, MCP, app) runs a Claude Opus 5.5 tool loop over raw HTTP: 16 strict tools (read the sound, catalogue, compose plan/edit, apply patch, set params, render+check with per-layer measurements, variations, undo/redo, views, ask_user), `conversation.json` per sound, system prompt from `docs/agents/`, progress callback; offline planner is the fallback. Key only in the `x-api-key` header, scrubbed from errors. 8 scripted/replayed conversations pass; combined with WP-P2b: CLI, MCP, planner release tests, workspace clippy, wasm all pass; every test pins the offline planner or a scripted model (`PRAXIS_KEYCHAIN=off` in binary tests). Owner stored the API key (Windows Credential Manager, `praxis key set`). Follow-ups: restrict `PRAXIS_CLAUDE_URL` to loopback; app shows no-take replies as replies and the agent's live steps; muffling lowers the frozen-gain loudness (agent should compensate). Live run (`docs/agents/live-run.md`) awaits the owner's go-ahead.
 
