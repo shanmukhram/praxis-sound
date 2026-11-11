@@ -17,7 +17,8 @@ pub struct EmotionPreset {
     pub mode: Mode,
     /// Lowest, usual and highest tempo in BPM.
     pub tempo: (f64, f64, f64),
-    /// Register of the lead motif.
+    /// Register of the lead motif. No preset puts it low: a low piano motif muddies the low end
+    /// the bass holds, and its attacks blur (the render's grid check read them up to 55 ms late).
     pub register: Register,
     /// Presets in the order they enter as the intensity rises (used when a brief names none).
     pub instruments: &'static [&'static str],
@@ -77,7 +78,7 @@ pub const PRESETS: [EmotionPreset; 8] = [
         tonic: PitchClass::D,
         mode: Mode::Minor,
         tempo: (88.0, 100.0, 120.0),
-        register: Register::Low,
+        register: Register::Mid,
         instruments: &["felt_piano", "sub_bass", "soft_kick"],
         shape: &[
             (Intro, 2.0, 0.35),
@@ -138,7 +139,7 @@ pub const PRESETS: [EmotionPreset; 8] = [
             (Peak, 2.0, 0.65),
             (Release, 3.0, 0.3),
         ],
-        progressions: &[&[0, 5, 2, 6], &[0, 3, 5, 4], &[0, 5, 3, 4]],
+        progressions: &[&[0, 3, 5, 4], &[0, 5, 2, 6], &[0, 5, 3, 4]],
         bars_per_chord: 1,
     },
     EmotionPreset {
@@ -184,7 +185,7 @@ pub const PRESETS: [EmotionPreset; 8] = [
         tonic: PitchClass::E,
         mode: Mode::Phrygian,
         tempo: (64.0, 76.0, 88.0),
-        register: Register::Low,
+        register: Register::Mid,
         instruments: &["felt_piano", "sub_bass", "soft_kick"],
         shape: &[
             (Intro, 2.0, 0.3),

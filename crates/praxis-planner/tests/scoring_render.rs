@@ -1,8 +1,8 @@
 //! Phase 7 exit, measured on the render: a 2-minute score planned from a brief with three hit
 //! points lands each one on its marker. The Score is planned offline, rendered by the real engine
 //! (effects, mix bus, limiter) with the engine's test instruments standing in for the sampled
-//! presets, and an onset detector on the master finds the strongest attack near each marker: it
-//! must be within 20 ms of the marker.
+//! presets, and an onset detector on the master finds the attack near each marker: it must be
+//! within 20 ms of the marker.
 
 mod common;
 
@@ -30,23 +30,30 @@ fn on_test_instruments(score: &mut Score) {
     }
 }
 
-/// Onset strength every millisecond: the rise of the high-passed energy in a 4 ms window.
+/// An onset: the energy rises at least this much (dB) in 5 ms.
+const ATTACK_DB: f64 = 10.0;
+
+/// Onset strength every millisecond: how many dB the energy of the next 5 ms rises above the
+/// energy of the 5 ms that ended 5 ms earlier.
 fn onset_strength(mono: &[f32], sr: u32) -> Vec<f64> {
     let hop = (sr / 1000) as usize;
-    let win = 4 * hop;
-    let diff: Vec<f64> = mono.windows(2).map(|w| (w[1] - w[0]) as f64).collect();
-    let frames = diff.len() / hop;
+    let win = 5 * hop;
+    let frames = mono.len() / hop;
     let energy: Vec<f64> = (0..frames)
         .map(|f| {
             let a = f * hop;
-            let b = (a + win).min(diff.len());
-            diff[a..b].iter().map(|x| x * x).sum::<f64>() / (b - a).max(1) as f64
+            let b = (a + win).min(mono.len());
+            mono[a..b]
+                .iter()
+                .map(|x| (*x as f64) * (*x as f64))
+                .sum::<f64>()
+                / (b - a).max(1) as f64
         })
         .collect();
+    let db = |e: f64| 10.0 * (e + 1e-12).log10();
     let mut out = vec![0.0; frames];
-    for f in 4..frames {
-        let before = energy[f - 4..f].iter().sum::<f64>() / 4.0;
-        out[f] = (energy[f] - before).max(0.0);
+    for f in 10..frames {
+        out[f] = (db(energy[f]) - db(energy[f - 10])).max(0.0);
     }
     out
 }
@@ -97,15 +104,16 @@ fn a_two_minute_cue_lands_three_hits_on_their_markers() {
         .collect();
     assert_eq!(markers, vec![42.0, 65.0, 98.0]);
     for t in markers {
-        // The strongest attack within 100 ms either side of the marker.
+        // The onset near the marker: the first frame within 100 ms either side where the energy
+        // rises by at least ATTACK_DB in 5 ms, a clear attack. (Later in a held chord the test
+        // bell can swell again; that is not an onset.)
         let centre = (t * 1000.0).round() as usize;
-        let (best, _) = (centre.saturating_sub(100)..(centre + 100).min(strength.len()))
-            .map(|f| (f, strength[f]))
-            .fold((0usize, -1.0f64), |a, b| if b.1 > a.1 { b } else { a });
-        // The detector's frame covers the 4 ms after its start; its centre is the onset.
-        let at_s = (best as f64 + 2.0) / 1000.0;
+        let best = (centre.saturating_sub(100)..(centre + 100).min(strength.len()))
+            .find(|f| strength[*f] >= ATTACK_DB)
+            .unwrap_or_else(|| panic!("no attack within 100 ms of the hit at {t} s"));
+        let at_s = best as f64 / 1000.0;
         let err_ms = (at_s - t).abs() * 1000.0;
-        println!("hit {t:.3} s: strongest onset at {at_s:.3} s ({err_ms:.1} ms)");
+        println!("hit {t:.3} s: onset at {at_s:.3} s ({err_ms:.1} ms)");
         assert!(
             err_ms <= 20.0,
             "hit at {t} s: onset at {at_s:.3} s, {err_ms:.1} ms away"
