@@ -7,16 +7,25 @@
 //! 2. **Peak picking**: a frame is an onset candidate when it is the local maximum within
 //!    `max_radius` frames and exceeds an adaptive threshold: the local mean plus `delta` times the
 //!    largest value within `context_s`. Candidates closer than `min_gap_s` keep the stronger one.
-//! 3. **Refinement**: with log compression the flux peak leads the true attack by up to half a
-//!    frame (the new energy is noticed as soon as it enters the window edge), too coarse for a
-//!    10 ms grid check. Each onset is re-placed at the maximum of a rectified complex-domain
-//!    onset function (Duxbury/Bello) computed with ~20 ms frames at a 0.5 ms hop, searched from
-//!    one hop before to half a frame after the coarse peak. Each bin is predicted from the two
-//!    previous frames (same magnitude, same phase advance), so ringing partials, including a
-//!    still-sounding note of the same pitch, predict themselves and only new energy counts. The
-//!    deviation of a sustained attack is largest when the attack crosses the window centre, so
-//!    the refined time sits on the attack (within ~2 ms for tones, ~2.5 ms early for bare clicks).
+//! 3. **Attack start and swell rejection** ([`super::attack`]): the flux peak only says that
+//!    something new happened within about a frame, and in context it lands up to 15 ms after a
+//!    soft attack. Each candidate is re-analysed by linear prediction: what was already sounding
+//!    is predicted from its own past, the prediction error is the new signal, and the onset is
+//!    placed where that error starts (change in variance), which is the attack's first new
+//!    samples rather than its loudest point. A candidate whose error rises less than
+//!    `min_rise_db` is not a struck note but a swell of what is already sounding (beating unison
+//!    strings, reverb build-up) or a note so masked by ringing partials that it cannot be timed;
+//!    it is dropped.
+//! 4. **Fallback refinement** (attack analysis off, `attack.order == 0`): the onset is re-placed
+//!    at the maximum of a rectified complex-domain onset function (Duxbury/Bello) computed with
+//!    ~20 ms frames at a 0.5 ms hop, searched from one hop before to half a frame after the
+//!    coarse peak. Each bin is predicted from the two previous frames (same magnitude, same
+//!    phase advance), so ringing partials predict themselves and only new energy counts. Good
+//!    for isolated tones (within ~2 ms), but late for soft attacks under ringing notes.
+//!
+//! Onsets closer than half of `min_gap_s` after refinement keep the stronger one.
 
+use super::attack::{AttackConfig, find_attack};
 use super::stft::{FrameAnalyzer, frame_len_for};
 use realfft::num_complex::Complex;
 
@@ -41,8 +50,14 @@ pub struct OnsetConfig {
     pub floor: f32,
     /// Minimum time between two onsets, seconds.
     pub min_gap_s: f64,
-    /// Refine onset times in the time domain.
+    /// Refine onset times to the attack start and reject swells (see [`super::attack`]).
     pub refine: bool,
+    /// Attack-start analysis settings used when `refine` is on.
+    pub attack: AttackConfig,
+    /// With `refine` on, a candidate whose prediction error rises less than this over its
+    /// baseline (dB, mean over `attack.rise_s` after its start) is a swell, not an attack, and is
+    /// dropped. Measured on felt-piano renders: struck notes 2 dB and up, swells about -2 dB.
+    pub min_rise_db: f64,
 }
 
 impl Default for OnsetConfig {
@@ -58,6 +73,8 @@ impl Default for OnsetConfig {
             floor: 0.02,
             min_gap_s: 0.04,
             refine: true,
+            attack: AttackConfig::default(),
+            min_rise_db: 1.5,
         }
     }
 }
@@ -336,20 +353,30 @@ pub fn detect_onsets_with(
         return (env, Vec::new());
     }
     let peaks = pick_peaks(&env, cfg);
-    let mut refiner = cfg.refine.then(|| Refiner::new(signal, sample_rate));
+    let mut refiner =
+        (cfg.refine && cfg.attack.order == 0).then(|| Refiner::new(signal, sample_rate));
     let sr = sample_rate as f64;
     let min_gap = (cfg.min_gap_s * sr * 0.5) as usize;
     let mut out: Vec<Onset> = Vec::with_capacity(peaks.len());
     for f in peaks {
         let centre = f * env.hop;
-        let sample = match refiner.as_mut() {
-            Some(r) => {
+        let attack = if cfg.refine {
+            find_attack(signal, sample_rate, centre, &cfg.attack)
+        } else {
+            None
+        };
+        if attack.is_some_and(|a| a.rise_db < cfg.min_rise_db) {
+            continue;
+        }
+        let sample = match (attack, refiner.as_mut()) {
+            (Some(a), _) => a.sample,
+            (None, Some(r)) => {
                 let lo = centre.saturating_sub(env.hop);
                 let last = signal.len().saturating_sub(r.frame_len() / 2).max(lo);
                 let hi = (centre + env.frame_len / 2 + env.hop / 2).min(last);
                 r.refine(lo, hi).unwrap_or(centre)
             }
-            None => centre,
+            (None, None) => centre,
         };
         let onset = Onset {
             time_s: sample as f64 / sr,
