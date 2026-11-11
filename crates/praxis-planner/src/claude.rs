@@ -522,6 +522,40 @@ fn api_error(status: u16, body: &str) -> String {
     format!("HTTP {status} {kind}: {msg}{hint}")
 }
 
+/// Wrapper keys a model sometimes puts around a whole tool input.
+const WRAPPER_KEYS: [&str; 3] = ["parameters", "input", "arguments"];
+
+/// Removes a wrapper a model put around the whole tool input. In the live runs of 2026-11-11 the
+/// planner answered `{"parameters": {...the plan...}}` in about one brief in six, which cost a
+/// schema repair round each time. The input is unwrapped only when its single key is one of
+/// [`WRAPPER_KEYS`], that key is not a property of the tool's schema, and the wrapped value is
+/// an object (or a JSON string holding one) that has at least one of the schema's properties.
+/// Anything else is returned unchanged, so validation still sees exactly what the model sent.
+pub fn unwrap_tool_input(input: Value, schema: &Value) -> Value {
+    let props = &schema["properties"];
+    let Some((key, inner)) = input
+        .as_object()
+        .filter(|o| o.len() == 1)
+        .and_then(|o| o.iter().next())
+    else {
+        return input;
+    };
+    if !WRAPPER_KEYS.contains(&key.as_str()) || props.get(key).is_some() {
+        return input;
+    }
+    let inner = match inner {
+        Value::String(s) => match serde_json::from_str::<Value>(s) {
+            Ok(v) => v,
+            Err(_) => return input,
+        },
+        v => v.clone(),
+    };
+    let looks_like_input = inner
+        .as_object()
+        .is_some_and(|o| o.keys().any(|k| props.get(k).is_some()));
+    if looks_like_input { inner } else { input }
+}
+
 /// What a response contained.
 enum Reply {
     Tool(Value),
@@ -579,7 +613,7 @@ impl Provider for ClaudeProvider {
             let body = self.request_body(&req);
             let resp = self.send(&body, &key)?;
             match read_reply(&resp, &req.tool_name)? {
-                Reply::Tool(input) => return Ok(input),
+                Reply::Tool(input) => return Ok(unwrap_tool_input(input, &req.input_schema)),
                 Reply::Text(text) if round == 0 => {
                     req.messages.push(Message {
                         role: Role::Assistant,
@@ -636,6 +670,42 @@ mod tests {
         assert!(!u.to_string().contains("oneOf"), "{u}");
         assert_eq!(u["$defs"]["E"]["anyOf"][1]["const"], "b");
         assert_eq!(u["properties"]["x"]["anyOf"][0]["type"], "string");
+    }
+
+    #[test]
+    fn a_wrapped_tool_input_is_unwrapped_and_nothing_else_is() {
+        let schema = crate::plan::plan_schema();
+        let plan = json!({"emotion": "calm", "key": {"tonic": "A", "mode": "minor"}, "layers": []});
+        // The live shape, and the same plan sent as a JSON string.
+        assert_eq!(
+            unwrap_tool_input(json!({"parameters": plan.clone()}), &schema),
+            plan
+        );
+        assert_eq!(
+            unwrap_tool_input(json!({"input": plan.to_string()}), &schema),
+            plan
+        );
+        // Unchanged: a plain plan, an unknown wrapper, a wrapper beside other fields, a wrapped
+        // value that is not a plan, and a key that is a real field of the schema.
+        let same = |v: Value, s: &Value| assert_eq!(unwrap_tool_input(v.clone(), s), v);
+        same(plan.clone(), &schema);
+        same(json!({"plan": plan.clone()}), &schema);
+        same(
+            json!({"parameters": plan.clone(), "emotion": "calm"}),
+            &schema,
+        );
+        same(json!({"parameters": {"foo": 1}}), &schema);
+        same(json!({"parameters": "not json"}), &schema);
+        let edit = crate::edit::edit_schema();
+        same(json!({"params": {"tone": "darker"}}), &edit);
+        let with_field = json!({"properties": {"parameters": {"type": "object"}}});
+        same(json!({"parameters": {"parameters": 1}}), &with_field);
+        // The edit tool gets the same unwrap.
+        let e = json!({"intent": "change_tone", "params": {"tone": "brighter"}});
+        assert_eq!(
+            unwrap_tool_input(json!({"parameters": e.clone()}), &edit),
+            e
+        );
     }
 
     #[test]

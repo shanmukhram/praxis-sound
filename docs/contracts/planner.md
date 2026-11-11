@@ -151,6 +151,10 @@ pad, noise_bed texture (unpitched).
   read from the prompt cache. Each 200 response's `usage` is added to `ClaudeProvider::usage()`
   (`claude::Usage`: requests, input, output, cache write and cache read tokens; `cost_usd(model)`
   at list price, `since(earlier)` for one call's share); the live suites print it per case.
+  A tool input wrapped as `{"parameters": {...}}` (also `input` or `arguments`; seen live in
+  about one brief in six) is unwrapped before validation (`claude::unwrap_tool_input`) when that
+  key is the only one, is not a property of the tool's schema, and the wrapped object (or JSON
+  string) has at least one of the schema's properties; anything else reaches validation as sent.
 
 ### System prompt (model providers)
 
