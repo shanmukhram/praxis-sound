@@ -1,27 +1,40 @@
 // Rhythm: the step grid of one layer in DON / din / don / TIN (WP-U1's step sequencer, simplified
-// for the panel). Clicking a step cycles it off -> don -> DON -> din -> TIN -> off; each change is
-// a hand edit scoped to the bars shown, so it makes a take.
+// for the panel). Clicking a step cycles it off -> don -> DON -> din -> TIN -> off, and a whole bar
+// can be said at once ("DON din don din TIN din don din"). Each change is heard at once through
+// the live score and joins the batch the next "Make a take" records (WP-U5).
 
 import type { ViewContext } from '../context';
 import type { Accent, NLayer, Note } from '../../score/types';
 import { derivePattern, editPatternInRange } from '../../score/patchBuilder';
 import { ACCENT_SPOKEN, GRID_LABEL, isUnpitchedClass } from '../../score/theory';
 import { h } from '../dom';
+import { layerSpan, nameOf, parseSpoken, rangeWords, tonicNear, writeSpoken } from '../handEdits';
 
 const NEXT: Record<string, Accent | 'off'> = { off: 'normal', normal: 'strong', strong: 'soft', soft: 'bright', bright: 'off' };
 const HEIGHT: Record<Accent, number> = { strong: 100, bright: 88, normal: 64, soft: 44 };
 
-/** The layer and bars the Rhythm and Notes views show: the selection, else what the take changed, else the first clip. */
+/**
+ * The layer and bars the Rhythm and Notes views show: the selection, else the layer picked in the
+ * view (where it plays), else what the take changed, else the first clip.
+ */
 export function focus(ctx: ViewContext, prefer: 'pitched' | 'any'): { layer: NLayer; bars: { start: number; end: number } } | null {
   const s = ctx.score;
   if (ctx.selection) {
     const layer = s.layers.find((l) => l.id === ctx.selection!.layer);
     if (layer) return { layer, bars: ctx.selection.bars };
   }
+  if (ctx.viewLayer) {
+    const layer = s.layers.find((l) => l.id === ctx.viewLayer);
+    if (layer) return { layer, bars: layerSpan(layer) ?? { start: 1, end: Math.min(4, s.bars) } };
+  }
   if (ctx.take?.patch) {
     for (const [id, [a, b]] of Object.entries(ctx.take.changed)) {
       const layer = s.layers.find((l) => l.id === id);
-      if (layer && (prefer === 'any' || !isUnpitchedClass(layer.class))) return { layer, bars: { start: a, end: b } };
+      if (layer && (prefer === 'any' || !isUnpitchedClass(layer.class))) {
+        // A whole-layer change (a hand take's diff) shows where the layer plays.
+        const span = layerSpan(layer);
+        return { layer, bars: span && a <= span.start && b >= span.end ? span : { start: a, end: b } };
+      }
     }
   }
   const layer = (prefer === 'pitched' ? s.layers.find((l) => !isUnpitchedClass(l.class)) : undefined) ?? s.layers[0];
@@ -30,26 +43,68 @@ export function focus(ctx: ViewContext, prefer: 'pitched' | 'any'): { layer: NLa
   return { layer, bars: clip ? { ...clip.bars } : { start: 1, end: Math.min(4, s.bars) } };
 }
 
+/** Layer pills above the Rhythm and Notes views, when there is more than one layer. */
+export function layerPicker(ctx: ViewContext, current: NLayer): HTMLElement | null {
+  if (ctx.score.layers.length < 2) return null;
+  return h(
+    'div',
+    { class: 'pills', role: 'group', 'aria-label': 'Layer to show' },
+    ...ctx.score.layers.map((l) =>
+      h(
+        'button',
+        {
+          'aria-pressed': String(l.id === current.id),
+          'data-testid': `view-layer-${l.id}`,
+          onclick: () => {
+            ctx.select(null);
+            ctx.setViewLayer(l.id);
+          },
+        },
+        nameOf(l),
+      ),
+    ),
+  );
+}
+
+/** What a new pitched note gets when the layer has none yet: its most common pitch, else the tonic. */
+export function defaultPitch(ctx: ViewContext, notes: Note[], layer: NLayer): number {
+  if (isUnpitchedClass(layer.class)) return mostCommonPitch(notes) ?? 36;
+  return mostCommonPitch(notes) ?? tonicNear(ctx.score.key);
+}
+
 export function renderRhythm(ctx: ViewContext): HTMLElement {
   const f = focus(ctx, 'any');
   const box = h('div', { 'data-testid': 'rhythm-view' });
-  if (!f) return box;
+  if (!f) {
+    box.append(h('p', { class: 'hint', style: 'margin-top:0' }, 'Add a layer in the Overview, then write its rhythm here.'));
+    return box;
+  }
   const d = derivePattern(ctx.score, f.layer.id, f.bars);
   if (!d) return box;
   const N = d.pattern.length_steps;
   const repeats = d.mode === 'loop' ? ((f.bars.end - f.bars.start + 1) * d.stepsPerBar) / N : 1;
-  const range = f.bars.start === f.bars.end ? `bar ${f.bars.start}` : `bars ${f.bars.start}–${f.bars.end}`;
+  const range = rangeWords(f.bars);
+  const name = nameOf(f.layer);
+  const picker = layerPicker(ctx, f.layer);
+  if (picker) box.append(picker);
   box.append(
     h(
       'div',
       { class: 'section-h' },
-      h('h3', {}, `${f.layer.name || f.layer.id} rhythm, ${range}`),
+      h('h3', {}, `${name} rhythm, ${range}`),
       h('span', {}, `${GRID_LABEL[d.pattern.grid]} notes · ${d.mode === 'loop' ? `repeats ${repeats} ${repeats === 1 ? 'time' : 'times'}` : 'note for note'}`),
     ),
   );
   const notes = d.pattern.notes;
+  const unpitched = isUnpitchedClass(f.layer.class);
+  const pitch = defaultPitch(ctx, notes, f.layer);
+  const write = (out: Note[], label: string) => {
+    const patch = editPatternInRange(ctx.score, f.layer.id, f.bars, out, label);
+    if (patch) ctx.live(patch, `${label} of ${name}, ${range}`, { layer: f.layer.id, bars: f.bars });
+  };
   const topAt = (step: number) => notes.filter((n) => n.step === step).sort((a, b) => b.velocity - a.velocity)[0];
-  const common = mostCommonPitch(notes, f.layer);
+  const spb = d.stepsPerBar;
+  const barsInPattern = Math.max(1, Math.round(N / spb));
   const steps = h('div', { class: 'steps', style: `grid-template-columns: repeat(${Math.min(N, 16)}, minmax(0, 1fr))` });
   for (let i = 0; i < N; i++) {
     const n = topAt(i);
@@ -59,18 +114,17 @@ export function renderRhythm(ctx: ViewContext): HTMLElement {
       h(
         'button',
         {
-          class: `step ${n ? acc : 'off'}`,
+          class: `step ${n ? acc : 'off'}${i % spb === 0 && i ? ' bar-start' : ''}`,
           'data-testid': `step-${i}`,
           'aria-label': `Step ${i + 1}, ${n ? `${acc} (${label})` : 'silent'}`,
           title: 'Click to cycle: off, don, DON, din, TIN',
           onclick: () => {
             const next = NEXT[n ? acc : 'off'];
             let out: Note[];
-            if (!n) out = [...notes, { step: i, pitch: common, velocity: 0.62, accent: 'normal', length: isUnpitchedClass(f.layer.class) ? 1 : 1.6 }];
+            if (!n) out = [...notes, { step: i, pitch, velocity: 0.62, accent: 'normal', length: unpitched ? 1 : 1.6 }];
             else if (next === 'off') out = notes.filter((x) => x.step !== i);
             else out = notes.map((x) => (x === n ? { ...x, accent: next } : x));
-            const patch = editPatternInRange(ctx.score, f.layer.id, f.bars, out, `Step ${i + 1} ${next === 'off' ? 'silenced' : `set to ${ACCENT_SPOKEN[next as Accent]}`}`);
-            if (patch) ctx.edit(patch, `Step ${i + 1} of ${f.layer.name || f.layer.id}, ${range}: ${next === 'off' ? 'silent' : ACCENT_SPOKEN[next as Accent]}`, { layer: f.layer.id, bars: f.bars });
+            write(out, `Step ${i + 1} ${next === 'off' ? 'silenced' : `set to ${ACCENT_SPOKEN[next as Accent]}`}`);
           },
         },
         n ? h('i', { class: 'v', style: `height:${HEIGHT[acc]}%` }) : null,
@@ -78,6 +132,49 @@ export function renderRhythm(ctx: ViewContext): HTMLElement {
       ),
     );
   }
+
+  // Say a bar: the whole bar's steps at once, in the rhythm words.
+  const which = h(
+    'select',
+    { 'data-testid': 'say-bar-which', 'aria-label': 'Which bar of the pattern to write' },
+    ...Array.from({ length: barsInPattern }, (_, b) => h('option', { value: b }, d.mode === 'loop' && barsInPattern > 1 ? `Bar ${b + 1} of the motif` : `Bar ${f.bars.start + b}`)),
+  );
+  const said = h('input', {
+    type: 'text',
+    class: 'say-input',
+    'data-testid': 'say-bar',
+    'aria-label': 'Say a bar in rhythm words',
+    placeholder: spb === 8 ? 'DON din don din TIN din don din' : `${spb} words: DON, don, din, TIN or -`,
+    autocomplete: 'off',
+    spellcheck: 'false',
+  });
+  const sayMsg = h('p', { class: 'hint say-msg', 'data-testid': 'say-msg', 'aria-live': 'polite' });
+  const go = h('button', { class: 'ghost', type: 'submit', 'data-testid': 'say-bar-go' }, 'Write the bar');
+  const form = h('form', { class: 'say', 'data-testid': 'say-form' }, h('label', { class: 'say-label' }, 'Say a bar'), h('div', { class: 'say-row' }, which, said, go), sayMsg);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const r = parseSpoken(said.value);
+    if (!r.ok) {
+      sayMsg.textContent = r.message;
+      return;
+    }
+    const hits = r.steps.length;
+    if (!hits) {
+      sayMsg.textContent = 'Say one word per step, like "DON din don din TIN din don din".';
+      return;
+    }
+    const bar = Number(which.value);
+    const out = writeSpoken(notes, bar * spb, N, r.steps, pitch, unpitched);
+    const words = said.value.trim().replace(/\s+/g, ' ');
+    const where = d.mode === 'loop' && barsInPattern > 1 ? `bar ${bar + 1} of the motif` : `bar ${f.bars.start + bar}`;
+    const patch = editPatternInRange(ctx.score, f.layer.id, f.bars, out, `Wrote "${words}" in ${where}`);
+    if (!patch) {
+      sayMsg.textContent = 'That bar already plays that rhythm.';
+      return;
+    }
+    ctx.live(patch, `Wrote "${words}" in ${where} of ${name}`, { layer: f.layer.id, bars: f.bars });
+  });
+
   box.append(
     steps,
     h(
@@ -87,13 +184,18 @@ export function renderRhythm(ctx: ViewContext): HTMLElement {
       h('span', {}, h('i', { style: 'background:#3a3a3a' }), 'don, din normal and soft'),
       h('span', {}, h('i', { style: 'background:#f5a524' }), 'TIN bright'),
     ),
-    h('p', { class: 'hint' }, 'Say a rhythm out loud in the chat, like "DON din don din TIN din don din". Click a step to cycle it; each click makes a take.'),
+    form,
+    h(
+      'p',
+      { class: 'hint' },
+      `One word per ${GRID_LABEL[d.pattern.grid]} step: DON strong, don normal, din soft, TIN bright, "-" a rest, "~" holds the note. Click a step to cycle it. Every change is heard at once; make a take when it sounds right.`,
+    ),
   );
   return box;
 }
 
-function mostCommonPitch(notes: Note[], layer: NLayer): number {
-  if (!notes.length) return isUnpitchedClass(layer.class) ? 36 : 60;
+function mostCommonPitch(notes: Note[]): number | null {
+  if (!notes.length) return null;
   const count = new Map<number, number>();
   for (const n of notes) count.set(n.pitch, (count.get(n.pitch) ?? 0) + 1);
   return [...count.entries()].sort((a, b) => b[1] - a[1])[0][0];

@@ -32,7 +32,10 @@ planner answers. Needs the WebView2 runtime (part of Windows 11).
 | `takes {sound}` | `ops::takes` with every take's score |
 | `restore {req}` | `ops::restore` (going back is an undoable patch) |
 | `edit {req}`, `variations {req}`, `keep_variation {req}`, `open_view {req}` | the matching ops |
-| `apply_patch {sound, patch}` | a patch that makes no take (mute, solo, lock), in the project's undo history |
+| `new_sound {args}` | a blank sound (key, `bpm` or `seconds` for the duration solver, time signature, bars, loop or one-shot) in a new folder, with no take yet (`hand.rs`) |
+| `make_take {req}` | renders, checks and records the live score as one take: a blank sound's first take, or every hand edit since the current take (its patch is the exact diff) |
+| `presets` | the instrument presets a layer can use (`praxis presets`), each with whether it renders here |
+| `apply_patch {sound, patch}` | a patch that makes no take (mute, solo, lock, and every hand edit), in the project's undo history |
 | `undo {sound}`, `redo {sound}` | one step of the project's history; a step that lands on another take's score makes it current |
 | `render_live {sound}` | renders and checks the live score to `<sound>/live/mix.wav` |
 | `export {args}` | WAV 16/24/32f, FLAC, stems, MIDI or a `.praxis` copy of a take into a folder |
@@ -42,6 +45,22 @@ planner answers. Needs the WebView2 runtime (part of Windows 11).
 | `transport_status` | device, rate, buffer, xruns and the last graph build (`TransportStatus`) |
 
 Project writes take the sound's `.lock` like every other writer.
+
+## Building a sound by hand (WP-U5)
+
+A blank sound is a folder whose project holds a score with no layers and whose `takes.json` has
+no take yet: it is listed, opened, watched and played like any other sound. Every control in the
+Sound panel (settings, layers, notes in Rhythm and Notes) is a patch through `apply_patch`, so it
+is heard at once through the real-time engine, undoable and held to the same rules (locks, key,
+validation). "Make a take" calls `make_take`, which renders and checks the live score and records
+it in the shared history with `provider: "hand"`: the first take of a blank sound freezes the
+master gain as the take op does after a new sound's first render; a later take's patch is
+`patch_between` the current take's score and the live score. Requests in words work from the
+first take on (`ask` needs a take to edit).
+
+The window makes a take only when asked, never on a pause or on leaving a view: every take is a
+render plus checks and an entry in the history people and agents share, so a half-written motif
+should not become one.
 
 ## Playback (real time)
 
@@ -61,10 +80,16 @@ opens, or the score cannot be built for playback, the current take falls back to
 the line says why; the next Play tries the device again. cpal's `realtime` feature (thread
 priority through an MPL-2.0 crate) stays off.
 
+`PRAXIS_AUDIO_OUTPUT=fake` runs the same engine and commands on the fake output instead of the
+speakers (48 kHz, 480-frame callbacks, paced by the clock): for silent manual runs. The fake
+output cannot starve, so its xrun count is always 0; the render time per callback
+(`transport_status`: `max_render_ms`, `p99_render_ms` against the 10 ms callback) is the margin.
+
 ## Tests
 
 ```bash
 PRAXIS_PACKS="C:\path\to\packs" cargo test -p praxis-app     # every command, and the audio service on a fake output
 PRAXIS_DEVICE_TEST=1 cargo test -p praxis-app --test audio device -- --nocapture   # the speakers
+PRAXIS_PACKS="C:\path\to\packs" cargo test -p praxis-app --test hand   # a sound built by hand, and the Phase 3 exit sound
 cd app && npx vitest run tests/unit/tauriEngine.test.ts      # the adapter through a fake bridge
 ```

@@ -8,7 +8,11 @@ import type {
   ApplyResult,
   AskRequest,
   AskResult,
+  BlankSound,
   EngineAdapter,
+  MakeTakeOptions,
+  PresetInfo,
+  StartResult,
   OpenViewEvent,
   Take,
   TakeScope,
@@ -25,9 +29,9 @@ import type {
   Unsubscribe,
 } from './EngineAdapter';
 import type { BarRange, NScore, Origin, Score, ScorePatch } from '../score/types';
-import { clone, formatRange, normalizeScore } from '../score/types';
+import { clone, deepEqual, formatRange, normalizeScore } from '../score/types';
 import { restorePatch } from '../score/patchBuilder';
-import { isUnpitchedClass } from '../score/theory';
+import { isUnpitchedClass, keyLabel } from '../score/theory';
 import { barPosToSeconds, expandNotes, scoreSeconds, secondsToBarPos } from '../score/timeline';
 import { applyPatch } from './mock/apply';
 import { planEdit, planFresh } from './mock/planner';
@@ -37,6 +41,8 @@ import { verifyMock } from './mock/verify';
 import { changedFromPatch, layerLabel, untouchedText } from './takes';
 import { patchErrorMessage } from './EngineAdapter';
 import { encodeWav } from './wav';
+import { blankScore, DRAFT_ASK } from './blank';
+import { STANDARD_PRESETS } from './presets';
 
 /** One undoable step of the session: a take, a go-back, or a plain edit (mute, solo, lock). */
 interface Entry {
@@ -66,6 +72,8 @@ export class MockEngine implements EngineAdapter {
   readonly exports: ExportRequest[] = [];
 
   private score: NScore | null = null;
+  /** The live score is a blank sound started by hand (no take until `makeTake`). */
+  private draft = false;
   private takeList: Take[] = [];
   private currentN = 0;
   private frozenGainDb: number | null = null;
@@ -96,6 +104,7 @@ export class MockEngine implements EngineAdapter {
     const score = normalizeScore(input);
     this.resetSession();
     this.score = score;
+    this.draft = false;
     this.offsetS = 0;
     this.loop = null;
     const report = validate(score);
@@ -131,7 +140,8 @@ export class MockEngine implements EngineAdapter {
       await this.stop();
       this.resetSession();
       this.score = normalizeScore(input);
-      return this.makeTake(this.score, null, { who: meta.who ?? 'You', ask: meta.ask, title: meta.title, say: meta.say });
+      this.draft = false;
+      return this.renderTake(this.score, null, { who: meta.who ?? 'You', ask: meta.ask, title: meta.title, say: meta.say });
     });
   }
 
@@ -194,12 +204,16 @@ export class MockEngine implements EngineAdapter {
           message: `Got "${request.clipFile.name}". Reading a clip needs the analyzer (WP-D), which the mock engine does not have yet; Praxis keeps a clip's character, never its melody.`,
         } as AskResult;
       }
+      if (this.draft && this.takeList.length === 0) {
+        return { ok: false, message: DRAFT_ASK } as AskResult;
+      }
       if (!this.score || this.takeList.length === 0) {
         if (!text) return { ok: false, message: 'Describe a sound to start from.' } as AskResult;
         const fresh = planFresh(text);
         this.resetSession();
         this.score = fresh.score;
-        const take = await this.makeTake(fresh.score, null, { who, ask: askText, title: fresh.title, say: fresh.say });
+        this.draft = false;
+        const take = await this.renderTake(fresh.score, null, { who, ask: askText, title: fresh.title, say: fresh.say });
         return { ok: true, take } as AskResult;
       }
       const origin: Origin = 'model';
@@ -227,6 +241,67 @@ export class MockEngine implements EngineAdapter {
     return [...this.takeList];
   }
 
+  // ------------------------------------------------------------ building by hand
+
+  async startBlank(settings: BlankSound): Promise<StartResult> {
+    let score: NScore;
+    try {
+      score = blankScore(settings);
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+    await this.exclusive(async () => {
+      await this.stop();
+      this.resetSession();
+      this.score = score;
+      this.draft = true;
+      this.offsetS = 0;
+      this.loop = null;
+      this.emitPosition();
+      this.emitState();
+    });
+    return { ok: true };
+  }
+
+  async presets(): Promise<PresetInfo[]> {
+    return clone(STANDARD_PRESETS);
+  }
+
+  async makeTake(ask: string, options: MakeTakeOptions = {}): Promise<AskResult> {
+    return this.exclusive(async () => {
+      const score = this.score;
+      if (!score) return { ok: false, message: 'Start a sound first.' } as AskResult;
+      if (!score.layers.length) return { ok: false, message: 'Add a layer first: a sound with no layers has nothing to play.' } as AskResult;
+      const words = (title: string, say: string) => ({ who: 'You' as Who, ask, title: options.title ?? title, say: options.say ?? say, scope: options.scope });
+      if (!this.takeList.length) {
+        const names = score.layers.map((l) => (l.name || l.id).toLowerCase()).join(', ');
+        const take = await this.renderTake(score, null, words('Built by hand', `Built by hand: ${names}, ${score.bars} bars at ${score.tempo.bpm} BPM in ${keyLabel(score.key)}.`));
+        return { ok: true, take } as AskResult;
+      }
+      const prev = this.takeList.find((t) => t.n === this.currentN) ?? this.takeList.at(-1)!;
+      if (deepEqual(prev.score, score)) return { ok: false, message: `Nothing changed since take ${prev.n}: edit the sound, then make a take.` } as AskResult;
+      // The take's patch is the exact diff from the current take (crates/praxis-app/src/hand.rs).
+      const patch: ScorePatch = { ...restorePatch(prev.score, score, `take ${prev.n}`), description: ask };
+      const changed = changedFromPatch(prev.score, score, patch);
+      const ranges = Object.values(changed);
+      const lo = ranges.length ? Math.min(...ranges.map((r) => r[0])) : 1;
+      const hi = ranges.length ? Math.max(...ranges.map((r) => r[1])) : score.bars;
+      const title = lo > 1 || hi < score.bars ? `Hand edit, ${formatRange({ start: lo, end: hi })}` : 'Hand edit';
+      const say = `Changed by hand: ${ask.replace(/^By hand: /, '').replace(/\.$/, '')}.`;
+      const take = await this.renderTake(score, patch, words(title, say), prev.score, prev.n, true);
+      return { ok: true, take } as AskResult;
+    });
+  }
+
+  /** The take whose score the live score equals: the current one, else the newest match. */
+  private matchingTake(): number | null {
+    const s = this.score;
+    if (!s) return null;
+    const cur = this.takeList.find((t) => t.n === this.currentN);
+    if (cur && deepEqual(cur.score, s)) return cur.n;
+    return [...this.takeList].reverse().find((t) => deepEqual(t.score, s))?.n ?? null;
+  }
+
   state(): TakeState {
     return {
       takes: [...this.takeList],
@@ -234,6 +309,7 @@ export class MockEngine implements EngineAdapter {
       score: this.score ? clone(this.score) : null,
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
+      draft: this.draft && this.takeList.length === 0,
     };
   }
 
@@ -262,7 +338,9 @@ export class MockEngine implements EngineAdapter {
       this.undoStack.pop();
       this.redoStack.push(e);
       this.score = r.score;
-      this.currentN = e.before;
+      // A plain edit (mute, a hand edit) moves the current take only onto a take it now equals.
+      this.currentN = e.kind === 'edit' ? (this.matchingTake() ?? this.currentN) : e.before;
+      if (this.playing) this.restartAudio(this.positionSeconds());
       this.emitState();
       return true;
     });
@@ -277,7 +355,8 @@ export class MockEngine implements EngineAdapter {
       this.redoStack.pop();
       this.undoStack.push({ ...e, inverse: r.inverse });
       this.score = r.score;
-      this.currentN = e.after;
+      this.currentN = e.kind === 'edit' ? (this.matchingTake() ?? this.currentN) : e.after;
+      if (this.playing) this.restartAudio(this.positionSeconds());
       this.emitState();
       return true;
     });
@@ -348,21 +427,22 @@ export class MockEngine implements EngineAdapter {
     this.undoStack.push({ kind: 'take', patch: clone(patch), inverse: r.inverse, before: prevN, after: this.takeList.length + 1 });
     this.redoStack = [];
     this.score = r.score;
-    const take = await this.makeTake(r.score, patch, words, before, prevN);
+    const take = await this.renderTake(r.score, patch, words, before, prevN);
     return { ok: true, take };
   }
 
   /** Renders and checks `score` as the next take, makes it current and announces it. */
-  private async makeTake(
+  private async renderTake(
     score: NScore,
     patch: ScorePatch | null,
     words: { who: Who; ask: string; title: string; say: string; opens?: ViewName; scope?: TakeScope },
     before?: NScore,
     prevN?: number,
+    holdGain = false,
   ): Promise<Take> {
-    // Bar-scoped edits hold the master gain (like `master.frozen_gain_db`) so untouched bars stay
-    // sample-identical; a new sound or a layer-wide change re-normalises to the loudness target.
-    const hold = !!patch?.scope?.bars && this.frozenGainDb !== null;
+    // Bar-scoped edits (and hand takes, as after `master.frozen_gain_db`) hold the master gain so
+    // untouched bars stay sample-identical; a new sound or a layer-wide request re-normalises.
+    const hold = (holdGain || !!patch?.scope?.bars) && this.frozenGainDb !== null;
     const out = synthesize(score, { sampleRate: TAKE_RATE, gainDb: hold ? this.frozenGainDb! : undefined });
     if (!hold) this.frozenGainDb = out.report.applied_gain_db;
     const n = this.takeList.length + 1;

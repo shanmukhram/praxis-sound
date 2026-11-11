@@ -5,9 +5,9 @@
 // Supported ops are listed in MOCK_SUPPORTED_OPS; anything else is rejected as `invalid`.
 
 import type { ApplyResult, PatchError } from '../EngineAdapter';
-import type { BarRange, Clip, LayerUpdate, NLayer, NScore, OpName, OpOf, Origin, Pattern, PatchOp, ScorePatch } from '../../score/types';
+import type { BarRange, Clip, Key, LayerUpdate, NLayer, NScore, OpName, OpOf, Origin, Pattern, PatchOp, ScorePatch } from '../../score/types';
 import { clone, deepEqual, normalizeLayer, normalizePattern, rangeContains, rangesOverlap } from '../../score/types';
-import { stepsPerBar } from '../../score/theory';
+import { isUnpitchedClass, semitone, stepsPerBar } from '../../score/theory';
 import { composeId } from '../../score/ids';
 import { eventKey, layerEvents } from '../../score/timeline';
 import { validate } from './validate';
@@ -16,6 +16,14 @@ export const MOCK_SUPPORTED_OPS: OpName[] = [
   'set_title',
   'set_tempo',
   'set_seed',
+  'set_key',
+  'set_time_signature',
+  'set_bars',
+  'set_playback',
+  'set_chords',
+  'add_section',
+  'update_section',
+  'remove_section',
   'add_layer',
   'remove_layer',
   'update_layer',
@@ -219,6 +227,49 @@ function applyOp(s: NScore, op: PatchOp, layer: NLayer | undefined, scope: Scope
       s.seed = op.seed;
       return [{ op: 'set_seed', seed: prev }];
     }
+    case 'set_key':
+      return setKey(s, op);
+    case 'set_time_signature': {
+      const prev = clone(s.time_signature);
+      s.time_signature = clone(op.time_signature);
+      return [{ op: 'set_time_signature', time_signature: prev }];
+    }
+    case 'set_bars': {
+      const prev = s.bars;
+      s.bars = op.bars;
+      return [{ op: 'set_bars', bars: prev }];
+    }
+    case 'set_playback': {
+      const prev = clone(s.playback);
+      s.playback = clone(op.playback);
+      return [{ op: 'set_playback', playback: prev }];
+    }
+    case 'set_chords': {
+      const prev = clone(s.chords);
+      s.chords = clone(op.chords);
+      return [{ op: 'set_chords', chords: prev }];
+    }
+    case 'add_section': {
+      if (s.sections.some((x) => x.id === op.section.id)) f.duplicate('section', op.section.id);
+      if (scope.bars && !rangeContains(scope.bars, op.section.bars)) f.outOfScope('section bars are outside scope bars');
+      insertAt(s.sections, clone(op.section), op.index, f);
+      return [{ op: 'remove_section', id: op.section.id }];
+    }
+    case 'update_section': {
+      const i = s.sections.findIndex((x) => x.id === op.section.id);
+      if (i < 0) f.unknown('section', op.section.id);
+      if (scope.bars && (!rangeContains(scope.bars, s.sections[i].bars) || !rangeContains(scope.bars, op.section.bars))) f.outOfScope('section bars are outside scope bars');
+      const prev = s.sections[i];
+      s.sections[i] = clone(op.section);
+      return [{ op: 'update_section', section: prev }];
+    }
+    case 'remove_section': {
+      const i = s.sections.findIndex((x) => x.id === op.id);
+      if (i < 0) f.unknown('section', op.id);
+      if (scope.bars && !rangeContains(scope.bars, s.sections[i].bars)) f.outOfScope('section bars are outside scope bars');
+      const [removed] = s.sections.splice(i, 1);
+      return [{ op: 'add_section', section: removed, index: i }];
+    }
     case 'add_layer': {
       if (s.layers.some((l) => l.id === op.layer.id)) f.duplicate('layer', op.layer.id);
       for (const c of op.layer.clips ?? []) {
@@ -314,6 +365,45 @@ function applyOp(s: NScore, op: PatchOp, layer: NLayer | undefined, scope: Scope
     default:
       return f.fail({ kind: 'invalid', message: `the mock engine does not implement op \`${op.op}\` yet` });
   }
+}
+
+/** Smallest move from one tonic to another, -5..=6 semitones (apply/ops.rs `tonic_interval`). */
+export function tonicInterval(from: Key['tonic'], to: Key['tonic']): number {
+  const d = (((semitone(to) - semitone(from)) % 12) + 12) % 12;
+  return d > 6 ? d - 12 : d;
+}
+
+/**
+ * set_key. With `transpose_notes`, patterns played only by pitched layers move by the smallest
+ * interval between the tonics (a pattern shared with a drum layer is left alone and the pitched
+ * clips get `transpose` instead), as crates/praxis-score/src/apply/ops.rs does.
+ */
+function setKey(s: NScore, op: OpOf<'set_key'>): PatchOp[] {
+  const old = clone(s.key);
+  const inv: PatchOp[] = [];
+  const d = tonicInterval(old.tonic, op.key.tonic);
+  if (op.transpose_notes && d !== 0) {
+    const pitched = s.layers.filter((l) => !isUnpitchedClass(l.class));
+    const drumUses = new Set(s.layers.filter((l) => isUnpitchedClass(l.class)).flatMap((l) => l.clips.map((c) => c.pattern)));
+    const used = new Set(pitched.flatMap((l) => l.clips.map((c) => c.pattern)));
+    for (const id of used) {
+      if (drumUses.has(id)) continue;
+      const i = s.patterns.findIndex((p) => p.id === id);
+      if (i < 0) continue;
+      const prev = s.patterns[i];
+      s.patterns[i] = { ...clone(prev), notes: prev.notes.map((n) => ({ ...n, pitch: n.pitch + d })) };
+      inv.push({ op: 'replace_pattern', pattern: prev });
+    }
+    for (const l of pitched) {
+      if (!l.clips.some((c) => drumUses.has(c.pattern))) continue;
+      const prev = clone(l.clips);
+      l.clips = l.clips.map((c) => (drumUses.has(c.pattern) ? { ...c, transpose: (c.transpose ?? 0) + d } : c));
+      inv.push({ op: 'set_clips', layer: l.id, clips: prev });
+    }
+  }
+  s.key = clone(op.key);
+  inv.push({ op: 'set_key', key: old, transpose_notes: false });
+  return inv;
 }
 
 function insertAt<T>(list: T[], item: T, index: number | null | undefined, f: Fails): void {

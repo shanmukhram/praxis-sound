@@ -1,0 +1,140 @@
+/* Building a sound by hand (WP-U5): the blank-sound form, sound settings, layer editing, the
+   instrument picker, spoken-rhythm entry, the batch line and the change map's transport.
+   Same rules as styles.css (ADR-0011): true-black flat, elevation by lightness, 1px rules,
+   colour only on the sound, a white inverted primary, sentence case. */
+
+/* ---------- form controls ---------- */
+select, .num-in, .text-in, .say-input {
+  height: 32px; border-radius: 8px; border: 1px solid var(--control); background: var(--raised);
+  padding: 0 10px; color: var(--text); min-width: 0;
+}
+select { padding-right: 6px; }
+select:focus-visible, .num-in:focus-visible, .text-in:focus-visible, .say-input:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+select option, select optgroup { background: var(--raised); color: var(--text); }
+.num-in { width: 76px; font-variant-numeric: tabular-nums; }
+.text-in { width: 100%; max-width: 280px; }
+.text-in.wide-in { max-width: none; }
+.text-in::placeholder, .say-input::placeholder { color: var(--faint); }
+input[type="range"] { accent-color: var(--text); min-width: 0; }
+.unit { color: var(--faint); font-size: 12px; }
+.inline { display: inline-flex; align-items: center; gap: 8px; }
+.linkish { border: 0; background: none; color: var(--muted); font-size: 12px; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
+.linkish:hover { color: var(--text); }
+.primary { height: 32px; padding: 0 16px; border-radius: var(--radius-control); border: 1px solid var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 600; white-space: nowrap; }
+.primary:disabled { background: var(--raised); color: var(--faint); border-color: var(--raised); opacity: 1; }
+
+/* Two- or more-way switch (Loop / One-shot, Fit a length / Set the tempo). */
+.seg { display: inline-flex; border: 1px solid var(--control); border-radius: var(--radius-control); padding: 2px; gap: 2px; }
+.seg button { height: 26px; padding: 0 12px; border: 0; border-radius: var(--radius-control); background: none; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.seg button[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
+
+/* Pills: the layer shown in Rhythm / Notes, where a layer plays. */
+.pills { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.pills button { height: 28px; padding: 0 12px; border-radius: var(--radius-chip); border: 1px solid var(--control); background: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.pills button:hover { color: var(--text); background: var(--raised); }
+.pills button[aria-pressed="true"] { background: var(--active); color: var(--text); border-color: var(--active); }
+.pills.quick { margin: 2px 0 6px 96px; }
+
+/* ---------- label / control rows (settings, layer details, blank form) ---------- */
+.settings { background: var(--surface); border-radius: var(--radius-card); padding: 6px 16px; margin-bottom: 18px; }
+.set-row { display: grid; grid-template-columns: 88px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 44px; }
+.settings .set-row + .set-row { border-top: 1px solid var(--rule); }
+.set-label { color: var(--muted); font-size: 13px; }
+.set-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.set-note { color: var(--faint); font-size: 12px; margin-left: auto; }
+.set-ctl input[type="range"] { flex: 1; }
+.set-ctl output { min-width: 64px; text-align: right; color: var(--muted); font-size: 12px; }
+
+/* ---------- layers ---------- */
+.toggles .edit-toggle { border-color: var(--border); color: var(--text); }
+.toggles .edit-toggle[aria-expanded="true"] { background: var(--active); border-color: var(--active); }
+.layer.open { background: var(--raised); }
+.layer-edit { grid-column: 1 / -1; border-top: 1px solid var(--control); margin-top: 8px; padding-top: 6px; }
+.layer-edit select { max-width: 100%; }
+.edit-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 8px; }
+.edit-foot .hint { margin: 0; }
+.ghost.danger { color: var(--negative); border-color: #5a2a33; }
+.ghost.danger:hover:not(:disabled) { background: var(--pill-negative-bg); }
+.add-layer { width: 100%; height: 40px; border-radius: 12px; border: 1px dashed var(--control); background: none; color: var(--muted); display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 4px; }
+.add-layer:hover { color: var(--text); background: var(--surface); }
+
+/* The instrument picker: the felt piano and the soft kick first, then groups in plain words. */
+.picker { background: var(--surface); border-radius: var(--radius-card); padding: 14px 16px 6px; margin-bottom: 4px; }
+.quick-presets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.preset { height: 30px; padding: 0 12px; border-radius: var(--radius-chip); border: 1px solid var(--control); background: none; color: var(--text); font-size: 13px; white-space: nowrap; }
+.preset:hover:not(:disabled) { background: var(--raised); }
+.preset.big { height: auto; min-height: 56px; border-radius: 12px; padding: 10px 12px; text-align: left; display: grid; gap: 2px; white-space: normal; background: var(--raised); border-color: var(--raised); font-weight: 500; }
+.preset.big:hover:not(:disabled) { background: var(--active); }
+.preset.big small { color: var(--faint); font-size: 12px; font-weight: 400; line-height: 16px; }
+.preset-group { margin-bottom: 10px; }
+.preset-group b { display: block; color: var(--faint); font-size: 12px; font-weight: 400; margin-bottom: 6px; }
+.preset-list { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ---------- Rhythm: say a bar ---------- */
+.step.bar-start { box-shadow: -3px 0 0 var(--ground), -4px 0 0 var(--control); }
+.say { margin: 16px 0 0; background: var(--surface); border-radius: var(--radius-card); padding: 12px 14px; }
+.say-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.say-row { display: flex; gap: 8px; align-items: center; }
+.say-row select { flex: none; max-width: 42%; }
+.say-input { flex: 1; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; letter-spacing: 0.02em; }
+.say-msg:empty { display: none; }
+.say-msg { color: var(--negative); }
+
+/* ---------- the batch: heard live, not in a take yet ---------- */
+.pending { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--raised); border-radius: 12px; padding: 10px 12px 10px 14px; margin: -8px 0 18px; }
+.pending p { margin: 0; font-size: 13px; line-height: 18px; color: var(--muted); min-width: 0; }
+.pending p b { color: var(--text); font-weight: 500; display: block; }
+.pending p small { display: block; color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pending.quiet { background: none; border: 1px dashed var(--control); }
+.pending.bad { background: var(--pill-negative-bg); }
+.pending.bad p { color: var(--negative); }
+.pending-row { align-self: stretch; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; padding: 8px 8px 8px 14px; border: 1px dashed var(--control); border-radius: 12px; }
+
+/* ---------- the change map's transport ---------- */
+.arr { position: relative; }
+.barnums button { border: 0; background: none; color: var(--faint); font-size: 11px; padding: 2px 0; min-width: 0; overflow: hidden; text-align: left; border-radius: 3px; height: 18px; }
+.barnums button:hover { color: var(--text); background: var(--raised); }
+.loop-lane { height: 22px; margin-top: 4px; }
+.loop-lane > span { color: var(--faint); font-size: 12px; }
+.loopcells { touch-action: none; }
+.loopcell { height: 8px; border-radius: 4px; background: var(--raised); border: 0; padding: 0; min-width: 0; cursor: ew-resize; }
+.loopcell:hover { background: var(--control); }
+.loopcell.in { background: var(--muted); }
+.map-ph { position: absolute; width: 2px; background: var(--text); border-radius: 1px; opacity: 0; pointer-events: none; left: 0; top: 0; }
+.transport { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--muted); }
+.tp-play { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--primary); color: var(--on-primary); display: grid; place-items: center; flex: none; }
+.tp-time { color: var(--text); font-size: 13px; }
+.tp-loop { color: var(--faint); }
+.ghost-cell { display: block; height: 20px; border-radius: 3px; background: var(--surface); }
+.empty-lane > span { color: var(--faint) !important; }
+
+/* ---------- the conversation: blank sound ---------- */
+.empty-thread .or { display: block; margin: 18px 0 10px; color: var(--faint); font-size: 13px; }
+.empty-thread .start-blank { height: 36px; }
+.blank-form { display: grid; gap: 2px; }
+.blank-form .say { margin: 6px 0 8px; background: none; padding: 0; border-radius: 0; }
+.blank-form .set-row { min-height: 46px; border-top: 1px solid var(--rule); }
+.blank-line { margin: 10px 0 0; color: var(--text); font-size: 14px; }
+.blank-form .bad, .hint.bad { color: var(--negative); }
+.take.draft .draft-player { grid-template-columns: 40px minmax(0, 1fr); }
+.wave.seekable { cursor: pointer; }
+
+/* ---------- phone ---------- */
+@media (max-width: 760px) {
+  .set-row { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 8px 0; }
+  .settings .set-row + .set-row { border-top: 1px solid var(--rule); }
+  .set-note { margin-left: 0; }
+  .pills.quick { margin-left: 0; }
+  .quick-presets { grid-template-columns: minmax(0, 1fr); }
+  .say-row { flex-wrap: wrap; }
+  .say-row select { max-width: 100%; flex: 1 1 100%; }
+  .pending { flex-wrap: wrap; }
+  .pending .primary { flex: 1 1 auto; height: 40px; }
+  .pending-row { flex-wrap: wrap; }
+  .text-in { max-width: none; }
+  .loop-lane { grid-template-columns: 72px minmax(0, 1fr); }
+  .blank-form .take-actions .primary { flex: 1 1 auto; height: 40px; }
+  .tp-play { width: 40px; height: 40px; }
+  .loopcell { height: 14px; }
+  .loop-lane { height: 28px; }
+}

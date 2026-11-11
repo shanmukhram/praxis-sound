@@ -9,6 +9,7 @@
 
 pub mod audio;
 pub mod commands;
+pub mod hand;
 mod shell;
 pub mod sounds;
 pub mod watch;

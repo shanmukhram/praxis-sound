@@ -150,7 +150,7 @@ describe('atomic and valid (contract rule 1)', () => {
     if (!r.ok && r.error.kind === 'invalid') expect(r.error.message).toContain('off_scale');
   });
   it('rejects ops the mock does not implement, plainly', () => {
-    const r = expectError(fixture(), scoped([{ op: 'set_bars', bars: 8 }]), 'invalid');
+    const r = expectError(fixture(), scoped([{ op: 'set_constraints', constraints: { avoid: [] } }]), 'invalid');
     if (!r.ok && r.error.kind === 'invalid') expect(r.error.message).toContain('does not implement');
   });
 });

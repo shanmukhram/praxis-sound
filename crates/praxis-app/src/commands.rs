@@ -153,7 +153,7 @@ pub fn audio_dirs(sound: &str) -> CmdResult<Vec<PathBuf>> {
 
 /// The folder of a sound that has a project (its first take), checked before taking the lock,
 /// which would otherwise create the folder.
-fn made_sound(sound: &str) -> CmdResult<PathBuf> {
+pub(crate) fn made_sound(sound: &str) -> CmdResult<PathBuf> {
     let dir = dir_of(sound)?;
     if !dir.join(PROJECT_FILE).is_file() {
         return Err(no_take_yet(&dir));
@@ -221,7 +221,7 @@ pub struct Live {
     pub current: u32,
 }
 
-fn live_of(project: &Project, current: u32) -> Live {
+pub(crate) fn live_of(project: &Project, current: u32) -> Live {
     Live {
         score: serde_json::to_value(&project.score).unwrap_or(Value::Null),
         can_undo: project.can_undo(),
@@ -230,7 +230,7 @@ fn live_of(project: &Project, current: u32) -> Live {
     }
 }
 
-fn no_take_yet(dir: &Path) -> CmdError {
+pub(crate) fn no_take_yet(dir: &Path) -> CmdError {
     CmdError::new(
         ErrorCode::Error,
         format!("{} has no take yet; ask for a sound first", dir.display()),
