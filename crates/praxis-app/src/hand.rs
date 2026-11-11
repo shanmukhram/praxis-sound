@@ -340,6 +340,7 @@ pub fn make_take(args: &MakeTakeArgs) -> CmdResult<Value> {
         identical_bars: identical,
         provider: "hand".into(),
         seed: after.seed,
+        reference: None,
     };
     sound.takes.takes.push(record.clone());
     sound.takes.current = n;
