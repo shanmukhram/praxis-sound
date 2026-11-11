@@ -133,7 +133,11 @@ now WP-U4 real-time playback in the app (`local_357d4a07-2ba0-438e-8411-b2a171c1
 `docs/briefs/WP-U4-realtime-in-app.md`, allowed to edit the playback part of `app/src/ui/shell.ts`).
 Waiting for a slot: WP-P2b tone and space edits (`local_0bb0fb8b-9b03-4896-a09b-59cd7c6a1d28`,
 brief `docs/briefs/WP-P2b-tone-space-edits.md`): it reads and writes code but must not build
-until messaged "slot free"; send that when WP-H or WP-U4 finishes.
+until messaged "slot free"; send that when WP-H or WP-U4 finishes. Also waiting, same rule:
+WP-AG sound assistant agent (`local_a5e4c36f-0854-402a-ae61-2d057494b210`, brief
+`docs/briefs/WP-AG-in-app-agent.md`). Release order: WP-P2b first (small), then WP-AG. After
+WP-AG merges, ask the owner for the API key (`praxis key set`, typed by the owner, stored in the
+Windows credential store) and run `docs/agents/live-run.md`.
 
 Merge order: WP-D1b and WP-R whenever they are ready; WP-K2 before finishing WP-U3. WP-U3 and
 WP-R both may touch `Cargo.lock` (and U3 the root `Cargo.toml`): resolve by keeping both
