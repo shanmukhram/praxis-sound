@@ -120,7 +120,13 @@ branch below (the app may add a prefix/suffix: check `git branch`). Briefs are i
 full builds made the PC lag, so all sessions were stopped once. Now only two sessions compile at
 a time; `.claude/worktrees/.cargo/config.toml` (git-ignored, not in the repo; recreate it if
 missing) caps every session worktree at `jobs = 5` and `RUST_TEST_THREADS = 5`. The
-orchestrator does not run its own cargo builds while two sessions are building. Running now:
+orchestrator does not run its own cargo builds while two sessions are building.
+Build speed-ups (local, not committed): sccache 0.19 (winget `Mozilla.sccache`, binary under
+`%LOCALAPPDATA%\Microsoft\WinGet\Packages\Mozilla.sccache_*\`) as `build.rustc-wrapper`, and
+`rust-lld.exe` as the msvc linker, set in each new worktree's own `.cargo/config.toml` (done for
+WP-R and WP-U3; WP-K2 and WP-D1b were mid-build and kept the defaults). Once a package builds
+cleanly with them, move both settings into `.claude/worktrees/.cargo/config.toml` for all.
+Dev Drive is the owner's call (not set up); Cranelift was rejected (tests run optimised). Running now:
 WP-K2 and WP-D1b. Paused (stopped, idle, partial work uncommitted in their worktrees): WP-R
 (no files changed yet) and WP-U3 (6 files). Resume each with a message to its session when a
 slot frees up: WP-R after WP-D1b, WP-U3 after WP-K2 is merged.
