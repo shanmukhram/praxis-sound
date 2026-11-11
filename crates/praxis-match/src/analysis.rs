@@ -3,7 +3,7 @@
 //! measured by the same code (PRD design rule), so this module only adapts types.
 
 use crate::error::MatchError;
-use praxis_analyze::SoundProfile;
+use praxis_analyze::{ProfileOptions, SoundProfile, sound_profile};
 use praxis_analyze::originality::{self, OriginalityReport};
 use praxis_analyze::similarity;
 use praxis_dsp::StereoBuffer;
@@ -15,7 +15,11 @@ pub fn profile_of(
     sample_rate: u32,
     name: &str,
 ) -> Result<SoundProfile, MatchError> {
-    praxis_analyze::profile::measure(&audio.left, &audio.right, sample_rate, name)
+    let opts = ProfileOptions {
+        file_name: name.to_string(),
+        ..ProfileOptions::default()
+    };
+    sound_profile(&audio.left, &audio.right, sample_rate, &opts)
         .map_err(|e| MatchError::Analysis(e.to_string()))
 }
 

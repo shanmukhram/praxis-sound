@@ -7,7 +7,6 @@
 //! originality. The payload lists every iteration's similarity.
 
 use crate::error::{ErrorCode, OpError};
-use crate::ops::check::decode;
 use crate::ops::render::{RenderSettings, render_score};
 use crate::ops::{score_summary, write_project};
 use praxis_analyze::SoundProfile;
@@ -131,15 +130,10 @@ pub fn match_clip(req: &MatchClipRequest) -> Result<Value, OpError> {
     Ok(v)
 }
 
-/// Decodes a clip and measures it; the audio goes out of scope here.
+/// Measures a clip the same way as `praxis analyze`; the decoded audio is dropped here.
 fn profile_clip(path: &Path) -> Result<SoundProfile, OpError> {
-    let clip = decode(path)?;
-    let name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    praxis_match::analysis::profile_of(&clip.audio, clip.sample_rate, &name)
-        .map_err(|e| OpError::new(ErrorCode::DecodeFailed, format!("{}: {e}", path.display())))
+    let (profile, _audio) = crate::ops::analyze::profile_clip(path, 4)?;
+    Ok(profile)
 }
 
 fn match_error(e: MatchError) -> OpError {
