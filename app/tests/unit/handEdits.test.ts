@@ -230,6 +230,9 @@ describe('the batch', () => {
   it('reads as one request, with a scope only when every edit was on the same bars of one layer', () => {
     expect(batchAsk([{ label: 'Added Felt piano' }, { label: 'Wrote "DON din" in bar 1' }])).toBe('By hand: added Felt piano; wrote "DON din" in bar 1');
     expect(batchAsk(Array.from({ length: 6 }, (_, i) => ({ label: `Edit ${i}` })))).toBe('By hand: edit 0; edit 1; edit 2; edit 3; and 2 more');
+    const note = (label: string) => ({ label, group: { id: 'notes:piano', words: 'edited {n} notes of Felt piano' } });
+    expect(batchAsk([{ label: 'Added Felt piano' }, note('Added E4'), note('Removed A3'), { label: 'Tempo 120 BPM' }, note('Added C5')])).toBe('By hand: added Felt piano; edited 3 notes of Felt piano; tempo 120 BPM');
+    expect(batchAsk([note('Added E4 at bar 1')])).toBe('By hand: added E4 at bar 1');
     const at = (a: number, b: number) => ({ label: 'x', layer: 'piano', bars: { start: a, end: b } });
     expect(batchScope([at(9, 12), at(13, 16)])).toEqual({ layer: 'piano', bars: { start: 9, end: 16 } });
     expect(batchScope([at(9, 12), { label: 'tempo' }])).toBeUndefined();

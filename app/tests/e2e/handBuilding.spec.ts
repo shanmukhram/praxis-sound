@@ -74,7 +74,8 @@ test.describe('desktop 1440: build acceptance test 1 by hand', () => {
     await expect(page.getByTestId('draft-card')).toBeVisible();
     await expect(page.getByTestId('sound-line')).toHaveText('Built by hand, no take yet · A minor · 128 BPM · 16 bars');
     await expect(page.getByTestId('sound-settings')).toBeVisible();
-    await expect(page.getByTestId('pending')).toContainText('Add a layer to start');
+    await expect(page.getByTestId('pending')).toHaveCount(0);
+    await expect(page.getByTestId('panel-body')).toContainText('Add a layer to start: pick an instrument');
     expect(await st(page)).toMatchObject({ count: 0, draft: true });
     // Sound settings are live edits: the tempo changes and comes back without a take.
     await page.getByTestId('set-bpm').fill('120');
@@ -125,6 +126,12 @@ test.describe('desktop 1440: build acceptance test 1 by hand', () => {
     const aMinor = [0, 2, 3, 5, 7, 8, 10];
     for (const p of pitches) expect(aMinor).toContain((((p - 9) % 12) + 12) % 12);
     expect((await st(page)).count).toBe(0);
+    // The pitch window moves an octave at a time, so any pitch can be clicked.
+    await expect(page.getByTestId('roll-range')).toHaveText('Eb3 to Eb5');
+    await page.getByTestId('notes-up').click();
+    await expect(page.getByTestId('roll-range')).toHaveText('Eb4 to Eb6');
+    await page.getByTestId('notes-down').click();
+    await expect(page.getByTestId('roll-range')).toHaveText('Eb3 to Eb5');
     await page.getByTestId('panel').screenshot({ path: shot('hand-notes-1440.png') });
 
     // The soft kick, in bars 9-16, a little lower.

@@ -15,6 +15,10 @@ import { defaultPitch, focus, layerPicker } from './rhythm';
 import { nameOf, rangeWords, snapToKey } from '../handEdits';
 
 const H = 220;
+/** Semitones the roll shows at least. */
+const ROLL_SPAN = 24;
+/** How far the person moved the roll's pitch window (per layer, kept across re-renders). */
+let shift = { layer: '', by: 0 };
 
 export function renderNotes(ctx: ViewContext): HTMLElement {
   const box = h('div', { 'data-testid': 'notes-view' });
@@ -51,17 +55,26 @@ export function renderNotes(ctx: ViewContext): HTMLElement {
 
   const pitches = events.map((e) => e.pitch);
   const home = defaultPitch(ctx, [], layer);
-  let lo = pitches.length ? Math.min(...pitches) - 2 : home - 5;
-  let hi = pitches.length ? Math.max(...pitches) + 2 : home + 12;
-  if (hi - lo < 12) {
+  // Room around the notes to click new ones in (at least two octaves), moved an octave at a
+  // time with "Lower notes" / "Higher notes".
+  let lo = pitches.length ? Math.min(...pitches) - 5 : home - 7;
+  let hi = pitches.length ? Math.max(...pitches) + 5 : home + 14;
+  if (hi - lo < ROLL_SPAN) {
     const mid = Math.round((hi + lo) / 2);
-    lo = mid - 6;
-    hi = mid + 6;
+    lo = mid - ROLL_SPAN / 2;
+    hi = mid + ROLL_SPAN / 2;
   }
+  const off = shift.layer === layer.id ? shift.by : 0;
+  lo = Math.max(0, lo + off);
+  hi = Math.min(127, hi + off);
   const y = (p: number) => H - 14 - ((p - lo) / (hi - lo)) * (H - 28);
   const t0 = (start - 1) * barSeconds(s);
   const dur = (end - start + 1) * barSeconds(s);
-  const roll = h('div', { class: 'roll', role: 'img', 'aria-label': `Piano roll of ${name}, ${range}`, 'data-testid': 'roll' });
+  const roll = h('div', { class: 'roll', role: 'img', 'aria-label': `Piano roll of ${name}, ${range}`, 'data-testid': 'roll', 'data-lo': lo, 'data-hi': hi });
+  const move = (by: number) => {
+    shift = { layer: layer.id, by: off + by };
+    ctx.setViewLayer(ctx.viewLayer);
+  };
   if (pitched) {
     for (let p = lo; p <= hi; p++) if (inKey(s.key, p)) roll.append(h('div', { class: `row${isTonic(s.key, p) ? ' tonic' : ''}`, style: `top:${y(p)}px` }));
   }
@@ -94,6 +107,13 @@ export function renderNotes(ctx: ViewContext): HTMLElement {
   });
   box.append(
     roll,
+    h(
+      'div',
+      { class: 'roll-range' },
+      h('button', { type: 'button', class: 'ghost', 'data-testid': 'notes-down', disabled: lo <= 0, onclick: () => move(-12) }, 'Lower notes'),
+      h('span', { class: 'num', 'data-testid': 'roll-range' }, `${midiName(lo)} to ${midiName(hi)}`),
+      h('button', { type: 'button', class: 'ghost', 'data-testid': 'notes-up', disabled: hi >= 127, onclick: () => move(12) }, 'Higher notes'),
+    ),
     h(
       'div',
       { class: 'legend' },
@@ -143,12 +163,17 @@ function editNote(ctx: ViewContext, f: { layer: NLayer; bars: BarRange }, bar: n
     const step = ((bar - f.bars.start) * loop.stepsPerBar + stepInBar) % loop.pattern.length_steps;
     const patch = editPatternInRange(ctx.score, layer, f.bars, toggleNote(loop.pattern.notes, step, pitch, defaults), words);
     const repeats = ((f.bars.end - f.bars.start + 1) * loop.stepsPerBar) / loop.pattern.length_steps;
-    if (patch) ctx.live(patch, `${words} of ${nameOf(f.layer)}${repeats > 1 ? ` (every repeat in ${rangeWords(f.bars)})` : ''}`, { layer, bars: f.bars });
+    if (patch) ctx.live(patch, `${words} of ${nameOf(f.layer)}${repeats > 1 ? ` (every repeat in ${rangeWords(f.bars)})` : ''}`, { layer, bars: f.bars }, noteGroup(f.layer));
     return;
   }
   const bars = { start: bar, end: bar };
   const d = derivePattern(ctx.score, layer, bars);
   if (!d) return;
   const patch = editPatternInRange(ctx.score, layer, bars, toggleNote(d.pattern.notes, stepInBar, pitch, defaults), words);
-  if (patch) ctx.live(patch, `${words} of ${nameOf(f.layer)}`, { layer, bars });
+  if (patch) ctx.live(patch, `${words} of ${nameOf(f.layer)}`, { layer, bars }, noteGroup(f.layer));
+}
+
+/** Note clicks on one layer read once in a take's request: "edited 12 notes of Felt piano". */
+function noteGroup(l: NLayer): { id: string; words: string } {
+  return { id: `notes:${l.id}`, words: `edited {n} notes of ${nameOf(l)}` };
 }

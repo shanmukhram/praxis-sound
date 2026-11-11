@@ -80,6 +80,10 @@ input[type="range"] { accent-color: var(--text); min-width: 0; }
 .say-msg:empty { display: none; }
 .say-msg { color: var(--negative); }
 
+/* ---------- Notes: the pitch window ---------- */
+.roll-range { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0 0; color: var(--faint); font-size: 12px; }
+.roll-range .ghost { height: 28px; font-size: 12px; }
+
 /* ---------- the batch: heard live, not in a take yet ---------- */
 .pending { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--raised); border-radius: 12px; padding: 10px 12px 10px 14px; margin: -8px 0 18px; }
 .pending p { margin: 0; font-size: 13px; line-height: 18px; color: var(--muted); min-width: 0; }

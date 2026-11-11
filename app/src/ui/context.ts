@@ -30,7 +30,7 @@ export interface ViewContext {
    * A hand edit heard at once (no take yet): applied to the live score and added to the batch the
    * next "Make a take" records. `label` is how it reads in that take's request.
    */
-  live(patch: ScorePatch, label: string, at?: TakeScope): void;
+  live(patch: ScorePatch, label: string, at?: TakeScope, group?: { id: string; words: string }): void;
   openView(view: ViewName): void;
   /** Feel macro positions, kept per sound by the shell. */
   knobs: Record<string, number>;

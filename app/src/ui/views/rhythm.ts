@@ -100,7 +100,7 @@ export function renderRhythm(ctx: ViewContext): HTMLElement {
   const pitch = defaultPitch(ctx, notes, f.layer);
   const write = (out: Note[], label: string) => {
     const patch = editPatternInRange(ctx.score, f.layer.id, f.bars, out, label);
-    if (patch) ctx.live(patch, `${label} of ${name}, ${range}`, { layer: f.layer.id, bars: f.bars });
+    if (patch) ctx.live(patch, `${label} of ${name}, ${range}`, { layer: f.layer.id, bars: f.bars }, { id: `steps:${f.layer.id}`, words: `changed {n} steps of ${name}` });
   };
   const topAt = (step: number) => notes.filter((n) => n.step === step).sort((a, b) => b.velocity - a.velocity)[0];
   const spb = d.stepsPerBar;

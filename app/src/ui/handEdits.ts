@@ -371,6 +371,11 @@ export interface BatchEdit {
   bars?: BarRange;
   /** Edits of the same setting share a key; a later one replaces the earlier in the wording. */
   key?: string | null;
+  /**
+   * Many small edits of one kind (note clicks on a layer) share a group, worded once with their
+   * count: "edited 12 notes of Felt piano".
+   */
+  group?: { id: string; words: string };
 }
 
 /**
@@ -408,7 +413,18 @@ export function addToBatch(batch: BatchEdit[], edit: BatchEdit): BatchEdit[] {
 /** The request a batch reads as in the thread: "By hand: added Felt piano; ... and 2 more". */
 export function batchAsk(batch: BatchEdit[]): string {
   if (!batch.length) return 'Hand edits';
-  const words = batch.map((b) => b.label.charAt(0).toLowerCase() + b.label.slice(1));
+  const counts = new Map<string, number>();
+  for (const b of batch) if (b.group) counts.set(b.group.id, (counts.get(b.group.id) ?? 0) + 1);
+  const seen = new Set<string>();
+  const words: string[] = [];
+  for (const b of batch) {
+    const n = b.group ? counts.get(b.group.id)! : 1;
+    if (b.group && n > 1) {
+      if (seen.has(b.group.id)) continue;
+      seen.add(b.group.id);
+      words.push(`${b.group.words.replace('{n}', String(n))}`);
+    } else words.push(b.label.charAt(0).toLowerCase() + b.label.slice(1));
+  }
   const shown = words.slice(0, 4).join('; ');
   return `By hand: ${shown}${words.length > 4 ? `; and ${words.length - 4} more` : ''}`;
 }

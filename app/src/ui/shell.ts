@@ -302,7 +302,7 @@ export class Shell {
   // ------------------------------------------------------------ building by hand
 
   /** A hand edit heard at once: applied to the live score and added to the batch. */
-  private async live(patch: ScorePatch, label: string, at?: TakeScope): Promise<void> {
+  private async live(patch: ScorePatch, label: string, at?: TakeScope, group?: { id: string; words: string }): Promise<void> {
     const r = await this.engine.applyPatch(patch);
     if (!r.ok) {
       this.liveError = `Could not do that: ${patchErrorMessage(r.error)}.`;
@@ -310,7 +310,7 @@ export class Shell {
       return;
     }
     this.liveError = null;
-    this.batch = addToBatch(this.batch, { label, layer: at?.layer, bars: at?.bars, key: batchKey(patch) });
+    this.batch = addToBatch(this.batch, { label, layer: at?.layer, bars: at?.bars, key: batchKey(patch), group });
     // The adapter's state event has already redrawn; draw again for the batch line.
     this.renderPanel();
     this.renderThread(false);
@@ -367,11 +367,11 @@ export class Shell {
     if (!score) return null;
     const first = !this.current();
     if (this.liveError) return h('div', { class: 'pending bad', 'data-testid': 'live-error', role: 'alert' }, h('p', {}, this.liveError));
-    if (first && !score.layers.length) return h('div', { class: 'pending quiet', 'data-testid': 'pending' }, h('p', {}, 'Add a layer to start: Overview, then "Add a layer".'));
+    if (first && !score.layers.length) return null;
     if (!this.hasUnsaved()) return null;
     const n = this.batch.length;
     const what = first
-      ? 'Nothing is rendered yet. Make the first take when it sounds right: it is rendered, checked and kept.'
+      ? 'Not in a take yet. Make the first take when it sounds right.'
       : `${n ? `${n} ${n === 1 ? 'change' : 'changes'}` : 'Changes'} heard live, not in a take yet.`;
     const last = this.batch.at(-1)?.label;
     return h(
@@ -719,7 +719,7 @@ export class Shell {
         this.replies.push({ after: this.st.takes.length, who: 'You', ask: null, message: m });
         this.renderThread(true);
       },
-      live: (p, label, at) => void this.live(p, label, at),
+      live: (p, label, at, group) => void this.live(p, label, at, group),
       presets: this.presetList,
       viewLayer: this.viewLayer,
       setViewLayer: (id) => {

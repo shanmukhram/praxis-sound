@@ -156,7 +156,10 @@ fn a_blank_sound_built_by_hand() {
     assert!(t1["patch"].is_null(), "take 1 of a new sound has no patch");
     assert_eq!(t1["title"], "Built by hand");
     assert!(
-        t1["say"].as_str().unwrap().starts_with("Built by hand: soft kick, 16 bars"),
+        t1["say"]
+            .as_str()
+            .unwrap()
+            .starts_with("Built by hand: soft kick, 16 bars"),
         "{}",
         t1["say"]
     );
@@ -167,7 +170,11 @@ fn a_blank_sound_built_by_hand() {
     // Nothing changed since take 1: refused, no take.
     let e = hand::make_take(&take(&sound, "again")).unwrap_err();
     assert_eq!(e.code, "patch_rejected");
-    assert!(e.message.contains("nothing changed since take 1"), "{}", e.message);
+    assert!(
+        e.message.contains("nothing changed since take 1"),
+        "{}",
+        e.message
+    );
 
     // The next batch (the kick moves to bars 9-16) is take 2: its patch is the exact diff and
     // the change is measured on the renders.
@@ -186,7 +193,10 @@ fn a_blank_sound_built_by_hand() {
     assert_eq!(t2["title"], "Hand edit, bars 1–8");
     assert_eq!(t2["scope"]["layer"], "soft_kick");
     assert!(
-        t2["untouched"].as_str().unwrap().contains("Bars 9–16 sample-identical to take 1"),
+        t2["untouched"]
+            .as_str()
+            .unwrap()
+            .contains("Bars 9–16 sample-identical to take 1"),
         "{}",
         t2["untouched"]
     );
@@ -292,7 +302,9 @@ fn the_phase_3_exit_sound_by_hand() {
     let out = commands::export(&ExportArgs {
         sound: sound.clone(),
         take: Some(1),
-        kinds: ["wav24", "flac", "stems", "midi"].map(String::from).to_vec(),
+        kinds: ["wav24", "flac", "stems", "midi"]
+            .map(String::from)
+            .to_vec(),
         destination: "exports".into(),
         base_name: "calm piano by hand".into(),
     })

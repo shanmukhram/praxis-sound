@@ -69,7 +69,11 @@ pub fn blank_score(args: &NewSoundArgs) -> CmdResult<Score> {
         (None, Some(s)) if s > 0.0 && s.is_finite() => {
             solve_tempo(args.bars, args.time_signature, s)
         }
-        _ => return Err(bad("give the tempo, or a length in seconds to fit the bars into")),
+        _ => {
+            return Err(bad(
+                "give the tempo, or a length in seconds to fit the bars into",
+            ));
+        }
     };
     // Two decimals, as a person would type it (16 bars of 4/4 in 30 s is exactly 128).
     let bpm = (bpm * 100.0).round() / 100.0;
@@ -160,6 +164,15 @@ fn layer_names(score: &Score) -> String {
         [one] => one.clone(),
         [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
     }
+}
+
+/// "A minor", as the app writes keys (the score's display form is lower case).
+fn key_words(score: &Score) -> String {
+    let key = score.key.display();
+    let mut c = key.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
 }
 
 /// Renders, checks and records the live score as the next take, and makes it current: the first
@@ -299,7 +312,7 @@ pub fn make_take(args: &MakeTakeArgs) -> CmdResult<Value> {
                 layer_names(&after),
                 after.bars,
                 after.tempo.bpm,
-                after.key.display()
+                key_words(&after)
             )
         } else {
             let what = ask.strip_prefix("By hand: ").unwrap_or(&ask);

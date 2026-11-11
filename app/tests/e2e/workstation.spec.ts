@@ -86,10 +86,10 @@ test.describe('desktop 1440', () => {
     await page.getByTestId('go-back-1').click();
     await expect(page.getByTestId('take-current')).toHaveAttribute('data-take', '1');
     await expect(page.getByTestId('sound-line')).toHaveText('Take 1 is current · A minor · 128 BPM · 16 bars');
-    await expect(page.locator('[data-testid=change-map] .lane')).toHaveCount(1); // take 1 is the piano alone
+    await expect(page.locator('[data-testid=change-map] .lane:not(.loop-lane)')).toHaveCount(1); // take 1 is the piano alone
     await page.getByTestId('undo').click();
     await expect(page.getByTestId('take-current')).toHaveAttribute('data-take', '3');
-    await expect(page.locator('[data-testid=change-map] .lane')).toHaveCount(2);
+    await expect(page.locator('[data-testid=change-map] .lane:not(.loop-lane)')).toHaveCount(2);
     expect((await engineState(page)).count).toBe(3);
   });
 
