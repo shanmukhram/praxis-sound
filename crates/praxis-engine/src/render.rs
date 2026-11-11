@@ -78,84 +78,29 @@ pub fn render_offline_with(
     if opts.block_size == 0 {
         return Err(RenderError::Other("block_size must be > 0".into()));
     }
-    let report = validate::validate(score);
-    let fatal: Vec<_> = report
-        .errors
-        .iter()
-        .filter(|e| e.code != IssueCode::AvoidedClass)
-        .collect();
-    if !fatal.is_empty() {
-        return Err(RenderError::InvalidScore(format!("{fatal:?}")));
-    }
+    validate_for_render(score)?;
 
     let sr = opts.sample_rate;
     let bs = opts.block_size;
     let mut warnings = Vec::new();
-    let tm = TimeMap::new(score, sr);
     let len = timeline::score_length_samples(score, sr);
     let is_loop = matches!(score.playback, Playback::Loop);
-    let period = if is_loop { Some(len) } else { None };
 
     // ---- layer selection
     let (render_idx, blocked) = select_layers(score, factory, opts, &mut warnings);
 
     // ---- build the graph (all allocation happens here, before the first block)
-    let notes = timeline::expand_notes(score, sr);
     let bpm = score.tempo.bpm as f32;
-    let keys = key_layers(score, &render_idx, &blocked);
-    let mut nodes = Vec::with_capacity(render_idx.len() + keys.len());
-    let mut max_tail = 0u64;
-    let mut notes_rendered = 0u64;
-    for (li, layer) in score.layers.iter().enumerate() {
-        let rendered = render_idx.contains(&li);
-        if !rendered && !keys.contains(&li) {
-            continue;
-        }
-        let ctx = InstrumentContext {
-            sample_rate: sr as f32,
-            max_block: bs,
-            key: score.key,
-            bpm: score.tempo.bpm,
-            seed: seeding::layer_seed(score.seed, layer.seed_offset),
-        };
-        let instrument = factory.create(&layer.instrument, &ctx)?;
-        let layer_notes: Vec<&NoteEvent> = notes.iter().filter(|n| n.layer == li).collect();
-        let seq = Sequencer::new(&layer_notes, period, score.seed, layer.seed_offset);
-        let node = if rendered {
-            notes_rendered += layer_notes.len() as u64;
-            let owner = format!("layer `{}`", layer.id);
-            let chain = EffectChain::build(
-                &layer.effects,
-                config.effects,
-                sr as f32,
-                bs,
-                bpm,
-                &owner,
-                &mut warnings,
-            );
-            let (gain, pan, params) =
-                build_lanes(layer, factory, &chain, &tm, period, &owner, &mut warnings);
-            LayerNode::new(
-                layer.id.clone(),
-                instrument,
-                seq,
-                chain,
-                gain,
-                pan,
-                params,
-                bs,
-            )
-        } else {
-            warnings.push(format!(
-                "layer `{}` is not rendered but keys a sidechain; it runs as a key only (not mixed, no stem)",
-                layer.id
-            ));
-            LayerNode::key_only(layer.id.clone(), instrument, seq, bs)
-        };
-        let layer_tail = node.sequencer().overhang(len) + node.tail_samples();
-        max_tail = max_tail.max(layer_tail);
-        nodes.push(node);
-    }
+    let (nodes, mut max_tail, notes_rendered) = build_nodes(
+        score,
+        factory,
+        sr,
+        bs,
+        &render_idx,
+        &blocked,
+        config.effects,
+        &mut warnings,
+    )?;
 
     let master_chain = if opts.master {
         EffectChain::build(
@@ -288,6 +233,101 @@ pub fn render_offline_with(
     })
 }
 
+/// Validator errors are fatal except `avoided_class`, which the engine enforces itself.
+pub(crate) fn validate_for_render(score: &Score) -> Result<(), RenderError> {
+    let report = validate::validate(score);
+    let fatal: Vec<_> = report
+        .errors
+        .iter()
+        .filter(|e| e.code != IssueCode::AvoidedClass)
+        .collect();
+    if !fatal.is_empty() {
+        return Err(RenderError::InvalidScore(format!("{fatal:?}")));
+    }
+    Ok(())
+}
+
+/// Builds one node per rendered layer (and a key-only node per unrendered sidechain key), in
+/// score order. Returns the nodes, the longest layer tail (notes held past the end plus
+/// instrument and effect tails) and the number of notes per cycle of the rendered layers.
+/// Shared with the real-time engine (`realtime::prepare`) so both run the same graph.
+pub(crate) fn build_nodes(
+    score: &Score,
+    factory: &dyn InstrumentFactory,
+    sr: u32,
+    bs: usize,
+    render_idx: &[usize],
+    blocked: &[String],
+    effects: &dyn EffectBuilder,
+    warnings: &mut Vec<String>,
+) -> Result<(Vec<LayerNode>, u64, u64), RenderError> {
+    let tm = TimeMap::new(score, sr);
+    let len = timeline::score_length_samples(score, sr);
+    let period = if matches!(score.playback, Playback::Loop) {
+        Some(len)
+    } else {
+        None
+    };
+    let notes = timeline::expand_notes(score, sr);
+    let bpm = score.tempo.bpm as f32;
+    let keys = key_layers(score, render_idx, blocked);
+    let mut nodes = Vec::with_capacity(render_idx.len() + keys.len());
+    let mut max_tail = 0u64;
+    let mut notes_rendered = 0u64;
+    for (li, layer) in score.layers.iter().enumerate() {
+        let rendered = render_idx.contains(&li);
+        if !rendered && !keys.contains(&li) {
+            continue;
+        }
+        let ctx = InstrumentContext {
+            sample_rate: sr as f32,
+            max_block: bs,
+            key: score.key,
+            bpm: score.tempo.bpm,
+            seed: seeding::layer_seed(score.seed, layer.seed_offset),
+        };
+        let instrument = factory.create(&layer.instrument, &ctx)?;
+        let layer_notes: Vec<&NoteEvent> = notes.iter().filter(|n| n.layer == li).collect();
+        let seq = Sequencer::new(&layer_notes, period, score.seed, layer.seed_offset);
+        let node = if rendered {
+            notes_rendered += layer_notes.len() as u64;
+            let owner = format!("layer `{}`", layer.id);
+            let chain = EffectChain::build(
+                &layer.effects,
+                effects,
+                sr as f32,
+                bs,
+                bpm,
+                &owner,
+                warnings,
+            );
+            let (gain, pan, params) =
+                build_lanes(layer, factory, &chain, &tm, period, &owner, warnings);
+            LayerNode::new(
+                layer.id.clone(),
+                instrument,
+                seq,
+                chain,
+                gain,
+                pan,
+                params,
+                bs,
+            )
+        } else {
+            warnings.push(format!(
+                "layer `{}` is not rendered but keys a sidechain; it runs as a key only (not mixed, no stem)",
+                layer.id
+            ));
+            LayerNode::key_only(layer.id.clone(), instrument, seq, bs)
+        };
+        let layer_tail = node.sequencer().overhang(len) + node.tail_samples();
+        max_tail = max_tail.max(layer_tail);
+        nodes.push(node);
+    }
+
+    Ok((nodes, max_tail, notes_rendered))
+}
+
 /// Copies the part of block `[t, t + block.len())` that lies in `[start, end)` into `out`
 /// (indexed from `start`).
 fn copy_window(block: (&[f32], &[f32]), t: u64, start: u64, end: u64, out: &mut StereoBuffer) {
@@ -336,6 +376,17 @@ fn select_layers(
     opts: &RenderOptions,
     warnings: &mut Vec<String>,
 ) -> (Vec<usize>, Vec<String>) {
+    let (allowed, blocked) = apply_avoid_list(score, factory, warnings);
+    select_layers_rest(score, opts, allowed, blocked, warnings)
+}
+
+/// Step 1 of [`select_layers`]: (indices of layers the avoid-list allows, ids it blocks).
+/// The real-time engine builds every allowed layer and applies mute/solo live.
+pub(crate) fn apply_avoid_list(
+    score: &Score,
+    factory: &dyn InstrumentFactory,
+    warnings: &mut Vec<String>,
+) -> (Vec<usize>, Vec<String>) {
     let avoid = &score.constraints.avoid;
     let mut blocked = Vec::new();
     let mut allowed = Vec::new();
@@ -359,6 +410,17 @@ fn select_layers(
             allowed.push(i);
         }
     }
+    (allowed, blocked)
+}
+
+/// Steps 2 and 3 of [`select_layers`]: `only_layers`, then mute/solo.
+fn select_layers_rest(
+    score: &Score,
+    opts: &RenderOptions,
+    allowed: Vec<usize>,
+    blocked: Vec<String>,
+    warnings: &mut Vec<String>,
+) -> (Vec<usize>, Vec<String>) {
     for id in &opts.only_layers {
         if score.layer(id).is_none() {
             warnings.push(format!("only_layers: no layer `{id}` in the score"));
