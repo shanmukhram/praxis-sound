@@ -3,8 +3,10 @@
 //! commands over the real-time [`AudioService`].
 
 use crate::audio::{
-    AudioService, FakeOutput, LayerLive, Opener, TRANSPORT_EVENT, TransportStatus, cpal_opener,
+    AudioService, CompareLevel, FakeOutput, LayerLive, Opener, TRANSPORT_EVENT, TransportStatus,
+    cpal_opener,
 };
+use crate::clips::{self, Clip, LibraryEntry};
 use crate::commands::{self, AGENT_EVENT, AgentProgress, CmdError, CmdResult, ExportArgs};
 use crate::hand::{self, MakeTakeArgs, NewSound, NewSoundArgs};
 use crate::sounds::{self, SoundInfo};
@@ -201,6 +203,79 @@ async fn presets() -> CmdResult<Value> {
     blocking(hand::presets).await
 }
 
+// ---------------------------------------------------------------- reference clips
+
+/// A dropped clip: its bytes as the request body, its file name (percent-encoded) in the
+/// `x-clip-name` header. Kept under the home folder (for the assistant) and measured: the
+/// clip's path and its Sound Profile.
+#[tauri::command]
+async fn clip_analyze(
+    state: tauri::State<'_, AppState>,
+    request: tauri::ipc::Request<'_>,
+) -> CmdResult<Clip> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(CmdError::new(
+            praxis_cli::ErrorCode::BadJson,
+            "send the clip's bytes as the request body",
+        ));
+    };
+    let name = request
+        .headers()
+        .get(clips::NAME_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(clips::percent_decode)
+        .unwrap_or_default();
+    let bytes = bytes.clone();
+    let home = state.home.clone();
+    blocking(move || clips::analyze_clip(&home, &name, &bytes)).await
+}
+
+/// The reference library: every entry (no profiles).
+#[tauri::command]
+async fn library_list(state: tauri::State<'_, AppState>) -> CmdResult<Vec<LibraryEntry>> {
+    let home = state.home.clone();
+    blocking(move || clips::library_list(&home)).await
+}
+
+/// One library entry with its profile.
+#[tauri::command]
+async fn library_show(state: tauri::State<'_, AppState>, id: String) -> CmdResult<LibraryEntry> {
+    let home = state.home.clone();
+    blocking(move || clips::library_show(&home, &id)).await
+}
+
+/// Saves a reference's profile (never its audio): the kept clip's (`clip`, its path) when it is
+/// one, else `profile` as the window has it.
+#[tauri::command]
+async fn library_add(
+    state: tauri::State<'_, AppState>,
+    name: String,
+    tags: Vec<String>,
+    clip: Option<String>,
+    profile: Option<Value>,
+) -> CmdResult<LibraryEntry> {
+    let home = state.home.clone();
+    blocking(move || clips::library_add(&home, &name, &tags, clip.as_deref(), profile.as_ref()))
+        .await
+}
+
+/// Sets an entry's tags.
+#[tauri::command]
+async fn library_tag(
+    state: tauri::State<'_, AppState>,
+    id: String,
+    tags: Vec<String>,
+) -> CmdResult<LibraryEntry> {
+    let home = state.home.clone();
+    blocking(move || clips::library_tag(&home, &id, &tags)).await
+}
+
+#[tauri::command]
+async fn library_remove(state: tauri::State<'_, AppState>, id: String) -> CmdResult<bool> {
+    let home = state.home.clone();
+    blocking(move || clips::library_remove(&home, &id)).await
+}
+
 // ---------------------------------------------------------------- the project (no take)
 
 #[tauri::command]
@@ -272,6 +347,13 @@ fn transport_set_loop(audio: tauri::State<'_, AudioService>, range: Option<BarRa
 #[tauri::command]
 fn transport_layer(audio: tauri::State<'_, AudioService>, layer: String, live: LayerLive) {
     audio.set_layer(&layer, live);
+}
+
+/// The take's side of a loudness-matched A/B with a reference clip: a master trim (or
+/// silence) while comparing; `null` plays the take at its own level again. Not saved.
+#[tauri::command]
+fn transport_compare(audio: tauri::State<'_, AudioService>, level: Option<CompareLevel>) {
+    audio.set_compare(level);
 }
 
 #[tauri::command]
@@ -375,6 +457,13 @@ pub fn run() {
             transport_set_loop,
             transport_layer,
             transport_status,
+            transport_compare,
+            clip_analyze,
+            library_list,
+            library_show,
+            library_add,
+            library_tag,
+            library_remove,
         ])
         .run(tauri::generate_context!());
     if let Err(e) = result {

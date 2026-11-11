@@ -9,7 +9,9 @@
 //! - no output device is reported plainly and nothing panics;
 //! - a real sound made by the command layer (felt piano, `PRAXIS_PACKS`) plays through it.
 
-use praxis_app::audio::{AudioService, FakeOutput, LayerLive, Tap, TransportEvent, cpal_opener};
+use praxis_app::audio::{
+    AudioService, CompareLevel, FakeOutput, LayerLive, Tap, TransportEvent, cpal_opener,
+};
 use praxis_engine::testing::TestFactory;
 use praxis_engine::{RenderOptions, render_offline};
 use praxis_score::{BarRange, Playback, Score};
@@ -253,6 +255,87 @@ fn a_new_score_is_swapped_in_while_playing_without_a_click() {
     assert!(rms(&l) > 1e-3);
     let ev = r.last_event().unwrap();
     assert!(ev.playing && ev.swaps == 2 && ev.xruns == 0);
+}
+
+/// RMS in dB of exactly `periods` periods of `period` frames, ending now.
+fn level_db(r: &Rig, period: usize, periods: usize) -> f64 {
+    r.wait_frames(period * periods);
+    let (l, rr) = r.audio_from(r.frames() - period * periods);
+    let n = period * periods;
+    20.0 * ((rms(&l[..n]) + rms(&rr[..n])) / 2.0).max(1e-12).log10()
+}
+
+#[test]
+fn the_ab_trim_turns_the_take_down_mutes_it_and_survives_a_swap() {
+    let score = bell_score(); // a loop; bar 3 repeats so every window holds whole periods
+    let (_, _, gain) = offline(&score);
+    let bar = (SR as f64 * 1.875) as usize;
+    let r = rig(12.0);
+    r.service.load(score.clone(), Some(gain));
+    r.loaded(1);
+    r.service.set_loop(Some(BarRange { start: 3, end: 3 }));
+    r.service.seek(2.0 * 1.875);
+    r.service.play();
+    r.wait_frames(bar * 2); // settle into the repeating bar
+    let base = level_db(&r, bar, 2);
+    assert!(base > -40.0, "the bar is not sounding ({base:.1} dB)");
+
+    // The take is the louder one by 9 dB: turned down by 9 dB while comparing.
+    r.service.set_compare(Some(CompareLevel {
+        gain_db: -9.0,
+        muted: false,
+    }));
+    r.wait_frames(bar); // past the 10 ms ramp, into whole periods again
+    let trimmed = level_db(&r, bar, 2);
+    assert!(
+        ((trimmed - base) + 9.0).abs() < 1.0,
+        "trimmed by {:.2} dB, wanted -9",
+        trimmed - base
+    );
+    assert_eq!(
+        r.service.status().compare,
+        Some(CompareLevel {
+            gain_db: -9.0,
+            muted: false
+        })
+    );
+
+    // A rebuilt graph (any change that is not mute, solo or gain) keeps the trim.
+    let mut renamed = score.clone();
+    renamed.title = format!("{} (renamed)", renamed.title);
+    r.service.load(renamed, Some(gain));
+    r.loaded(2);
+    r.wait_frames(bar);
+    let swapped = level_db(&r, bar, 2);
+    assert!(
+        ((swapped - base) + 9.0).abs() < 1.0,
+        "after a swap the take is {:.2} dB from its level, wanted -9",
+        swapped - base
+    );
+
+    // The clip is heard: the take is silenced (the engine's -60 dB floor).
+    r.service.set_compare(Some(CompareLevel {
+        gain_db: -9.0,
+        muted: true,
+    }));
+    r.wait_frames(bar);
+    let muted = level_db(&r, bar, 2);
+    assert!(
+        muted - base < -55.0,
+        "muted only {:.1} dB down",
+        muted - base
+    );
+
+    // Back to the take's own level.
+    r.service.set_compare(None);
+    r.wait_frames(bar);
+    let back = level_db(&r, bar, 2);
+    assert!(
+        (back - base).abs() < 0.5,
+        "back at {:.2} dB from its level",
+        back - base
+    );
+    assert_eq!(r.service.status().compare, None);
 }
 
 #[test]

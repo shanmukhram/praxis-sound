@@ -61,6 +61,9 @@ import {
   METER_FLOOR_DB,
 } from './protocol';
 import { blankProblem, DRAFT_ASK } from '../blank';
+import type { AnalyzeResult, ClipFile, CompareLevel, LibraryEntry, LibraryResult, ReferenceClip, SoundProfile } from '../EngineAdapter';
+import { clipErrorWords, clipProblem, withReference } from '../reference';
+import { type ClipPayload, type LibraryEntryPayload, toLibraryEntry, toProfile } from './protocol';
 import { presetsFromPayload } from '../presets';
 
 /** Event crates/praxis-app sends when the open sound's takes.json gets a new revision. */
@@ -95,6 +98,8 @@ export interface AudioLike {
   currentTime: number;
   readonly duration: number;
   readonly paused: boolean;
+  /** 0..1; the A/B turns the take down with it in the fallback. */
+  volume: number;
   play(): Promise<void>;
   pause(): void;
 }
@@ -160,6 +165,10 @@ export class TauriEngine implements EngineAdapter {
   private unlistenTransport: (() => void) | null = null;
 
   private audio: AudioLike | null = null;
+  /** The A/B trim on the take while comparing (also applied to the <audio> fallback). */
+  private compare: CompareLevel | null = null;
+  /** blob: URLs of dropped clips, released on dispose. */
+  private clipUrls: string[] = [];
   private loopRange: BarRange | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly makeAudio: () => AudioLike | null;
@@ -343,8 +352,10 @@ export class TauriEngine implements EngineAdapter {
             .catch(() => null)
         : null;
       try {
+        // A reference's profile travels in the request's words (the planner reads them; the
+        // assistant measures the clip's file in full with its analyze_clip tool).
         const payload = await this.bridge.invoke<AskPayload>('ask', {
-          req: { sound, text: request.text, who: 'You', scope: request.scope ?? null },
+          req: { sound, text: withReference(request.text, request.reference), who: 'You', scope: request.scope ?? null },
         });
         const record = payload.take;
         if (!record) {
@@ -702,6 +713,7 @@ export class TauriEngine implements EngineAdapter {
     this.audio ??= this.makeAudio();
     const a = this.audio;
     if (!a) return;
+    this.applyCompareToAudio();
     if (a.src !== take.render.audioUrl) a.src = take.render.audioUrl;
     a.loop = take.render.report.is_loop && !this.loopRange;
     await a.play();
@@ -809,7 +821,106 @@ export class TauriEngine implements EngineAdapter {
     }
   }
 
+  // ------------------------------------------------------------ reference clips
+
+  /**
+   * Sends the clip's bytes to the shell, which keeps a copy (for the assistant), decodes it
+   * (ffmpeg for video) and returns its Sound Profile. The WebView plays the dropped file itself
+   * for A/B, so the shell never grants the WebView access to the copy.
+   */
+  async analyzeClip(file: ClipFile): Promise<AnalyzeResult> {
+    const problem = clipProblem(file);
+    if (problem) return { ok: false, message: problem };
+    if (!this.bridge.invokeBytes) return { ok: false, message: 'This build of the app cannot read dropped clips.' };
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const r = await this.bridge.invokeBytes<ClipPayload>('clip_analyze', bytes, { 'x-clip-name': encodeURIComponent(file.name) });
+      const profile = toProfile(r.profile);
+      let audioUrl: string | null = null;
+      if (typeof Blob !== 'undefined' && file instanceof Blob && typeof URL.createObjectURL === 'function') {
+        audioUrl = URL.createObjectURL(file);
+        this.clipUrls.push(audioUrl);
+      }
+      return { ok: true, clip: { name: file.name, profile, audioUrl, path: r.path, libraryId: null } };
+    } catch (e) {
+      return { ok: false, message: clipErrorWords(file.name, isCmdError(e) ? e.code : 'error', message(e)) };
+    }
+  }
+
+  async library(): Promise<LibraryEntry[]> {
+    try {
+      const list = await this.bridge.invoke<LibraryEntryPayload[]>('library_list');
+      return list.flatMap((e) => {
+        try {
+          return [toLibraryEntry(e)];
+        } catch {
+          return [];
+        }
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  async libraryProfile(id: string): Promise<SoundProfile | null> {
+    try {
+      const e = await this.bridge.invoke<LibraryEntryPayload>('library_show', { id });
+      return e.profile ? toProfile(e.profile) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Saves the profile to the library: the shell adds the kept clip's own cached profile (exact),
+   * or the profile as the window has it when the clip is no longer kept.
+   */
+  async saveReference(ref: ReferenceClip, name: string, tags: string[]): Promise<LibraryResult> {
+    if (!name.trim()) return { ok: false, message: 'Give the reference a name.' };
+    try {
+      const e = await this.bridge.invoke<LibraryEntryPayload>('library_add', { name: name.trim(), tags, clip: ref.path, profile: ref.profile });
+      return { ok: true, entry: toLibraryEntry(e) };
+    } catch (e) {
+      return { ok: false, message: `Could not save it to the library: ${message(e)}` };
+    }
+  }
+
+  async tagReference(id: string, tags: string[]): Promise<LibraryResult> {
+    try {
+      const e = await this.bridge.invoke<LibraryEntryPayload>('library_tag', { id, tags });
+      return { ok: true, entry: toLibraryEntry(e) };
+    } catch (e) {
+      return { ok: false, message: `Could not change the tags: ${message(e)}` };
+    }
+  }
+
+  async removeReference(id: string): Promise<boolean> {
+    try {
+      await this.bridge.invoke('library_remove', { id });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** The take's side of the A/B: a master trim in the real-time engine (or the <audio> fallback's volume). */
+  async setCompare(level: CompareLevel | null): Promise<void> {
+    this.compare = level ? { ...level } : null;
+    this.applyCompareToAudio();
+    if (this.rtMode === 'none') return;
+    await this.bridge.invoke('transport_compare', { level: level ? { gain_db: level.gainDb, muted: level.muted } : null }).catch(() => undefined);
+  }
+
+  private applyCompareToAudio(): void {
+    const a = this.audio;
+    if (!a) return;
+    const c = this.compare;
+    a.volume = !c ? 1 : c.muted ? 0 : Math.min(1, 10 ** (Math.min(0, c.gainDb) / 20));
+  }
+
   dispose(): void {
+    if (typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') this.clipUrls.forEach((u) => URL.revokeObjectURL(u));
+    this.clipUrls = [];
     void this.stopAudio();
     this.unlisten?.();
     this.unlisten = null;

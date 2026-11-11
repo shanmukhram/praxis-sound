@@ -4,6 +4,7 @@
 
 import { normalizeScore, type NScore, type Score, type ScorePatch } from '../../score/types';
 import type { RenderReport, Take, TakeScope, VerifyCheck, VerifyReport, ViewName, Who } from '../EngineAdapter';
+import { type ClipKind, type LibraryEntry, profileSummary, type SoundProfile, splitReference } from '../reference';
 
 /** `SoundInfo` in crates/praxis-app/src/sounds.rs. */
 export interface SoundInfo {
@@ -201,10 +202,12 @@ export function agentName(who: Who): string | null {
 export function toTake(r: TakeRecord, fileUrl: (path: string) => string, fallback: NScore | null): Take {
   const score = r.score ? normalizeScore(r.score) : fallback;
   if (!score) throw new Error(`take ${r.n} has no score`);
+  // A request with a reference carries its profile in words after the typed text.
+  const asked = splitReference(r.ask ?? '');
   const take: Take = {
     n: r.n,
     who: toWho(r.who),
-    ask: r.ask,
+    ask: asked.ask,
     title: r.title,
     say: r.say,
     score,
@@ -216,6 +219,7 @@ export function toTake(r: TakeRecord, fileUrl: (path: string) => string, fallbac
   };
   if (r.opens) take.opens = r.opens;
   if (r.scope) take.scope = r.scope;
+  if (asked.reference) take.reference = asked.reference;
   return take;
 }
 
@@ -269,3 +273,104 @@ export interface LayerLive {
 
 /** Meter floor the engine sends for silence. */
 export const METER_FLOOR_DB = -120;
+
+// ---------------------------------------------------------------- reference clips
+
+/** `Clip` in crates/praxis-app/src/clips.rs: the shell's copy of a dropped clip and its profile. */
+export interface ClipPayload {
+  path: string;
+  profile: unknown;
+}
+
+/** `LibraryEntry` in crates/praxis-app/src/clips.rs: a named, tagged profile (no audio). */
+export interface LibraryEntryPayload {
+  id: string;
+  name: string;
+  tags?: string[];
+  kind?: string;
+  duration_s?: number;
+  /** The analyzer's one line in plain words. */
+  summary?: string;
+  /** The profile (`library_show`, `library_add`); null in a listing. */
+  profile?: unknown;
+  /** The same clip was already kept: that entry got the name and tags. */
+  already?: boolean;
+}
+
+const arr = <T>(v: unknown, f: (x: unknown) => T): T[] => (Array.isArray(v) ? v.map(f) : []);
+const obj = (v: unknown): Record<string, any> => (v && typeof v === 'object' ? (v as Record<string, any>) : {});
+const KINDS: ClipKind[] = ['music', 'sfx', 'ambience'];
+
+/**
+ * A Sound Profile from the analyzer's JSON (`praxis analyze`, the profile contract), checked for
+ * the fields the app reads. Accepts the profile itself or a payload wrapping it (`{profile}`).
+ * Throws when it is not a profile at all.
+ */
+export function toProfile(value: unknown): SoundProfile {
+  const v = obj(value);
+  const p = obj(v.source ? v : v.profile);
+  if (!p.source || !p.class || !p.loudness) throw new Error('the analyzer did not return a Sound Profile');
+  const src = obj(p.source);
+  const cls = obj(p.class);
+  const loud = obj(p.loudness);
+  const env = obj(p.envelope);
+  const sp = obj(p.spectral);
+  const kind: ClipKind = KINDS.includes(cls.kind) ? cls.kind : 'music';
+  const scores = arr(cls.scores, (x) => num(x));
+  const tempo = p.tempo ? obj(p.tempo) : null;
+  const key = p.key ? obj(p.key) : null;
+  const groove = p.groove ? obj(p.groove) : null;
+  const reverb = p.reverb ? obj(p.reverb) : null;
+  return {
+    version: num(p.version, 1),
+    source: { file_name: String(src.file_name ?? ''), duration_s: num(src.duration_s), sample_rate: num(src.sample_rate, 48000), channels: num(src.channels, 2), pcm_hash: String(src.pcm_hash ?? '') },
+    class: { kind, confidence: num(cls.confidence), scores: [scores[0] ?? 0, scores[1] ?? 0, scores[2] ?? 0] },
+    tempo: tempo && Number.isFinite(tempo.bpm)
+      ? { bpm: num(tempo.bpm), confidence: num(tempo.confidence), beats_s: arr(tempo.beats_s, (x) => num(x)), downbeat_s: num(tempo.downbeat_s), beats_per_bar: num(tempo.beats_per_bar, 4) }
+      : null,
+    key: key && key.key && typeof key.key === 'object' ? { key: key.key, confidence: num(key.confidence), chroma: arr(key.chroma, (x) => num(x)) } : null,
+    loudness: {
+      integrated_lufs: num(loud.integrated_lufs, -Infinity),
+      range_lu: num(loud.range_lu),
+      true_peak_dbtp: num(loud.true_peak_dbtp, -Infinity),
+      sample_peak_dbfs: num(loud.sample_peak_dbfs, -Infinity),
+      rms_dbfs: num(loud.rms_dbfs, -Infinity),
+      crest_db: num(loud.crest_db),
+    },
+    envelope: { attack_s: num(env.attack_s), decay_s: num(env.decay_s), sustain: num(env.sustain), release_s: num(env.release_s), frames_db: arr(env.frames_db, (x) => num(x, -120)), hop_s: num(env.hop_s, 0.01) },
+    spectral: {
+      centroid_hz: num(sp.centroid_hz),
+      rolloff_hz: num(sp.rolloff_hz),
+      flatness: num(sp.flatness),
+      bands_db: arr(sp.bands_db, (x) => num(x, -120)),
+      tilt_db_per_oct: num(sp.tilt_db_per_oct),
+      centroid_track_hz: arr(sp.centroid_track_hz, (x) => num(x)),
+    },
+    groove: groove
+      ? { grid: groove.grid ?? 'sixteenth', steps_per_bar: num(groove.steps_per_bar, 16), step_weights: arr(groove.step_weights, (x) => num(x)), swing: num(groove.swing), onsets_per_bar: num(groove.onsets_per_bar) }
+      : null,
+    onsets_s: arr(p.onsets_s, (x) => num(x)),
+    pitch: { hop_s: num(obj(p.pitch).hop_s, 0.01), midi: arr(obj(p.pitch).midi, (x) => (typeof x === 'number' && Number.isFinite(x) ? x : null)) },
+    tonality: num(p.tonality),
+    stereo: { width: num(obj(p.stereo).width), correlation: num(obj(p.stereo).correlation, 1) },
+    reverb: reverb ? { rt60_s: num(reverb.rt60_s), confidence: num(reverb.confidence) } : null,
+    sections: arr(p.sections, (x) => ({ start_s: num(obj(x).start_s), end_s: num(obj(x).end_s), label: String(obj(x).label ?? '') })),
+    features: arr(p.features, (x) => num(x)),
+    tags: arr(p.tags, (x) => String(x)),
+    style_name: typeof p.style_name === 'string' ? p.style_name : null,
+    ...(typeof p.summary === 'string' ? { summary: p.summary } : {}),
+  };
+}
+
+export function toLibraryEntry(e: LibraryEntryPayload): LibraryEntry {
+  const profile = e.profile ? toProfile(e.profile) : null;
+  const kind: ClipKind = profile?.class.kind ?? (KINDS.includes(e.kind as ClipKind) ? (e.kind as ClipKind) : 'music');
+  return {
+    id: String(e.id),
+    name: String(e.name ?? e.id),
+    tags: (e.tags ?? profile?.tags ?? []).map(String),
+    kind,
+    summary: e.summary || (profile ? (profile.summary ?? profileSummary(profile)) : ''),
+    profile,
+  };
+}

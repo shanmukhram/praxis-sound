@@ -43,8 +43,31 @@ planner answers. Needs the WebView2 runtime (part of Windows 11).
 | `transport_play`, `transport_stop`, `transport_seek {seconds}`, `transport_set_loop {range}` | the real-time transport (loop bars `start..=end`) |
 | `transport_layer {layer, live}` | a live layer override (`gain_db` trim, `muted`, `solo`), heard at once, not saved |
 | `transport_status` | device, rate, buffer, xruns and the last graph build (`TransportStatus`) |
+| `transport_compare {level}` | the take's side of a loudness-matched A/B: `{gain_db, muted}` on the master while comparing, `null` back to its own level; kept across swaps, never saved |
+| `clip_analyze` (raw body) | a dropped clip's bytes, its name percent-encoded in `x-clip-name`: kept under `<home>/clips`, measured by `ops::analyze` -> `{path, name, profile}` |
+| `library_list`, `library_show {id}`, `library_add {name, tags, clip?, profile?}`, `library_tag {id, tags}`, `library_remove {id}` | the reference library (`ops::library`, `<home>/library`): named, tagged profiles, never audio. A listing has no profiles (`show` has); `add` saves the kept clip's cached profile (`<home>/clips/profiles`), else the `profile` sent; `tag` sets the tags exactly |
 
 Project writes take the sound's `.lock` like every other writer.
+
+## Reference clips (WP-U6)
+
+A clip dropped on the window (or chosen with "Add a clip": WAV, MP3, FLAC, OGG, M4A, MP4, MOV,
+WebM) goes to `clip_analyze` as bytes. The window's own file drop is off (`dragDropEnabled:
+false`), so the page gets the file itself. The shell keeps a copy under `<home>/clips/` (the
+newest 24) so the sound assistant can measure the file in full with its `analyze_clip` tool, and
+returns the Sound Profile from `ops::analyze` (video and M4A go through ffmpeg; without it the
+error code is `ffmpeg_missing` and the window says what to do). The WebView plays the dropped
+file itself (a `blob:` URL) for the A/B, so it is never granted the `clips` folder.
+
+A request with a reference carries a short version of its profile after the typed text: the
+analyzer's summary, each line in plain words (tempo, key, loudness, brightness, space, groove,
+shape, tone) and the key numbers, never the tracks (a full profile of a 30 s clip is ~120 kB);
+for a dropped clip also the kept copy's path, for matching. The take's request shows as typed
+with "Reference: <name>" under it. The A/B
+plays the current take through the real-time engine and the clip through `<audio>`, together and
+looping; the louder one is turned down by the difference in integrated loudness
+(`transport_compare` for the take, the element's volume for the clip), and A/B swaps which one
+is heard (the other side silenced: the engine's -60 dB master floor, the element muted).
 
 ## Building a sound by hand (WP-U5)
 
@@ -92,4 +115,6 @@ PRAXIS_PACKS="C:\path\to\packs" cargo test -p praxis-app     # every command, an
 PRAXIS_DEVICE_TEST=1 cargo test -p praxis-app --test audio device -- --nocapture   # the speakers
 PRAXIS_PACKS="C:\path\to\packs" cargo test -p praxis-app --test hand   # a sound built by hand, and the Phase 3 exit sound
 cd app && npx vitest run tests/unit/tauriEngine.test.ts      # the adapter through a fake bridge
+cargo test -p praxis-app --test clips                         # dropped clips measured, the library
+cd app && npx vitest run tests/unit/reference.test.ts tests/unit/tauriReference.test.ts && npx playwright test tests/e2e/reference.spec.ts
 ```
