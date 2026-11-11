@@ -127,9 +127,8 @@ Build speed-ups (local, not committed): sccache 0.19 (winget `Mozilla.sccache`, 
 WP-R and WP-U3; WP-K2 and WP-D1b were mid-build and kept the defaults). Once a package builds
 cleanly with them, move both settings into `.claude/worktrees/.cargo/config.toml` for all.
 Dev Drive is the owner's call (not set up); Cranelift was rejected (tests run optimised). Running now:
-WP-K2 and WP-D1b. Paused (stopped, idle, partial work uncommitted in their worktrees): WP-R
-(no files changed yet) and WP-U3 (6 files). Resume each with a message to its session when a
-slot frees up: WP-R after WP-D1b, WP-U3 after WP-K2 is merged.
+WP-K2 and WP-R (WP-D1b merged). Paused (stopped, idle, 6 files uncommitted in its worktree):
+WP-U3; resume it with a message to its session once WP-K2 is merged.
 
 Merge order: WP-D1b and WP-R whenever they are ready; WP-K2 before finishing WP-U3. WP-U3 and
 WP-R both may touch `Cargo.lock` (and U3 the root `Cargo.toml`): resolve by keeping both
