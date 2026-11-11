@@ -1,0 +1,287 @@
+{
+  "schema_version": 1,
+  "title": "Reference: night groove",
+  "seed": 12,
+  "meta": {
+    "tags": [
+      "reference-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {}
+  },
+  "tempo": {
+    "bpm": 118.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "E",
+    "mode": "minor"
+  },
+  "bars": 8,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 1.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "bass",
+      "grid": "sixteenth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 40,
+          "velocity": 0.85,
+          "accent": "normal",
+          "length": 2.5
+        },
+        {
+          "step": 3,
+          "pitch": 40,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 6,
+          "pitch": 43,
+          "velocity": 0.75,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 10,
+          "pitch": 47,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 11,
+          "pitch": 45,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 14,
+          "pitch": 43,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.0
+        }
+      ]
+    },
+    {
+      "id": "kick",
+      "grid": "sixteenth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 36,
+          "velocity": 0.9,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 6,
+          "pitch": 36,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 10,
+          "pitch": 36,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.0
+        }
+      ]
+    },
+    {
+      "id": "hat",
+      "grid": "sixteenth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 1,
+          "pitch": 42,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 3,
+          "pitch": 42,
+          "velocity": 0.35,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 5,
+          "pitch": 42,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 7,
+          "pitch": 42,
+          "velocity": 0.35,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 9,
+          "pitch": 42,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 11,
+          "pitch": 42,
+          "velocity": 0.35,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 13,
+          "pitch": 42,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 15,
+          "pitch": 42,
+          "velocity": 0.35,
+          "accent": "normal",
+          "length": 1.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "bass",
+      "name": "bass",
+      "class": "bass",
+      "instrument": {
+        "kind": "synth",
+        "preset": "warm_bass",
+        "params": {
+          "tone": 0.55
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "bass",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "drive",
+          "kind": "saturation",
+          "params": {
+            "drive_db": 8.0,
+            "mix": 0.6
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "kick",
+      "name": "kick",
+      "class": "drums",
+      "instrument": {
+        "kind": "drum",
+        "preset": "kick",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "kick",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": -2.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "hat",
+      "name": "hat",
+      "class": "drums",
+      "instrument": {
+        "kind": "drum",
+        "preset": "hat_closed",
+        "params": {
+          "tone": 0.7
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "hat",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": -8.0,
+      "pan": 0.25,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -14.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

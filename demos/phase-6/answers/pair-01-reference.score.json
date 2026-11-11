@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "title": "Reference: felt lullaby",
+  "seed": 11,
+  "meta": {
+    "tags": [
+      "reference-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {}
+  },
+  "tempo": {
+    "bpm": 72.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "D",
+    "mode": "major"
+  },
+  "bars": 8,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 3.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "melody",
+      "grid": "eighth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 74,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 2.5
+        },
+        {
+          "step": 2,
+          "pitch": 78,
+          "velocity": 0.55,
+          "accent": "normal",
+          "length": 2.0
+        },
+        {
+          "step": 4,
+          "pitch": 81,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 5,
+          "pitch": 78,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 6,
+          "pitch": 76,
+          "velocity": 0.55,
+          "accent": "normal",
+          "length": 2.0
+        },
+        {
+          "step": 8,
+          "pitch": 74,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 3.0
+        },
+        {
+          "step": 11,
+          "pitch": 71,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 12,
+          "pitch": 69,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.0
+        }
+      ]
+    },
+    {
+      "id": "left",
+      "grid": "eighth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 50,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 6.0
+        },
+        {
+          "step": 8,
+          "pitch": 43,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 6.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "melody",
+      "name": "melody",
+      "class": "melody",
+      "instrument": {
+        "kind": "sampler",
+        "preset": "felt_piano",
+        "params": {
+          "felt": 0.85,
+          "tone": 0.35
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "melody",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": -0.1,
+      "effects": [
+        {
+          "id": "verb",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 3.5,
+            "mix": 0.35,
+            "predelay_ms": 20.0,
+            "size": 0.55
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "left",
+      "name": "left",
+      "class": "harmony",
+      "instrument": {
+        "kind": "sampler",
+        "preset": "felt_piano",
+        "params": {
+          "felt": 0.9,
+          "tone": 0.3
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "left",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": -5.0,
+      "pan": 0.15,
+      "effects": [
+        {
+          "id": "verb",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 3.5,
+            "mix": 0.35,
+            "predelay_ms": 20.0,
+            "size": 0.55
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -20.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

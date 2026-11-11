@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "title": "Made like the reference",
+  "seed": 7,
+  "meta": {
+    "emotion": "calm",
+    "intensity": 0.5,
+    "tags": [
+      "planned",
+      "matched"
+    ],
+    "reference_profiles": [
+      "lullaby_felt.wav"
+    ],
+    "provenance": {
+      "attempts": "0",
+      "matcher": "praxis-match 1",
+      "palette": "mallet",
+      "planner": "praxis-planner plan-v1",
+      "provider": "direct-plan",
+      "repairs": "0",
+      "seed": "7"
+    }
+  },
+  "tempo": {
+    "bpm": 72.001
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "D",
+    "mode": "major"
+  },
+  "bars": 9,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 4.0
+  },
+  "constraints": {
+    "avoid": [
+      "pad",
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "whoosh",
+      "fill"
+    ]
+  },
+  "sections": [
+    {
+      "id": "main",
+      "name": "Main",
+      "bars": {
+        "start": 1,
+        "end": 9
+      },
+      "role": "main",
+      "intensity": 0.5
+    }
+  ],
+  "patterns": [
+    {
+      "id": "lead_motif",
+      "grid": "eighth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 57,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.1
+        },
+        {
+          "step": 2,
+          "pitch": 54,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 1.1
+        },
+        {
+          "step": 4,
+          "pitch": 50,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.1
+        },
+        {
+          "step": 8,
+          "pitch": 52,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.1
+        },
+        {
+          "step": 10,
+          "pitch": 54,
+          "velocity": 0.55,
+          "accent": "soft",
+          "length": 1.1
+        },
+        {
+          "step": 12,
+          "pitch": 57,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.1
+        }
+      ],
+      "spoken": "don - din - DON - - -"
+    }
+  ],
+  "layers": [
+    {
+      "id": "lead",
+      "name": "mallet",
+      "class": "motif",
+      "instrument": {
+        "kind": "synth",
+        "preset": "mallet",
+        "params": {
+          "tone": 0.3656164116167384
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 9
+          },
+          "pattern": "lead_motif",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "room",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 3.477497577667235,
+            "mix": 0.2455848720502664,
+            "predelay_ms": 12.0,
+            "size": 0.4977497577667235
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [
+      {
+        "id": "air",
+        "kind": "eq",
+        "params": {
+          "lp_hz": 11241.902784841925
+        },
+        "bypass": false
+      },
+      {
+        "id": "width",
+        "kind": "width",
+        "params": {
+          "width": 2.0
+        },
+        "bypass": false
+      }
+    ],
+    "loudness": {
+      "target_lufs": -19.99999977184501,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": [
+    {
+      "bars": {
+        "start": 1,
+        "end": 2
+      },
+      "beat": 0.0,
+      "symbol": "D"
+    },
+    {
+      "bars": {
+        "start": 3,
+        "end": 4
+      },
+      "beat": 0.0,
+      "symbol": "F#m"
+    },
+    {
+      "bars": {
+        "start": 5,
+        "end": 6
+      },
+      "beat": 0.0,
+      "symbol": "G"
+    },
+    {
+      "bars": {
+        "start": 7,
+        "end": 8
+      },
+      "beat": 0.0,
+      "symbol": "A"
+    },
+    {
+      "bars": {
+        "start": 9,
+        "end": 9
+      },
+      "beat": 0.0,
+      "symbol": "D"
+    }
+  ]
+}

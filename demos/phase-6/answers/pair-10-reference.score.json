@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "title": "rain_bed",
+  "seed": 21,
+  "meta": {
+    "tags": [
+      "reference-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {}
+  },
+  "tempo": {
+    "bpm": 120.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "bars": 4,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 2.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "fx",
+      "grid": "quarter",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 57,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 16.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "fx",
+      "name": "fx",
+      "class": "texture",
+      "instrument": {
+        "kind": "synth",
+        "preset": "noise_bed",
+        "params": {
+          "tone": 0.6
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 4
+          },
+          "pattern": "fx",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.1,
+      "effects": [
+        {
+          "id": "soft",
+          "kind": "eq",
+          "params": {
+            "hp_hz": 150.0,
+            "lp_hz": 6000.0
+          },
+          "bypass": false
+        },
+        {
+          "id": "verb",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 2.0,
+            "mix": 0.3,
+            "predelay_ms": 20.0,
+            "size": 0.4
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -24.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

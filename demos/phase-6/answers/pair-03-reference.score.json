@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "title": "Reference: bell arpeggio",
+  "seed": 13,
+  "meta": {
+    "tags": [
+      "reference-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {}
+  },
+  "tempo": {
+    "bpm": 96.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "F#",
+    "mode": "minor"
+  },
+  "bars": 8,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 3.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "arp",
+      "grid": "sixteenth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 78,
+          "velocity": 0.75,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 1,
+          "pitch": 81,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 2,
+          "pitch": 85,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 3,
+          "pitch": 88,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 4,
+          "pitch": 85,
+          "velocity": 0.75,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 5,
+          "pitch": 81,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 6,
+          "pitch": 78,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 7,
+          "pitch": 81,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 8,
+          "pitch": 76,
+          "velocity": 0.75,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 9,
+          "pitch": 80,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 10,
+          "pitch": 83,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 11,
+          "pitch": 88,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 12,
+          "pitch": 83,
+          "velocity": 0.75,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 13,
+          "pitch": 80,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 14,
+          "pitch": 76,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        },
+        {
+          "step": 15,
+          "pitch": 73,
+          "velocity": 0.5,
+          "accent": "normal",
+          "length": 1.5
+        }
+      ]
+    },
+    {
+      "id": "sub",
+      "grid": "sixteenth",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 30,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 14.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "arp",
+      "name": "arp",
+      "class": "arp",
+      "instrument": {
+        "kind": "synth",
+        "preset": "bell",
+        "params": {
+          "tone": 0.7
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "arp",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.2,
+      "effects": [
+        {
+          "id": "echo",
+          "kind": "delay",
+          "params": {
+            "feedback": 0.4,
+            "mix": 0.25,
+            "time_beats": 0.75
+          },
+          "bypass": false
+        },
+        {
+          "id": "verb",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 2.5,
+            "mix": 0.3,
+            "predelay_ms": 20.0,
+            "size": 0.45
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "sub",
+      "name": "sub",
+      "class": "bass",
+      "instrument": {
+        "kind": "synth",
+        "preset": "sub_bass",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "sub",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": -14.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -16.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

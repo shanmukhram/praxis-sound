@@ -1,0 +1,336 @@
+{
+  "schema_version": 1,
+  "title": "Reference: dark keys",
+  "seed": 15,
+  "meta": {
+    "tags": [
+      "reference-set"
+    ],
+    "reference_profiles": [],
+    "provenance": {}
+  },
+  "tempo": {
+    "bpm": 64.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "C",
+    "mode": "minor"
+  },
+  "bars": 8,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 5.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "keys",
+      "grid": "quarter",
+      "length_steps": 32,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 48,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 0,
+          "pitch": 51,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 0,
+          "pitch": 55,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 4,
+          "pitch": 48,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 4,
+          "pitch": 51,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 4,
+          "pitch": 55,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 8,
+          "pitch": 44,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 8,
+          "pitch": 48,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 8,
+          "pitch": 51,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 12,
+          "pitch": 44,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 12,
+          "pitch": 48,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 12,
+          "pitch": 51,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 16,
+          "pitch": 46,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 16,
+          "pitch": 51,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 16,
+          "pitch": 55,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 20,
+          "pitch": 46,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 20,
+          "pitch": 51,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 20,
+          "pitch": 55,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 24,
+          "pitch": 46,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 24,
+          "pitch": 50,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 24,
+          "pitch": 53,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 28,
+          "pitch": 46,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 28,
+          "pitch": 50,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        },
+        {
+          "step": 28,
+          "pitch": 53,
+          "velocity": 0.45,
+          "accent": "normal",
+          "length": 4.5
+        }
+      ]
+    },
+    {
+      "id": "sub",
+      "grid": "quarter",
+      "length_steps": 32,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 36,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 7.5
+        },
+        {
+          "step": 8,
+          "pitch": 32,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 7.5
+        },
+        {
+          "step": 16,
+          "pitch": 39,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 7.5
+        },
+        {
+          "step": 24,
+          "pitch": 34,
+          "velocity": 0.6,
+          "accent": "normal",
+          "length": 7.5
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "keys",
+      "name": "keys",
+      "class": "chords",
+      "instrument": {
+        "kind": "synth",
+        "preset": "soft_keys",
+        "params": {
+          "tone": 0.2
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "keys",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "dark",
+          "kind": "eq",
+          "params": {
+            "lp_hz": 2500.0
+          },
+          "bypass": false
+        },
+        {
+          "id": "verb",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 6.0,
+            "mix": 0.45,
+            "predelay_ms": 20.0,
+            "size": 0.8
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "sub",
+      "name": "sub",
+      "class": "bass",
+      "instrument": {
+        "kind": "synth",
+        "preset": "sub_bass",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 8
+          },
+          "pattern": "sub",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": -6.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -19.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

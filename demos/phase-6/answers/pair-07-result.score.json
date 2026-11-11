@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "title": "A whoosh made like the reference",
+  "seed": 7,
+  "meta": {
+    "tags": [
+      "matched"
+    ],
+    "reference_profiles": [
+      "heavy_impact.wav"
+    ],
+    "provenance": {
+      "family": "whoosh",
+      "matcher": "praxis-match 1"
+    }
+  },
+  "tempo": {
+    "bpm": 120.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "bars": 1,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 1.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "hit",
+      "grid": "eighth",
+      "length_steps": 8,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 33,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "whoosh",
+      "name": "whoosh",
+      "class": "whoosh",
+      "instrument": {
+        "kind": "sfx",
+        "preset": "whoosh",
+        "params": {
+          "brightness": 0.0,
+          "length": 0.6913836785290575,
+          "pitch": 0.375,
+          "weight": 1.0
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 1
+          },
+          "pattern": "hit",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "room",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 2.4230690002441415,
+            "mix": 0.30629272221568615,
+            "predelay_ms": 8.0,
+            "size": 0.39230690002441415
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -16.232888994179955,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

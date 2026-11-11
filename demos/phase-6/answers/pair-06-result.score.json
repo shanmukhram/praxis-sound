@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "title": "A glitch made like the reference",
+  "seed": 7,
+  "meta": {
+    "tags": [
+      "matched"
+    ],
+    "reference_profiles": [
+      "whoosh_by.wav"
+    ],
+    "provenance": {
+      "family": "glitch",
+      "matcher": "praxis-match 1"
+    }
+  },
+  "tempo": {
+    "bpm": 173.9125
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "F",
+    "mode": "major"
+  },
+  "bars": 2,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 1.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "hit",
+      "grid": "sixteenth",
+      "length_steps": 32,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 53,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 3,
+          "pitch": 53,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 4,
+          "pitch": 53,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 6,
+          "pitch": 53,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.0
+        },
+        {
+          "step": 8,
+          "pitch": 53,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "glitch",
+      "name": "glitch",
+      "class": "glitch",
+      "instrument": {
+        "kind": "sfx",
+        "preset": "glitch",
+        "params": {
+          "brightness": 0.6746482698960138,
+          "length": 0.9873179274091232,
+          "pitch": 0.5,
+          "weight": 1.0
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 2
+          },
+          "pattern": "hit",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "room",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 0.9906249046325681,
+            "mix": 0.24379806044748203,
+            "predelay_ms": 8.0,
+            "size": 0.24906249046325682
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -18.00000032740274,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

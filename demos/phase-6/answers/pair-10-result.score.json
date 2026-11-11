@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "title": "A noise bed made like the reference",
+  "seed": 7,
+  "meta": {
+    "tags": [
+      "matched"
+    ],
+    "reference_profiles": [
+      "rain_bed.wav"
+    ],
+    "provenance": {
+      "family": "noise_bed",
+      "matcher": "praxis-match 1"
+    }
+  },
+  "tempo": {
+    "bpm": 144.1165
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "bars": 6,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 2.0
+  },
+  "constraints": {
+    "avoid": []
+  },
+  "sections": [],
+  "patterns": [
+    {
+      "id": "held",
+      "grid": "quarter",
+      "length_steps": 24,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 57,
+          "velocity": 0.7,
+          "accent": "normal",
+          "length": 24.0
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "bed",
+      "name": "noise bed",
+      "class": "texture",
+      "instrument": {
+        "kind": "synth",
+        "preset": "noise_bed",
+        "params": {
+          "tone": 0.2734812191833321
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 6
+          },
+          "pattern": "held",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "air",
+          "kind": "eq",
+          "params": {
+            "lp_hz": 11241.902784841925
+          },
+          "bypass": false
+        },
+        {
+          "id": "room",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 1.929213762283325,
+            "mix": 0.44464320678194774,
+            "predelay_ms": 8.0,
+            "size": 0.3429213762283325
+          },
+          "bypass": false
+        },
+        {
+          "id": "width",
+          "kind": "width",
+          "params": {
+            "width": 1.0
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -24.000000039363925,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": []
+}

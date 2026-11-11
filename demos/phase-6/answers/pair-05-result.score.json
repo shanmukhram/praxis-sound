@@ -1,0 +1,565 @@
+{
+  "schema_version": 1,
+  "title": "Made like the reference",
+  "seed": 7,
+  "meta": {
+    "emotion": "happy",
+    "intensity": 0.5,
+    "tags": [
+      "planned",
+      "matched"
+    ],
+    "reference_profiles": [
+      "dark_keys.wav"
+    ],
+    "provenance": {
+      "attempts": "0",
+      "matcher": "praxis-match 1",
+      "palette": "mallet + sub bass",
+      "planner": "praxis-planner plan-v1",
+      "provider": "direct-plan",
+      "repairs": "0",
+      "seed": "7"
+    }
+  },
+  "tempo": {
+    "bpm": 168.0005
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "Eb",
+    "mode": "major"
+  },
+  "bars": 25,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 4.0
+  },
+  "constraints": {
+    "avoid": [
+      "pad",
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "whoosh",
+      "fill"
+    ]
+  },
+  "sections": [
+    {
+      "id": "intro",
+      "name": "Intro",
+      "bars": {
+        "start": 1,
+        "end": 6
+      },
+      "role": "intro",
+      "intensity": 0.4
+    },
+    {
+      "id": "main",
+      "name": "Main",
+      "bars": {
+        "start": 7,
+        "end": 25
+      },
+      "role": "main",
+      "intensity": 0.6
+    }
+  ],
+  "patterns": [
+    {
+      "id": "lead_motif",
+      "grid": "quarter",
+      "length_steps": 8,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 58,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 4.073255
+        },
+        {
+          "step": 1,
+          "pitch": 55,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 4.073255
+        },
+        {
+          "step": 2,
+          "pitch": 51,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 4.073255
+        },
+        {
+          "step": 3,
+          "pitch": 53,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 4.073255
+        },
+        {
+          "step": 4,
+          "pitch": 55,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 4.073255
+        },
+        {
+          "step": 5,
+          "pitch": 58,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 4.073255
+        },
+        {
+          "step": 6,
+          "pitch": 60,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 4.073255
+        },
+        {
+          "step": 7,
+          "pitch": 63,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 4.073255
+        }
+      ],
+      "spoken": "DON don don don"
+    },
+    {
+      "id": "bass_motif",
+      "grid": "quarter",
+      "length_steps": 16,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 39,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 1,
+          "pitch": 39,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 2,
+          "pitch": 46,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 3,
+          "pitch": 39,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 4,
+          "pitch": 43,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 5,
+          "pitch": 43,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 6,
+          "pitch": 50,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 7,
+          "pitch": 43,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 8,
+          "pitch": 44,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 9,
+          "pitch": 44,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 10,
+          "pitch": 51,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 11,
+          "pitch": 44,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 12,
+          "pitch": 34,
+          "velocity": 0.8,
+          "accent": "strong",
+          "length": 1.8
+        },
+        {
+          "step": 13,
+          "pitch": 34,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 14,
+          "pitch": 41,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        },
+        {
+          "step": 15,
+          "pitch": 34,
+          "velocity": 0.65,
+          "accent": "normal",
+          "length": 1.8
+        }
+      ],
+      "spoken": "DON don don don"
+    }
+  ],
+  "layers": [
+    {
+      "id": "lead",
+      "name": "mallet",
+      "class": "motif",
+      "instrument": {
+        "kind": "synth",
+        "preset": "mallet",
+        "params": {
+          "tone": 0.1
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 25
+          },
+          "pattern": "lead_motif",
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": 0.0,
+      "pan": 0.0,
+      "effects": [
+        {
+          "id": "room",
+          "kind": "reverb",
+          "params": {
+            "decay_s": 1.9446438550949094,
+            "mix": 0.2958191567144882,
+            "predelay_ms": 12.0,
+            "size": 0.344464385509491
+          },
+          "bypass": false
+        }
+      ],
+      "automation": [],
+      "seed_offset": 0
+    },
+    {
+      "id": "bass",
+      "name": "sub bass",
+      "class": "bass",
+      "instrument": {
+        "kind": "synth",
+        "preset": "sub_bass",
+        "params": {
+          "tone": 0.2
+        }
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 7,
+            "end": 25
+          },
+          "pattern": "bass_motif",
+          "pattern_offset_steps": 8,
+          "transpose": 0,
+          "velocity_scale": 1.0
+        }
+      ],
+      "locked": false,
+      "muted": false,
+      "solo": false,
+      "gain_db": -6.0,
+      "pan": 0.0,
+      "effects": [],
+      "automation": [],
+      "seed_offset": 0
+    }
+  ],
+  "master": {
+    "effects": [
+      {
+        "id": "air",
+        "kind": "eq",
+        "params": {
+          "lp_hz": 11241.902784841925
+        },
+        "bypass": false
+      },
+      {
+        "id": "width",
+        "kind": "width",
+        "params": {
+          "width": 0.41150155524500326
+        },
+        "bypass": false
+      }
+    ],
+    "loudness": {
+      "target_lufs": -18.999999989609986,
+      "true_peak_dbtp": -1.0,
+      "normalize": true
+    }
+  },
+  "markers": [],
+  "chords": [
+    {
+      "bars": {
+        "start": 1,
+        "end": 1
+      },
+      "beat": 0.0,
+      "symbol": "Eb"
+    },
+    {
+      "bars": {
+        "start": 2,
+        "end": 2
+      },
+      "beat": 0.0,
+      "symbol": "Gm"
+    },
+    {
+      "bars": {
+        "start": 3,
+        "end": 3
+      },
+      "beat": 0.0,
+      "symbol": "Ab"
+    },
+    {
+      "bars": {
+        "start": 4,
+        "end": 4
+      },
+      "beat": 0.0,
+      "symbol": "Bb"
+    },
+    {
+      "bars": {
+        "start": 5,
+        "end": 5
+      },
+      "beat": 0.0,
+      "symbol": "Eb"
+    },
+    {
+      "bars": {
+        "start": 6,
+        "end": 6
+      },
+      "beat": 0.0,
+      "symbol": "Gm"
+    },
+    {
+      "bars": {
+        "start": 7,
+        "end": 7
+      },
+      "beat": 0.0,
+      "symbol": "Ab"
+    },
+    {
+      "bars": {
+        "start": 8,
+        "end": 8
+      },
+      "beat": 0.0,
+      "symbol": "Bb"
+    },
+    {
+      "bars": {
+        "start": 9,
+        "end": 9
+      },
+      "beat": 0.0,
+      "symbol": "Eb"
+    },
+    {
+      "bars": {
+        "start": 10,
+        "end": 10
+      },
+      "beat": 0.0,
+      "symbol": "Gm"
+    },
+    {
+      "bars": {
+        "start": 11,
+        "end": 11
+      },
+      "beat": 0.0,
+      "symbol": "Ab"
+    },
+    {
+      "bars": {
+        "start": 12,
+        "end": 12
+      },
+      "beat": 0.0,
+      "symbol": "Bb"
+    },
+    {
+      "bars": {
+        "start": 13,
+        "end": 13
+      },
+      "beat": 0.0,
+      "symbol": "Eb"
+    },
+    {
+      "bars": {
+        "start": 14,
+        "end": 14
+      },
+      "beat": 0.0,
+      "symbol": "Gm"
+    },
+    {
+      "bars": {
+        "start": 15,
+        "end": 15
+      },
+      "beat": 0.0,
+      "symbol": "Ab"
+    },
+    {
+      "bars": {
+        "start": 16,
+        "end": 16
+      },
+      "beat": 0.0,
+      "symbol": "Bb"
+    },
+    {
+      "bars": {
+        "start": 17,
+        "end": 17
+      },
+      "beat": 0.0,
+      "symbol": "Eb"
+    },
+    {
+      "bars": {
+        "start": 18,
+        "end": 18
+      },
+      "beat": 0.0,
+      "symbol": "Gm"
+    },
+    {
+      "bars": {
+        "start": 19,
+        "end": 19
+      },
+      "beat": 0.0,
+      "symbol": "Ab"
+    },
+    {
+      "bars": {
+        "start": 20,
+        "end": 20
+      },
+      "beat": 0.0,
+      "symbol": "Bb"
+    },
+    {
+      "bars": {
+        "start": 21,
+        "end": 21
+      },
+      "beat": 0.0,
+      "symbol": "Eb"
+    },
+    {
+      "bars": {
+        "start": 22,
+        "end": 22
+      },
+      "beat": 0.0,
+      "symbol": "Gm"
+    },
+    {
+      "bars": {
+        "start": 23,
+        "end": 23
+      },
+      "beat": 0.0,
+      "symbol": "Ab"
+    },
+    {
+      "bars": {
+        "start": 24,
+        "end": 24
+      },
+      "beat": 0.0,
+      "symbol": "Bb"
+    },
+    {
+      "bars": {
+        "start": 25,
+        "end": 25
+      },
+      "beat": 0.0,
+      "symbol": "Eb"
+    }
+  ]
+}
