@@ -116,6 +116,15 @@ branch below (the app may add a prefix/suffix: check `git branch`). Briefs are i
 | WP-R real-time engine | `local_86d87740-e7d6-4839-94ac-5a0e5ef22ca7` (wp-r-realtime) | `wp/r-realtime` | WP-R-realtime.md | Phase 3 |
 | WP-U3 Tauri app | `local_c4804bca-8078-46c7-bef7-1ff48c2a7379` (wp-u3-adapter) | `wp/u3-adapter` | WP-U3-real-adapter.md | **waits on WP-K2**: when K2 is merged, message this session to merge `build/integration` and wire the take ops |
 
+**Build limit (owner, 2026-11-11): at most 10 of 20 threads for builds in total.** Four parallel
+full builds made the PC lag, so all sessions were stopped once. Now only two sessions compile at
+a time; `.claude/worktrees/.cargo/config.toml` (git-ignored, not in the repo; recreate it if
+missing) caps every session worktree at `jobs = 5` and `RUST_TEST_THREADS = 5`. The
+orchestrator does not run its own cargo builds while two sessions are building. Running now:
+WP-K2 and WP-D1b. Paused (stopped, idle, partial work uncommitted in their worktrees): WP-R
+(no files changed yet) and WP-U3 (6 files). Resume each with a message to its session when a
+slot frees up: WP-R after WP-D1b, WP-U3 after WP-K2 is merged.
+
 Merge order: WP-D1b and WP-R whenever they are ready; WP-K2 before finishing WP-U3. WP-U3 and
 WP-R both may touch `Cargo.lock` (and U3 the root `Cargo.toml`): resolve by keeping both
 sides' entries and letting cargo regenerate the lock.
