@@ -179,6 +179,34 @@ fn older_models_get_a_forced_tool_call() {
     assert!(h.request_body(&req).get("fallbacks").is_none());
 }
 
+/// The live failure of 2026-11-11: the plan arrives wrapped in `{"parameters": ...}`. It is
+/// unwrapped before validation, so no repair round is spent on it.
+#[test]
+fn a_plan_wrapped_in_parameters_needs_no_repair_round() {
+    let mut resp: Value = serde_json::from_str(&fixture("plan_response.json")).expect("json");
+    let block = resp["content"]
+        .as_array_mut()
+        .expect("content")
+        .iter_mut()
+        .find(|b| b["type"] == "tool_use")
+        .expect("tool_use");
+    let plan = block["input"].take();
+    block["input"] = serde_json::json!({ "parameters": plan });
+    let (p, replay) = provider(
+        "claude-opus-5-5",
+        vec![HttpResponse {
+            status: 200,
+            body: resp.to_string(),
+            retry_after_s: None,
+        }],
+    );
+    let out = plan_brief(BRIEF, &p, &Catalogue::standard(), 1).expect("plan");
+    assert_eq!(out.attempts, 1);
+    assert!(out.rounds.is_empty(), "{:?}", out.rounds);
+    check_acceptance1(&out.score).expect("acceptance 1");
+    assert_eq!(replay.requests.lock().expect("lock").len(), 1);
+}
+
 #[test]
 fn a_text_answer_gets_one_nudge() {
     let (p, replay) = provider(

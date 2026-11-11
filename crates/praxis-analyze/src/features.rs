@@ -1,8 +1,8 @@
 //! Feature extractors (WP-D). Every function here is a pure function of its input: no state, no
 //! randomness, no clocks, so the same audio always gives the same numbers.
 //!
-//! The extractors are shared by render verification ([`crate::verify`]) and, later, by Sound
-//! Profiles of reference clips (FR-12). See docs/contracts/sound-profile.md for the methods.
+//! The extractors are shared by render verification ([`crate::verify`]) and by Sound Profiles of
+//! reference clips (FR-12, [`crate::analysis`]). See docs/contracts/sound-profile.md for the methods.
 //!
 //! | Module | What it measures |
 //! | --- | --- |
@@ -14,13 +14,30 @@
 //! | [`key`] | key by Krumhansl-Schmuckler and Temperley profiles over 24 keys |
 //! | [`loudness`] | BS.1770 integrated loudness, LRA, true peak (`ebur128`), sample peak, RMS |
 //! | [`seam`] | loop-seam continuity (sample jump, first-difference energy, spectral flux) |
+//! | [`envelope`] | 10 ms RMS envelope and its attack / decay / sustain / release fit |
+//! | [`spectral`] | centroid, rolloff, flatness, octave bands, tilt, centroid track, tonality, MFCC |
+//! | [`pitch`] | YIN pitch track at a 10 ms hop |
+//! | [`stereo`] | side/mid width and L/R correlation |
+//! | [`reverb`] | RT60 from Schroeder backward integration of decays after transients |
+//! | [`groove`] | onsets folded onto the beat grid per bar, swing, regularity |
+//! | [`sections`] | novelty of a chroma + MFCC self-similarity matrix |
+//! | [`classify`] | music / sfx / ambience |
 
 pub mod attack;
 pub mod chroma;
+pub mod classify;
+pub mod envelope;
+pub mod groove;
 pub mod key;
 pub mod loudness;
+pub mod meter;
 pub mod onset;
+pub mod pitch;
+pub mod reverb;
 pub mod seam;
+pub mod sections;
+pub mod spectral;
+pub mod stereo;
 pub mod stft;
 pub mod tempo;
 
