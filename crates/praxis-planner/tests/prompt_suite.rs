@@ -10,12 +10,14 @@
 
 mod common;
 
-use common::{TRAILER, active_bars, check_acceptance1, emotion_matches, same_spoken};
+use common::{
+    TRAILER, active_bars, check_acceptance1, check_scoring, emotion_matches, same_spoken,
+};
 use praxis_planner::catalogue::class_name;
 use praxis_planner::{Catalogue, Provider, RuleProvider, plan_brief};
 use praxis_score::lint::lint;
 use praxis_score::validate::{unpitched_class, validate};
-use praxis_score::{GeneratorClass, Key, Mode, Score};
+use praxis_score::{Accent, GeneratorClass, Key, Mode, Score};
 use serde_json::Value;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -123,9 +125,15 @@ fn check_case(
         if p.length_steps % spb != 0 {
             return Err(format!("pattern {} is not whole bars", p.id));
         }
+        // Only a hit accent may carry a nudge (a fraction of a step, crate::scoring): the rest of
+        // every pattern sits exactly on its grid.
+        let nudge_ok = |n: &praxis_score::Note| {
+            n.offset == 0.0
+                || (p.id.contains("_hit") && n.offset.abs() <= 0.5 && n.accent == Accent::Strong)
+        };
         if p.notes
             .iter()
-            .any(|n| n.offset != 0.0 || n.step >= p.length_steps)
+            .any(|n| !nudge_ok(n) || n.step >= p.length_steps)
         {
             return Err(format!("pattern {} has off-grid notes", p.id));
         }
@@ -316,6 +324,8 @@ fn check_case(
     if expect.get("acceptance1").and_then(Value::as_bool) == Some(true) {
         check_acceptance1(score)?;
     }
+    // Scoring depth (form, hits, progressions, transitions): tests/common check_scoring.
+    check_scoring(score, expect)?;
     Ok(format!(
         "{} bars @ {} BPM, {}, layers [{}]",
         score.bars,
@@ -345,7 +355,19 @@ fn prompt_suite_passes() {
     #[cfg(not(feature = "claude"))]
     let claude: Option<RuleProvider> = None;
     let rules = RuleProvider::new();
+    // `PRAXIS_SUITE_FILTER=scoring_` runs only the cases whose file name contains it (a live run
+    // of just the new cases).
+    let filter = std::env::var("PRAXIS_SUITE_FILTER").ok();
+    let mut ran = 0usize;
     for f in &files {
+        let stem = f
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if filter.as_deref().is_some_and(|x| !stem.contains(x)) {
+            continue;
+        }
+        ran += 1;
         let text = std::fs::read_to_string(f).expect("read prompt");
         let case: Value = serde_json::from_str(&text).expect("prompt json");
         let brief = case["brief"].as_str().expect("brief");
@@ -378,9 +400,8 @@ fn prompt_suite_passes() {
         }
     }
     println!(
-        "prompt suite: {}/{} passed ({acceptance} acceptance-1 phrasings)",
-        files.len() - failures.len(),
-        files.len()
+        "prompt suite: {}/{ran} passed ({acceptance} acceptance-1 phrasings)",
+        ran - failures.len(),
     );
     #[cfg(feature = "claude")]
     if let Some(c) = &claude {
@@ -390,7 +411,10 @@ fn prompt_suite_passes() {
             u.cost_usd(&c.config().model).unwrap_or(f64::NAN)
         );
     }
-    assert!(acceptance >= 3, "need several acceptance-1 phrasings");
+    assert!(
+        filter.is_some() || acceptance >= 3,
+        "need several acceptance-1 phrasings"
+    );
     assert!(failures.is_empty(), "failures:\n{}", failures.join("\n"));
 }
 

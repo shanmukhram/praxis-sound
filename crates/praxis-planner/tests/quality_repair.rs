@@ -360,6 +360,11 @@ fn every_expected_layer_is_named_by_its_brief() {
     for (name, case) in prompts() {
         let brief = case["brief"].as_str().expect("brief");
         let named = brief_instruments(brief);
+        // A brief that names no instrument gets the planner's choice (one felt piano, or a
+        // cue's emotion preset); the restraint check does not judge it.
+        if !named.names_any() {
+            continue;
+        }
         for want in case["expect"]["layers"]
             .as_array()
             .cloned()

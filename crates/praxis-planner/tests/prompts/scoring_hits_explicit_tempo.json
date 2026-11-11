@@ -1,0 +1,38 @@
+{
+  "brief": "A hopeful one-minute cue on upright piano at 100 BPM with hits at 0:20, 0:41 and 0:52.",
+  "seed": 0,
+  "expect": {
+    "emotion": "hopeful",
+    "layer_count": 1,
+    "layers": [
+      {
+        "preset": "upright_piano"
+      }
+    ],
+    "section_roles": [
+      "intro",
+      "build",
+      "peak",
+      "release"
+    ],
+    "hits": 3,
+    "hits_within_ms": 20,
+    "bpm_range": [
+      96,
+      104
+    ],
+    "duration_within": [
+      60,
+      1.5
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}
