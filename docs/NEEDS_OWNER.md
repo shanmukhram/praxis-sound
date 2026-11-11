@@ -4,7 +4,7 @@ Only things the owner can give. Work continues on everything they do not block.
 
 | # | Item | Blocks | Status |
 | --- | --- | --- | --- |
-| 1 | **Anthropic API key** for the Claude planner. Owner will provide it when asked; ask only when live Claude planning is the next step. The offline rule planner covers CI and acceptance test 1 meanwhile. | Live Claude planning and its prompt-suite run | ask when needed |
+| 1 | **Anthropic API key** for the Claude planner and the assistant agent. | Live Claude planning, the assistant's live run | **done 2026-11-11**: stored by the owner with `praxis key set` (Windows Credential Manager, service `praxis-sound`) |
 | 2 | **Listening sign-off, Phase 2**: `demos/phase-2/acceptance1_mixed_loop.flac` (+ x3 seam file). | Phase 2 exit | **done 2026-11-11**: owner listened and said "its perfect" |
 | 3 | **Real-hardware check** of real-time playback on Windows at Phase 3 exit. | Phase 3 sign-off | later |
 | 4 | **Labelled reference clips** you own with known tempo/key (optional; we self-make the test set). | Nothing | optional |
