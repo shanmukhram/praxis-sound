@@ -185,3 +185,68 @@ that sees a new revision finds the project and audio it refers to. Writers take 
   `patch_rejected` when the sound's current take or history moved since the variations were made.
 - `open_view {sound, view, who}`: appends `{revision, view, by, take}` to `views` (the last 50
   are kept) and, when the current take was made by the same `who`, sets its `opens`.
+
+## Assistant agent (WP-AG)
+
+A request in words on a sound (`ask` without `patch`) is carried out by the sound assistant
+(`praxis_cli::agent`) when it can be: `provider` unset and an Anthropic API key available
+(`ANTHROPIC_API_KEY` or the keychain), or `provider: "claude"` (without a key that is
+`no_api_key`). `provider: "offline"`, or no key, keeps the offline planner described above. A
+hand edit (`patch`) never reaches a model. Library: `ops::ask` (default options) and
+`ops::ask_with(req, &AskOptions {client, agent: AgentConfig, progress})`; `AskRequest` is
+unchanged.
+
+**The turn.** One Claude Messages API tool loop (`claude-opus-5-5`, `output_config.effort`
+`medium` unless set, adaptive thinking left at the model default, `tool_choice: auto`, every tool
+`strict`, streaming, server-side refusal fallbacks and server-side compaction as betas) with 16
+tools: `read_sound`, `catalogue`, `get_schema`, `compose_sound` (a ScorePlan), `compose_edit` (an
+EditPlan), `apply_patch` (any ScorePatch op; locks and scope enforced by `apply`), `set_params`
+(instrument parameters of one layer), `render_check` (the checks plus loudness, true peak, onsets
+on the grid, per-layer spectral centroid, low-band and high-band energy and RMS, each against the current
+take, and the bars bit-identical to it), `make_variations`, `keep_variation`, `restore_take`,
+`undo_redo`, `open_view`, `analyze_clip`, `ask_user`, `discard_changes`. Changes collect in a
+draft of the score; with a `scope` every change is checked against it (another existing layer,
+or bars outside it, is refused to the model). The turn ends when the model answers without a
+tool call, calls `ask_user`, declines (`stop_reason: refusal`), or uses up 16 tool calls or 10
+minutes (it is then told to wrap up and gets one more response). The system prompt is
+`docs/agents/praxis-skill/assistant.md`, five sections of `SKILL.md` and the preset and effect
+tables generated from code.
+
+**The take.** One request makes at most one take: the draft, committed as one patch (`origin:
+model`) through the same take path as above, with `who` `"Agent · Assistant"`, `provider`
+`"agent:<model>"`, `say` the assistant's reply and `title` its first clause. `keep_variation`
+inside a turn is that turn's take. `restore_take` and `undo_redo` move the history at once and
+make no take.
+
+**Payload.** As `ask`, plus `agent {outcome, reply, question, model, turn, steps[{tool, words,
+ok, result}], usage{requests, input_tokens, output_tokens, cache_creation_input_tokens,
+cache_read_input_tokens}}`. `outcome`: `take`, `question`, `no_change`, `out_of_steps`,
+`declined`, `failed`. A turn that makes no take fails: `message` is the assistant's reply (for a
+question, the question) and `issues[0]` is `{code: "agent", path: "", message, agent}`. Codes:
+`error` (a question, out of steps), `patch_rejected` (nothing changed, e.g. a locked layer),
+`provider_failed` (declined, or the API failed), `no_api_key`, or the code of a failed final
+render.
+
+**Progress.** `AgentEvent` (`started`, `thinking`, `said`, `step {n, tool, words}`, `step_done
+{n, tool, ok, words}`, `take_made {n}`, `finished {outcome, reply}`) through
+`AskOptions::progress`; `words` are plain ("Reading the sound", "Changing the Felt piano's tone
+and felt", "Rendering", "Checking: 8 of 8 passed"). `praxis ask` prints the steps on stderr.
+
+**Files in the sound folder.**
+
+- `conversation.json`: `{format: "praxis-conversation", version: 1, messages[], turns[]}`.
+  `messages` is the API history, append-only, assistant content exactly as returned (thinking
+  blocks with signatures, compaction blocks); an unanswered user message (an `ask_user` turn, a
+  failed request) gets the next request's text added to it. `turns[]`: `{n, request, who, scope?,
+  model, from_take, outcome, take, reply, steps[{tool, input, ok, words, result}], usage}`.
+  Written atomically at the end of each turn.
+- `.agent-lock`: held for a whole turn, so two turns on one sound run one after the other.
+- `agent/draft.wav`, `agent/current.wav`: the last `render_check` renders (not takes).
+
+**CLI.** `praxis ask <sound> <text> [--provider offline|claude] [--model M] [--effort
+low|medium|high|xhigh|max] [--max-steps N]`. **MCP.** `praxis_ask` takes `effort` and
+`max_steps` too.
+
+**Also new:** `ops::undo_redo(UndoRedoRequest {sound, action: undo|redo})` -> `{sound, moved,
+description, revision, current, score_summary, can_undo, can_redo}`: one step of the project
+history, as the app's undo and redo; landing on a take's score makes it current.

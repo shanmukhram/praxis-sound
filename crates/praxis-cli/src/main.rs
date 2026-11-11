@@ -174,10 +174,19 @@ enum Command {
         patch: Option<PathBuf>,
         #[arg(long)]
         title: Option<String>,
+        /// `claude` (the sound assistant; the default when an API key is available) or
+        /// `offline` (the rule planner).
         #[arg(long)]
         provider: Option<String>,
+        /// The assistant's model (default claude-opus-5-5).
         #[arg(long)]
         model: Option<String>,
+        /// The assistant's effort: low, medium (default), high, xhigh or max.
+        #[arg(long)]
+        effort: Option<String>,
+        /// Tool calls the assistant may make for this request (default 16).
+        #[arg(long)]
+        max_steps: Option<u32>,
         /// Default: the new take's number.
         #[arg(long)]
         seed: Option<u64>,
@@ -444,10 +453,42 @@ fn run(command: Command) -> Result<Value, OpError> {
             title,
             provider,
             model,
+            effort,
+            max_steps,
             seed,
             skip_missing,
             include_score,
         } => {
+            let mut agent = praxis_cli::agent::AgentConfig::default();
+            if let Some(e) = effort {
+                if !["low", "medium", "high", "xhigh", "max"].contains(&e.as_str()) {
+                    return Err(OpError::new(
+                        ErrorCode::Error,
+                        format!("unknown effort `{e}`; use low, medium, high, xhigh or max"),
+                    ));
+                }
+                agent.effort = e;
+            }
+            if let Some(n) = max_steps {
+                agent.max_steps = n.max(1);
+            }
+            // The assistant's steps, in words, on stderr (stdout stays one JSON object).
+            use praxis_cli::agent::AgentEvent;
+            let progress: praxis_cli::agent::Progress =
+                std::sync::Arc::new(|e: &AgentEvent| match e {
+                    AgentEvent::Step { words, .. } => eprintln!("  {words}"),
+                    AgentEvent::StepDone { ok, words, .. }
+                        if !*ok || words.starts_with("Checking") =>
+                    {
+                        eprintln!("    {words}")
+                    }
+                    _ => {}
+                });
+            let opts = ops::AskOptions {
+                client: None,
+                agent,
+                progress: Some(progress),
+            };
             let scope = match (bars, layer) {
                 (Some(b), Some(layer)) => Some(TakeScope {
                     layer,
@@ -464,19 +505,22 @@ fn run(command: Command) -> Result<Value, OpError> {
                 })?),
                 None => None,
             };
-            ops::ask(&ops::AskRequest {
-                sound,
-                text,
-                who,
-                scope,
-                patch,
-                title,
-                provider: parse_provider(provider.as_deref())?,
-                model,
-                seed,
-                skip_missing,
-                include_score,
-            })
+            ops::ask_with(
+                &ops::AskRequest {
+                    sound,
+                    text,
+                    who,
+                    scope,
+                    patch,
+                    title,
+                    provider: parse_provider(provider.as_deref())?,
+                    model,
+                    seed,
+                    skip_missing,
+                    include_score,
+                },
+                &opts,
+            )
         }
         Command::Takes {
             sound,

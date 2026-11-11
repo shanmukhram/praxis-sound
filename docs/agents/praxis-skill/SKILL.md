@@ -236,6 +236,18 @@ client's name; set `who` to choose).
 Before acting on a sound, compare `revision` with what you saw last: the person (or another
 agent) may have made a take since.
 
+### The app's own assistant
+
+When an API key is set, `praxis_ask` (and the app's conversation) hands a request in words to
+the sound assistant: Claude with Praxis's tools and the sound's conversation history
+(`conversation.json` in the sound folder). Its takes show as "Agent · Assistant", and the
+`praxis_ask` payload gains `agent.steps` (what it did) and `agent.reply`. Pass
+`provider: "offline"` to use the rule planner instead, or drive the edits yourself with
+`praxis_edit`, `praxis_compose` and a `patch`. How the assistant works, and the rules it
+follows, are in `assistant.md` next to this file; they hold for any agent changing a sound:
+change the instrument or effects for tone ("muffled", "brighter"), not the notes; make the
+smallest change; measure it; answer in a sentence or two.
+
 ## Worked example 1: the acceptance-1 loop
 
 Brief: "16 bars, 4/4, A minor, 30 seconds, seamless loop. Bars 1-8: one soft felt piano playing a
