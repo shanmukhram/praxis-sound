@@ -3865,6 +3865,7 @@ dependencies = [
  "praxis-dsp",
  "praxis-engine",
  "praxis-instruments",
+ "praxis-planner",
  "praxis-score",
  "serde_json",
  "wasm-bindgen",

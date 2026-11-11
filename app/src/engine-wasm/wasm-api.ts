@@ -55,7 +55,7 @@ export interface PraxisGlue {
   plan_edit(score: string, instruction: string, scope: string, seed: number): string;
   apply_patch(score: string, patch: string): string;
   verify(score: string, left: Float32Array, right: Float32Array, sampleRate: number): string;
-  analyse(left: Float32Array, right: Float32Array, sampleRate: number, beatsPerBar: number): string;
+  analyse(left: Float32Array, right: Float32Array, sampleRate: number, fileName: string, channels: number, beatsPerBar: number): string;
   Engine: new () => WasmEngineHandle;
   Realtime: {
     new (sampleRate: number): WasmRealtimeHandle;

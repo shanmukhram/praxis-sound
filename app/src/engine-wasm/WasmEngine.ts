@@ -20,6 +20,13 @@ import { isUnpitchedClass, keyLabel } from '../score/theory';
 import { barPosToSeconds, scoreSeconds, secondsToBarPos } from '../score/timeline';
 import type {
   AgentInfo,
+  AnalyzeResult,
+  ClipFile,
+  CompareLevel,
+  LibraryEntry,
+  LibraryResult,
+  ReferenceClip,
+  SoundProfile,
   ApplyResult,
   AskProgress,
   AskRequest,
@@ -54,6 +61,9 @@ import { identicalOutside } from '../engine/MockEngine';
 import { blankScore, DRAFT_ASK } from '../engine/blank';
 import { presetsFromPayload } from '../engine/presets';
 import { decodeWav, encodeWav } from '../engine/wav';
+import { cleanTags } from '../engine/MockEngine';
+import { clipProblem, isVideoName, KEY_SURE, profileSummary, TEMPO_SURE } from '../engine/reference';
+import { toProfile } from '../engine/tauri/protocol';
 import type { CoreClient, RenderPayload } from './core';
 import type { PackLoader } from './packs';
 import type { LoadInfo, PlayerStatus, WorkletPlayer } from './player';
@@ -79,6 +89,8 @@ interface Words {
   say: string;
   opens?: ViewName;
   scope?: TakeScope;
+  /** The reference the request carried (a clip's file name or a library style). */
+  reference?: string;
 }
 
 /** How the browser build is playing, for the playback line. */
@@ -103,6 +115,22 @@ function dbfs(v: number): number {
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
+}
+
+/** The gain an A/B trim sets on the engine's output. */
+function compareGain(c: CompareLevel | null): number {
+  if (!c) return 1;
+  return c.muted ? 0 : 10 ** (Math.min(0, c.gainDb) / 20);
+}
+
+/** What the offline planner can take from a reference: its tempo and key, when measured surely. */
+export function referenceWords(ref: ReferenceClip | null | undefined): string {
+  if (!ref) return '';
+  const p = ref.profile;
+  const out: string[] = [];
+  if (p.tempo && p.tempo.confidence >= TEMPO_SURE && p.class.kind === 'music') out.push(`${Math.round(p.tempo.bpm)} BPM`);
+  if (p.key && p.key.confidence >= KEY_SURE) out.push(keyLabel(p.key.key));
+  return out.length ? `, ${out.join(', ')}` : '';
 }
 
 /** "A minor · 0:30 loop". */
@@ -152,6 +180,8 @@ export class WasmEngine implements EngineAdapter {
   private offsetS = 0;
   private positionS = 0;
   private loop: BarRange | null = null;
+  /** The A/B trim on the take while comparing. */
+  private compare: CompareLevel | null = null;
   /** Applied gain of the last take render (the player's master gain when none is frozen). */
   private lastGainDb: number | null = null;
   playback: BrowserPlayback = { mode: 'none', message: null, sampleRate: 0 };
@@ -285,21 +315,23 @@ export class WasmEngine implements EngineAdapter {
     return this.exclusive(async (): Promise<AskResult> => {
       const text = request.text.trim();
       const progress = request.onProgress;
-      if (request.clipFile) return this.readClip(request.clipFile, text);
+      const reference = request.reference;
       if (this.draft && this.takeList.length === 0) return { ok: false, message: DRAFT_ASK };
       try {
-        if (!this.score || this.takeList.length === 0) return await this.newSound(who, text, progress);
-        return await this.editInWords(who, text, request.scope, progress);
+        if (!this.score || this.takeList.length === 0) return await this.newSound(who, text, progress, reference);
+        return await this.editInWords(who, text, request.scope, progress, reference?.name);
       } catch (e) {
         return { ok: false, message: `The engine stopped: ${message(e)}` };
       }
     });
   }
 
-  private async newSound(who: Who, text: string, progress?: (p: AskProgress) => void): Promise<TakeResult> {
+  private async newSound(who: Who, text: string, progress?: (p: AskProgress) => void, reference?: ReferenceClip): Promise<TakeResult> {
     if (!text) return { ok: false, message: 'Describe a sound to start from.' };
-    progress?.({ kind: 'step', n: 1, words: 'Planning the sound from your words' });
-    const plan = await this.deps.core.planBrief(text, 1);
+    progress?.({ kind: 'step', n: 1, words: reference ? `Planning the sound from your words and ${reference.name}` : 'Planning the sound from your words' });
+    // The offline planner reads tempo and key in words: a reference adds the ones it measured
+    // surely (the rest of its character needs the desktop assistant).
+    const plan = await this.deps.core.planBrief(text + referenceWords(reference), 1);
     if (!plan.ok) {
       progress?.({ kind: 'step_done', n: 1, ok: false, words: plan.message });
       return { ok: false, message: plan.message };
@@ -310,10 +342,12 @@ export class WasmEngine implements EngineAdapter {
     this.soundId = null;
     this.score = normalizeScore(plan.score as Score);
     this.draft = false;
-    return this.renderTake(this.score, null, { who, ask: text, title: plan.title, say: plan.summary }, { progress, step: 2 });
+    const took = referenceWords(reference).replace(/^, /, '');
+    const say = reference ? `${plan.summary} From ${reference.name} it took ${took || 'nothing it could measure surely'}.` : plan.summary;
+    return this.renderTake(this.score, null, { who, ask: text, title: plan.title, say, reference: reference?.name }, { progress, step: 2 });
   }
 
-  private async editInWords(who: Who, text: string, scope: TakeScope | undefined, progress?: (p: AskProgress) => void): Promise<AskResult> {
+  private async editInWords(who: Who, text: string, scope: TakeScope | undefined, progress?: (p: AskProgress) => void, reference?: string): Promise<AskResult> {
     if (!text) return { ok: false, message: 'Say what to change.' };
     const before = this.score!;
     const askText = scope ? `${text} (${scopeLabel(before, scope)})` : text;
@@ -334,7 +368,7 @@ export class WasmEngine implements EngineAdapter {
     this.undoStack.push({ kind: 'take', patch: clone(patch), inverse: e.inverse as ScorePatch, before: prevN, after: this.takeList.length + 1 });
     this.redoStack = [];
     this.score = after;
-    const r = await this.renderTake(after, patch, { who, ask: askText, title: e.title, say: e.summary, scope }, { before, prevN, progress, step: 2 });
+    const r = await this.renderTake(after, patch, { who, ask: askText, title: e.title, say: e.summary, scope, reference }, { before, prevN, progress, step: 2 });
     if (!r.ok) this.rollback(before);
     return r;
   }
@@ -630,6 +664,7 @@ export class WasmEngine implements EngineAdapter {
       opens: words.opens,
       scope: words.scope,
     };
+    if (words.reference) take.reference = words.reference;
     const isNew = !this.soundId;
     if (isNew) this.soundId = `s-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
     this.score = final;
@@ -674,34 +709,89 @@ export class WasmEngine implements EngineAdapter {
     return r;
   }
 
-  // ------------------------------------------------------------ clips
+  // ------------------------------------------------------------ reference clips
 
-  private async readClip(file: File | { name: string }, text: string): Promise<AskResult> {
-    if (!(file instanceof Blob) || typeof AudioContext === 'undefined') {
-      return { ok: false, message: `Could not read "${file.name}" here: this browser cannot decode audio.` };
-    }
+  /**
+   * Measures a dropped clip with the real analyzer (`sound_profile`, in the worker). The browser
+   * decodes it (WAV, MP3, FLAC, OGG, M4A, and the sound of MP4 / WebM where it can).
+   */
+  async analyzeClip(file: ClipFile): Promise<AnalyzeResult> {
+    const problem = clipProblem(file);
+    if (problem) return { ok: false, message: problem };
+    if (typeof OfflineAudioContext === 'undefined') return { ok: false, message: `Could not read ${file.name}: this browser cannot decode audio.` };
     let audio: AudioBuffer;
     try {
       const ctx = new OfflineAudioContext(2, 1, TAKE_RATE);
       audio = await ctx.decodeAudioData(await file.arrayBuffer());
     } catch (e) {
-      return { ok: false, message: `Could not decode "${file.name}": ${message(e)}.` };
+      const why = isVideoName(file.name) ? 'this browser cannot read the sound of that video' : `the browser cannot decode it (${message(e)})`;
+      return { ok: false, message: `Could not read ${file.name}: ${why}.` };
     }
-    const left = audio.getChannelData(0);
-    const right = audio.numberOfChannels > 1 ? audio.getChannelData(1) : left;
-    const a = await this.deps.core.analyse(left.slice(), right.slice(), audio.sampleRate, 4);
-    if (!a.ok) return { ok: false, message: `Could not measure "${file.name}": ${a.message}.` };
-    const tempo = (a.tempo as { bpm?: number } | null)?.bpm;
-    const key = (a.key as { name?: string } | null)?.name;
-    const lufs = (a.loudness as { integrated_lufs?: number } | null)?.integrated_lufs;
-    const parts = [
-      `"${file.name}" is ${audio.duration.toFixed(1)} s long`,
-      tempo ? `around ${Math.round(tempo)} BPM` : "with no clear tempo",
-      key ? `in ${key}` : "with no clear key",
-      lufs !== undefined && Number.isFinite(lufs) ? `at ${lufs.toFixed(1)} LUFS` : '',
-    ].filter(Boolean);
-    const next = text ? ` Describe the sound you want with those numbers ("${text}") and I'll make it.` : ' Describe the sound you want with those numbers and I will make it.';
-    return { ok: true, take: null, reply: `${parts.join(', ')}.${next}`, noTake: 'question' };
+    const left = audio.getChannelData(0).slice();
+    const right = audio.numberOfChannels > 1 ? audio.getChannelData(1).slice() : left.slice();
+    const a = await this.deps.core.analyse(left, right, audio.sampleRate, file.name, audio.numberOfChannels, 4);
+    if (!a.ok) return { ok: false, message: `Could not measure ${file.name}: ${a.message}.` };
+    let profile: SoundProfile;
+    try {
+      profile = toProfile(a.profile);
+    } catch (e) {
+      return { ok: false, message: `Could not measure ${file.name}: ${message(e)}.` };
+    }
+    let audioUrl: string | null = null;
+    if (typeof Blob !== 'undefined' && file instanceof Blob && typeof URL.createObjectURL === 'function') {
+      audioUrl = URL.createObjectURL(file);
+      this.urls.push(audioUrl);
+    }
+    // No shell copy of the file in a browser: the profile is the reference.
+    return { ok: true, clip: { name: file.name, profile, audioUrl, path: null, libraryId: null } };
+  }
+
+  async library(): Promise<LibraryEntry[]> {
+    return (await this.deps.store.references()).map((e) => ({ ...e, profile: null }));
+  }
+
+  async libraryProfile(id: string): Promise<SoundProfile | null> {
+    return (await this.deps.store.references()).find((e) => e.id === id)?.profile ?? null;
+  }
+
+  async saveReference(ref: ReferenceClip, name: string, tags: string[]): Promise<LibraryResult> {
+    const n = name.trim();
+    if (!n) return { ok: false, message: 'Give the reference a name.' };
+    const all = await this.deps.store.references();
+    if (all.some((e) => e.name.toLowerCase() === n.toLowerCase())) return { ok: false, message: `There is already a reference called "${n}".` };
+    const clean = cleanTags(tags);
+    // Profiles only: the entry keeps the measurements, never the clip's audio.
+    const profile: SoundProfile = { ...clone(ref.profile), tags: clean, style_name: n };
+    const id = `ref-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    const entry: LibraryEntry = { id, name: n, tags: clean, kind: profile.class.kind, summary: profile.summary ?? profileSummary(profile), profile };
+    await this.deps.store.saveReferenceEntry({ ...entry, added: Date.now() });
+    return { ok: true, entry: clone(entry) };
+  }
+
+  async tagReference(id: string, tags: string[]): Promise<LibraryResult> {
+    const e = (await this.deps.store.references()).find((x) => x.id === id);
+    if (!e) return { ok: false, message: 'That reference is no longer in the library.' };
+    e.tags = cleanTags(tags);
+    if (e.profile) e.profile.tags = [...e.tags];
+    await this.deps.store.saveReferenceEntry({ ...e, added: Date.now() });
+    return { ok: true, entry: clone(e) };
+  }
+
+  async removeReference(id: string): Promise<boolean> {
+    const had = (await this.deps.store.references()).some((e) => e.id === id);
+    if (had) await this.deps.store.removeReferenceEntry(id);
+    return had;
+  }
+
+  /** The take's side of the loudness-matched A/B: a trim after the worklet engine. */
+  async setCompare(level: CompareLevel | null): Promise<void> {
+    this.compare = level ? { ...level } : null;
+    this.player?.setTrim(compareGain(this.compare));
+  }
+
+  /** The A/B trim the transport plays with now (tests). */
+  compareLevel(): CompareLevel | null {
+    return this.compare ? { ...this.compare } : null;
   }
 
   // ------------------------------------------------------------ transport
@@ -722,6 +812,7 @@ export class WasmEngine implements EngineAdapter {
       .player()
       .then((p) => {
         this.player = p;
+        p.setTrim(compareGain(this.compare));
         this.statusUnsub = p.onStatus((s) => this.onStatus(s));
         this.setPlayback({ mode: 'worklet', message: null, sampleRate: p.sampleRate });
         return p;

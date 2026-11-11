@@ -77,10 +77,17 @@ pub fn verify(score: &str, left: &[f32], right: &[f32], sample_rate: u32) -> Str
     ops::verify(score, left, right, sample_rate).to_string()
 }
 
-/// Measures a clip's PCM: tempo, key, loudness, onsets, loop seam.
+/// Measures a clip's PCM into its Sound Profile: `{ok, profile}` (with `profile.summary`).
 #[wasm_bindgen]
-pub fn analyse(left: &[f32], right: &[f32], sample_rate: u32, beats_per_bar: u8) -> String {
-    ops::analyse(left, right, sample_rate, beats_per_bar).to_string()
+pub fn analyse(
+    left: &[f32],
+    right: &[f32],
+    sample_rate: u32,
+    file_name: &str,
+    channels: u16,
+    beats_per_bar: u8,
+) -> String {
+    ops::analyse(left, right, sample_rate, file_name, channels, beats_per_bar).to_string()
 }
 
 /// The offline engine: pack files held in memory, presets, renders.
@@ -240,7 +247,8 @@ impl WasmRealtime {
 
     /// Loop range in musical samples; `end <= start` clears it.
     pub fn set_loop(&mut self, start: f64, end: f64) -> bool {
-        self.inner.set_loop(start.max(0.0) as u64, end.max(0.0) as u64)
+        self.inner
+            .set_loop(start.max(0.0) as u64, end.max(0.0) as u64)
     }
 
     pub fn set_layer_mute(&mut self, layer: &str, muted: bool) -> bool {

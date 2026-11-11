@@ -111,7 +111,10 @@ fn missing_files_come_in_order_manifest_entry_includes_samples() {
         "p/inst.sfz",
         b"#include \"common.sfz\"\n<region> sample=a.wav lokey=0 hikey=60\n".to_vec(),
     );
-    assert_eq!(lib.missing("p", "felt_piano").unwrap(), vec!["p/common.sfz"]);
+    assert_eq!(
+        lib.missing("p", "felt_piano").unwrap(),
+        vec!["p/common.sfz"]
+    );
     lib.insert(
         "p/common.sfz",
         b"<region> sample=b.wav lokey=61 hikey=127\n".to_vec(),
@@ -138,7 +141,10 @@ fn without_the_pack_the_piano_plays_a_synth_and_says_so() {
         .expect("renders with a stand-in");
     let notes = r.report["fallbacks"].as_array().unwrap();
     assert_eq!(notes.len(), 1, "{}", r.report);
-    assert!(notes[0].as_str().unwrap().contains("soft keys synth"), "{notes:?}");
+    assert!(
+        notes[0].as_str().unwrap().contains("soft keys synth"),
+        "{notes:?}"
+    );
     assert!(
         r.played
             .layers
@@ -195,14 +201,11 @@ fn patches_apply_and_a_locked_layer_is_refused_in_the_apps_words() {
     let layer = score["layers"][0]["id"].as_str().unwrap().to_string();
     let lock = json!({
         "description": "lock", "origin": "user", "scope": {},
-        "ops": [{ "op": "update_layer", "id": layer, "update": { "locked": true } }]
+        "ops": [{ "op": "set_lock", "id": layer, "locked": true }]
     });
     let locked = ops::apply_patch(&score.to_string(), &lock.to_string());
     assert_eq!(locked["ok"], true, "{locked}");
-    assert_eq!(
-        locked["inverse"]["ops"][0]["update"]["locked"], false,
-        "{locked}"
-    );
+    assert_eq!(locked["inverse"]["ops"][0]["locked"], false, "{locked}");
     let mute = json!({
         "description": "mute", "origin": "model", "scope": {},
         "ops": [{ "op": "update_layer", "id": layer, "update": { "muted": true } }]
@@ -234,7 +237,11 @@ fn a_scoped_edit_stays_in_its_bars_and_layer() {
     assert_eq!(e["changed"], true, "{e}");
     assert_eq!(e["patch"]["scope"]["bars"]["start"], 13, "{}", e["patch"]);
     assert_eq!(e["patch"]["scope"]["bars"]["end"], 16);
-    assert!(e["title"].as_str().unwrap().starts_with("Softer"), "{}", e["title"]);
+    assert!(
+        e["title"].as_str().unwrap().starts_with("Softer"),
+        "{}",
+        e["title"]
+    );
     // Unscoped: the rules read the bars from the words.
     let w = ops::plan_edit(&score, "make the last four bars softer", "null", 2);
     assert_eq!(w["ok"], true, "{w}");
@@ -250,15 +257,23 @@ fn analyse_measures_a_render() {
     let p = planned(BRIEF);
     let mut lib = Library::new();
     let r = ops::render(&mut lib, &score_text(&p), &RenderSettings::default(), None).unwrap();
-    let a = ops::analyse(&r.audio.left, &r.audio.right, 48_000, 4);
+    let a = ops::analyse(&r.audio.left, &r.audio.right, 48_000, "take.wav", 2, 4);
     assert_eq!(a["ok"], true, "{a}");
-    let bpm = a["tempo"]["bpm"].as_f64().unwrap();
+    let prof = &a["profile"];
+    let bpm = prof["tempo"]["bpm"].as_f64().unwrap();
     assert!((bpm - 128.0).abs() < 2.0, "{bpm}");
-    assert!(!a["onsets_s"].as_array().unwrap().is_empty());
+    assert!(!prof["onsets_s"].as_array().unwrap().is_empty());
+    assert_eq!(prof["class"]["kind"], "music", "{}", prof["summary"]);
+    assert!(
+        prof["summary"].as_str().unwrap().starts_with("music"),
+        "{}",
+        prof["summary"]
+    );
+    assert_eq!(prof["source"]["file_name"], "take.wav");
     let v = ops::verify(&score_text(&p), &r.audio.left, &r.audio.right, 48_000);
     assert_eq!(v["ok"], true);
     assert_eq!(v["checks"].as_array().unwrap().len(), 8);
-    assert_eq!(ops::analyse(&[], &[], 48_000, 4)["ok"], false);
+    assert_eq!(ops::analyse(&[], &[], 48_000, "x", 2, 4)["ok"], false);
 }
 
 /// Plays `frames` frames through the real-time wrapper in 128-frame blocks, as the worklet does.
@@ -295,7 +310,8 @@ fn the_worklet_engine_plays_a_one_shot_as_the_offline_render() {
     // Equal everywhere but the last limiter lookahead (realtime.rs docs): compare up to 10 ms
     // before the end.
     let cut = n - 480;
-    let d = max_diff(&l[..cut], &off.audio.left[..cut]).max(max_diff(&r[..cut], &off.audio.right[..cut]));
+    let d = max_diff(&l[..cut], &off.audio.left[..cut])
+        .max(max_diff(&r[..cut], &off.audio.right[..cut]));
     assert!(d <= 1e-6, "max difference {d}");
     assert!(rt.status()[0] > 0.0, "position moves");
 }
@@ -316,5 +332,5 @@ fn the_worklet_engine_loops_as_the_offline_loop() {
     let d = max_diff(&l[n..], &off.audio.left).max(max_diff(&r[n..], &off.audio.right));
     let peak = off.audio.left.iter().fold(0.0f32, |m, x| m.max(x.abs()));
     eprintln!("loop cycle 2 vs offline: max difference {d:e} (peak {peak})");
-    assert!(d <= 1e-4, "max difference {d}");
+    assert!(d <= 1e-6, "max difference {d}");
 }

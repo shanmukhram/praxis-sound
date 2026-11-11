@@ -16,9 +16,9 @@ const BRIEF =
 const NATIVE = process.env.PRAXIS_NATIVE_RENDER ?? fileURLToPath(new URL('../../../target/praxis-native/acceptance1.f32', import.meta.url));
 
 /** Worklet cycle 2 vs the wasm offline loop: the same code in the same engine. */
-const WORKLET_TOLERANCE = 1e-4;
+const WORKLET_TOLERANCE = 1e-6;
 /** WebAssembly vs native (different maths libraries for sin/exp/pow): max sample difference. */
-const NATIVE_TOLERANCE = 1e-3;
+const NATIVE_TOLERANCE = 1e-5;
 
 async function engineReady(page: Page): Promise<{ version: string; wasmBytes: number; compileMs: number; readyMs: number }> {
   await page.waitForFunction(() => !!(window as unknown as { praxis?: { wasm?: unknown } }).praxis?.wasm, null, { timeout: 60_000 });

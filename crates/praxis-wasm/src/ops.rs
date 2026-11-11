@@ -4,7 +4,8 @@
 //! patch, `error` in the shape of the app's `PatchError`).
 
 use crate::library::Library;
-use praxis_analyze::features::{self, loudness, onset, seam, tempo};
+use praxis_analyze::analysis::{ProfileOptions, sound_profile};
+use praxis_analyze::profile::{ClipKind, SoundProfile};
 use praxis_analyze::verify::{Tolerances, VerifyReport, verify_render};
 use praxis_dsp::StereoBuffer;
 use praxis_engine::{InstrumentFactory, RenderOptions, RenderReport, render_offline};
@@ -314,8 +315,7 @@ fn scoped_edit(
         .map_err(|e| fail(e.to_string()))?;
     out.provider_id = RuleProvider::new().id();
     // The same patch on the real score, where the other layers are not locked.
-    let applied =
-        praxis_score::apply::apply(score, &out.patch).map_err(|e| fail(e.to_string()))?;
+    let applied = praxis_score::apply::apply(score, &out.patch).map_err(|e| fail(e.to_string()))?;
     out.score = applied.score;
     out.inverse = applied.inverse;
     if !out.refused.is_empty() && out.refused.iter().all(|r| view_locks.contains(r)) {
@@ -357,7 +357,13 @@ fn changed_bars(before: &Score, after: &Score) -> Vec<(String, BarRange)> {
             r.start = r.start.min(bar);
             r.end = r.end.max(bar);
         } else {
-            out.push((id.to_string(), BarRange { start: bar, end: bar }));
+            out.push((
+                id.to_string(),
+                BarRange {
+                    start: bar,
+                    end: bar,
+                },
+            ));
         }
     };
     let ids: std::collections::BTreeSet<&str> = before
@@ -447,7 +453,12 @@ pub fn parse_settings(json: &str) -> RenderSettings {
 }
 
 /// The app's `RenderReport` (app/src/engine/EngineAdapter.ts).
-pub fn report_json(r: &RenderReport, frames: usize, render_seconds: f64, notes: &[String]) -> Value {
+pub fn report_json(
+    r: &RenderReport,
+    frames: usize,
+    render_seconds: f64,
+    notes: &[String],
+) -> Value {
     let mut warnings = r.warnings.clone();
     warnings.extend(notes.iter().cloned());
     json!({
@@ -559,43 +570,70 @@ pub fn verify(score: &str, left: &[f32], right: &[f32], sample_rate: u32) -> Val
     v
 }
 
-/// Measures a clip's PCM: tempo, key, loudness, onsets and loop seam (`praxis analyze`'s
-/// measurements, under the Sound Profile's field names).
-pub fn analyse(left: &[f32], right: &[f32], sample_rate: u32, beats_per_bar: u8) -> Value {
-    if left.len() != right.len() || sample_rate == 0 || left.is_empty() {
-        return fail("give two channels of the same, non-zero length and a rate above 0");
-    }
-    let mono = features::mono(left, right);
-    let loud = match loudness::measure(left, right, sample_rate) {
-        Ok(l) => l,
-        Err(e) => return fail(e.to_string()),
+/// One line in plain words: what the clip is and its main measurements (`praxis analyze`'s
+/// `summary`).
+pub fn profile_summary(p: &SoundProfile) -> String {
+    let kind = match p.class.kind {
+        ClipKind::Music => "music",
+        ClipKind::Sfx => "sound effect",
+        ClipKind::Ambience => "ambience",
     };
-    let tempo_est = tempo::analyze(&mono, sample_rate, beats_per_bar.max(1));
-    let key_est = features::key::analyze(&mono, sample_rate);
-    let (_, onsets) = onset::detect_onsets(&mono, sample_rate);
-    let s = seam::analyze_seam(left, right, sample_rate, &seam::SeamConfig::default());
-    json!({
-        "ok": true,
-        "source": {
-            "duration_s": left.len() as f64 / sample_rate as f64,
-            "sample_rate": sample_rate,
-            "channels": 2,
-        },
-        "tempo": tempo_est,
-        "key": key_est.as_ref().map(|k| json!({
-            "key": k.key,
-            "name": k.key.display(),
-            "confidence": k.confidence,
-            "chroma": k.chroma,
-        })),
-        "loudness": loud,
-        "onsets_s": onsets.iter().map(|o| o.time_s).collect::<Vec<_>>(),
-        "loop_seam": {
-            "passed": s.passed,
-            "jump_ratio": finite(s.jump_ratio),
-            "excess_db": finite(s.excess_db),
-        },
-    })
+    let mut parts = vec![format!("{kind} ({:.0}% sure)", 100.0 * p.class.confidence)];
+    parts.push(format!("{:.1} s", p.source.duration_s));
+    if let Some(t) = &p.tempo
+        && t.confidence >= 0.25
+        && p.class.kind == ClipKind::Music
+    {
+        parts.push(format!("{:.0} BPM", t.bpm));
+    }
+    if let Some(k) = &p.key
+        && k.confidence >= 0.2
+        && p.tonality >= 0.3
+    {
+        parts.push(k.key.display());
+    }
+    parts.push(format!("{:.1} LUFS", p.loudness.integrated_lufs));
+    parts.push(if p.tonality >= 0.6 {
+        "tonal".to_string()
+    } else if p.tonality <= 0.3 {
+        "noisy".to_string()
+    } else {
+        "part tonal, part noise".to_string()
+    });
+    if let Some(r) = &p.reverb
+        && r.confidence >= 0.3
+    {
+        parts.push(format!("decays in {:.1} s", r.rt60_s));
+    }
+    parts.join(" \u{b7} ")
+}
+
+/// Measures a clip's PCM into its complete Sound Profile (the same `sound_profile` as `praxis
+/// analyze`): `{ok, profile}`, the profile with its plain-words `summary`.
+pub fn analyse(
+    left: &[f32],
+    right: &[f32],
+    sample_rate: u32,
+    file_name: &str,
+    channels: u16,
+    beats_per_bar: u8,
+) -> Value {
+    if left.is_empty() {
+        return fail("the clip has no audio");
+    }
+    let opts = ProfileOptions {
+        file_name: file_name.to_string(),
+        channels: channels.max(1),
+        beats_per_bar: beats_per_bar.max(1),
+    };
+    match sound_profile(left, right, sample_rate, &opts) {
+        Ok(p) => {
+            let mut v = serde_json::to_value(&p).unwrap_or(Value::Null);
+            v["summary"] = json!(profile_summary(&p));
+            json!({ "ok": true, "profile": v })
+        }
+        Err(e) => fail(e.to_string()),
+    }
 }
 
 /// The planner's preset catalogue and whether each can play here (`praxis presets`): a sampled

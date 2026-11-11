@@ -82,6 +82,8 @@ export class WorkletPlayer {
     readonly ctx: BaseAudioContext,
     readonly node: AudioWorkletNode,
     readonly version: string,
+    /** The A/B trim after the engine (1 = as rendered). */
+    private readonly trim: GainNode,
   ) {
     node.port.onmessage = (e: MessageEvent<WorkletEvent>) => this.onEvent(e.data);
   }
@@ -93,8 +95,10 @@ export class WorkletPlayer {
       node.port.onmessage = (e: MessageEvent<WorkletEvent>) => resolve(e.data);
     });
     if (first.type === 'error') throw new Error(`the engine could not start in the audio worklet: ${first.message}`);
-    node.connect(ctx.destination);
-    return new WorkletPlayer(ctx, node, first.type === 'ready' ? first.version : '');
+    const trim = ctx.createGain();
+    node.connect(trim);
+    trim.connect(ctx.destination);
+    return new WorkletPlayer(ctx, node, first.type === 'ready' ? first.version : '', trim);
   }
 
   get sampleRate(): number {
@@ -171,6 +175,11 @@ export class WorkletPlayer {
     this.send({ type: 'solo', layer, on });
   }
 
+  /** A linear gain on what the engine plays (the A/B trim); 1 puts it back. */
+  setTrim(gain: number): void {
+    this.trim.gain.value = Math.max(0, gain);
+  }
+
   onStatus(cb: (s: PlayerStatus) => void): () => void {
     this.statusSubs.add(cb);
     return () => this.statusSubs.delete(cb);
@@ -179,6 +188,7 @@ export class WorkletPlayer {
   dispose(): void {
     this.node.port.onmessage = null;
     this.node.disconnect();
+    this.trim.disconnect();
   }
 }
 

@@ -86,7 +86,7 @@ export interface CoreApi {
   applyPatch(score: unknown, patch: unknown): Result<ApplyPayload>;
   render(score: unknown, settings: RenderSettings): Result<RenderPayload>;
   verify(score: unknown, left: Float32Array, right: Float32Array, sampleRate: number): Result<Record<string, unknown>>;
-  analyse(left: Float32Array, right: Float32Array, sampleRate: number, beatsPerBar: number): Result<Record<string, unknown>>;
+  analyse(left: Float32Array, right: Float32Array, sampleRate: number, fileName: string, channels: number, beatsPerBar: number): Result<{ profile: Record<string, unknown> }>;
   presets(): Result<{ presets: unknown[]; engine_only: unknown[] }>;
   packNeeds(score: unknown): Result<{ needs: PackNeed[] }>;
   missingPackFiles(pack: string, preset: string): Result<{ missing: string[] }>;
@@ -146,8 +146,8 @@ export class PraxisCore implements CoreApi {
     return parse(this.glue.verify(JSON.stringify(score), left, right, sampleRate));
   }
 
-  analyse(left: Float32Array, right: Float32Array, sampleRate: number, beatsPerBar: number): Result<Record<string, unknown>> {
-    return parse(this.glue.analyse(left, right, sampleRate, beatsPerBar));
+  analyse(left: Float32Array, right: Float32Array, sampleRate: number, fileName: string, channels: number, beatsPerBar: number): Result<{ profile: Record<string, unknown> }> {
+    return parse(this.glue.analyse(left, right, sampleRate, fileName, channels, beatsPerBar));
   }
 
   presets(): Result<{ presets: unknown[]; engine_only: unknown[] }> {
