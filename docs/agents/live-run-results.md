@@ -34,3 +34,34 @@ Total: 23 API requests, about **$0.37**. Every request did what `live-run.md` sa
    naming no identical bars.
 4. Locking a layer through `praxis ask --patch` records a take ("Kick locked", take 6). In the
    app a lock is a live-score change without a take; consider the same for the CLI.
+
+## Second live run (2026-11-11, after WP-AG2)
+
+**Assistant, 11 requests on `live-2`** (about $0.51, 28 API requests): every request did what
+`live-run.md` asks. Fixed and confirmed live: every no-take turn (undo, locked kick, "make it
+better", "show me the notes") is an ordinary reply with exit 0; locking the kick made no take;
+titles are short ("Muffled felt piano", "Softer kick in the second half"); request 11 ("make these
+bars muffled" on bars 5-8) changed only those bars and reported "Bars 1-4 and 11-16 identical note
+for note to take 6; only reverb rounding differs (at most -138 dBFS)". Found: on take turns the
+reply fell back to the change summary ("Made take 6.") because the model writes no text beside
+`finish_turn`; fixed by a required `reply` on `finish_turn` (WP-AG2 follow-up, ffe1ce5) and
+confirmed live on `live-3`: "The piano now sounds muffled: I darkened its tone from 0.5 to 0.25 and
+raised the felt from 0.7 to 0.9. Its brightness dropped from 554 to 511 Hz ... every note and the
+kick are as they were."
+
+**Planner suites through `ClaudeProvider`** (`PRAXIS_SUITE_PROVIDER=claude`):
+- First attempt: every request refused by the API (strict tool schemas reject `oneOf`; then the
+  plan schema is too large for strict mode). The one-shot Claude planner had never worked live;
+  the replay tests could not see it. Fixed in efbdedd (`oneOf` -> `anyOf`, plan tool sent without
+  `strict`; `validate_plan` and the repair loop keep answers correct).
+- Briefs: **15/27** passed, including **all 6 acceptance-1 phrasings**. Edits: **19/20** passed,
+  including "change the last four bars" (bars 1-12 unchanged), muffled, drier, more room, locked
+  kick refused.
+- Real problems: unrequested layers (ban_list: glass + soft keys; unmapped_strings: piano + keys +
+  bass; requested_riser: an extra sub bass); isolated notes in model-written bass/glass parts
+  (lint `isolated_notes` in duration_60s_at_90, layering_three_stages, trap_cinematic_mysterious;
+  lint warnings are not fed back to the model); a layer not playing throughout when the brief
+  gives no bars (explicit_chords sub bass 5-8; six_eight_with_kick kick from bar 3).
+- Suite strictness, not planner faults: emotion synonyms (ominous/dark, suspenseful/tense), a
+  spoken rhythm padded with trailing rests, "make it pop" read as brighter instead of
+  `not_understood`.
