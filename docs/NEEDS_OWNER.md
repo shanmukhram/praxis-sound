@@ -8,14 +8,14 @@ Only things the owner can give. Work continues on everything they do not block.
 | 2 | **Listening sign-off, Phase 2**: `demos/phase-2/acceptance1_mixed_loop.flac` (+ x3 seam file). | Phase 2 exit | **done 2026-11-11**: owner listened and said "its perfect" |
 | 3 | **Real-hardware check, Phase 3** (`docs/phase-3-hardware-check.md`). | Phase 3 sign-off | **done 2026-11-11**: owner built a sound by hand in the release app and tested play, loop, mute/solo, swaps, seek, loop range and export on their speakers: "everything is good" |
 | 4 | **Labelled reference clips** you own with known tempo/key (optional; we self-make the test set). | Nothing | optional |
-| 5 | **Licence**: decided 2026-11-12, closed-source commercial with a one-time purchase (ADR-0012). The seven MPL-2.0 crates via Tauri are fine for that (unmodified, source available). Still the owner's, outside the code: an EULA, the store/payment provider, the trademark check. | Nothing in the code | **decided** |
+| 5 | **Licence**: decided 2026-11-12, open source under MIT OR Apache-2.0 (ADR-0013; it replaced a same-day commercial decision, ADR-0012). The repository stays private until the owner says to make it public. | Making the repo public | **decided**; going public waits for the owner |
 | 6 | **Listening review, Phase 7**: `demos/phase-7/cue_hits_2min.flac` (2-minute cue with three hits). | Phase 7 exit | **done 2026-11-12**: "Sounds right" |
 | 7 | **Blind listening review, Phase 6**: the 10 pairs in `demos/phase-6/`. | Phase 6 exit | **done 2026-11-12**: "i like them all sounds good" (sound quality judged; the match itself is measured) |
 
 ## Decided by the owner (2026-11-10)
 
 - Product name: Praxis Sound.
-- Licence: closed source, sold for a one-time payment (decided 2026-11-12, ADR-0012). Repo stays private; dependencies must allow closed-source commercial distribution.
+- Licence: open source, MIT OR Apache-2.0 (decided 2026-11-12, ADR-0013). Repo stays private until the owner says to make it public; dependencies stay permissive.
 - Trademark check: later, not needed now.
 - Buy nothing. Everything is made through code: synthesis, procedural effects, and free CC0/CC-BY
   packs and impulse responses (approved, under 100 MB each). No paid packs.

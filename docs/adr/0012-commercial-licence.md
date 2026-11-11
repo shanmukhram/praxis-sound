@@ -1,6 +1,6 @@
 # ADR-0012: Closed-source commercial licence, one-time purchase
 
-Status: accepted (owner, 2026-11-12). Supersedes the "pending" part of ADR-0008.
+Status: superseded the same day by ADR-0013 (owner: open source, MIT OR Apache-2.0).
 
 The owner decided: "we want to ship it someday with a one time payment for the app."
 
