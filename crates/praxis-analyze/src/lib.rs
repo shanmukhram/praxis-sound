@@ -10,8 +10,11 @@ pub mod profile;
 pub mod verify;
 
 // ---- WP-D analyze: implementation modules ----
+pub mod analysis;
 pub mod features;
+pub mod hash;
 pub mod originality;
 pub mod similarity;
 
+pub use analysis::{ProfileOptions, sound_profile};
 pub use profile::SoundProfile;
