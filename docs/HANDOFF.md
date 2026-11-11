@@ -112,7 +112,7 @@ branch below (the app may add a prefix/suffix: check `git branch`). Briefs are i
 | WP | Session | Branch | Brief | Notes |
 | --- | --- | --- | --- | --- |
 | WP-K2 edits, variations, takes | `local_08d46492-ce2a-48b7-8784-c8906f5e6215` (wp-k2-takes) | `wp/k2-edits-takes` | WP-K2-edits-takes.md | command layer + CLI + MCP; shared take history; frozen gain; CLI/planner tidy-ups (follow-ups 2-4) |
-| WP-D1b onset robustness | `local_c98b80e0-ef63-4d51-ab55-616e42b9e51f` (wp-d1b-onsets) | `wp/d1b-onsets` | WP-D1b-onset-robustness.md | follow-up 1 |
+| WP-D1b onset robustness | `local_c98b80e0-ef63-4d51-ab55-616e42b9e51f` (wp-d1b-onsets) | `claude/d1b-onsets-39c1f1` | WP-D1b-onset-robustness.md | **merged** (6b744c9): grid 100% |
 | WP-R real-time engine | `local_86d87740-e7d6-4839-94ac-5a0e5ef22ca7` (wp-r-realtime) | `wp/r-realtime` | WP-R-realtime.md | Phase 3 |
 | WP-U3 Tauri app | `local_c4804bca-8078-46c7-bef7-1ff48c2a7379` (wp-u3-adapter) | `wp/u3-adapter` | WP-U3-real-adapter.md | **waits on WP-K2**: when K2 is merged, message this session to merge `build/integration` and wire the take ops |
 

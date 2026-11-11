@@ -37,6 +37,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 
 ## Log
 
+- Merged WP-D1b onset robustness (6b744c9): onsets timed at the attack start by linear prediction, note swells and reverb build-up no longer counted. Acceptance 1 grid 90.9% -> 100% of 128 onsets (median 1.50 -> 0.13 ms), other checks identical. Cause was the detector; every felt-piano note starts within 0.7 ms of its score time. Proposal accepted for later: praxis-engine + praxis-instruments as praxis-analyze dev-deps so the felt-piano onset test renders in-process.
+
 - Wave 3 started as sessions (new orchestrator): WP-K2 edits/variations/takes in the command layer, WP-D1b onset robustness, WP-R real-time engine, WP-U3 Tauri app (wires K2's take ops once merged). Old merged branches and worktrees deleted.
 
 - Paused by the owner. WP-U3 was started and stopped before writing anything. Nothing running, nothing uncommitted; next steps in docs/HANDOFF.md sections 5-6.
