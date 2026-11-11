@@ -44,7 +44,7 @@ Next actions: see "What to do next" in docs/HANDOFF.md.
 | GitHub | https://github.com/shanmukhram/praxis-sound (private). Remote `origin`. `gh` CLI is logged in as `shanmukhram` |
 | Integration branch | `build/integration` (all merged work; pushed; CI green at `ecef2e8`) |
 | `main` | empty, untouched. Do not commit there unless the owner says so |
-| CI | `.github/workflows/ci.yml`: fmt, clippy -D warnings, debug + release tests, schema freshness, empty-score render on Windows/macOS/Linux, wasm32 build. `gh run list --branch build/integration` |
+| CI | `.github/workflows/ci.yml`. Owner decision 2026-11-11 (free minutes ran out): code pushes run Windows release tests only, docs-only pushes run nothing, the full Linux/Windows/macOS + debug + wasm check runs by hand (`gh workflow run ci --ref build/integration`) at phase exits and before releases. Runs stay blocked until the monthly free minutes reset. `gh run list --branch build/integration` |
 | Requirements | `PRD.md` (FR-1..FR-34, success criteria, phases 0-8) |
 | Plan / status | `docs/PLAN.md` (every work package with owned files, deps, done check), `docs/STATUS.md` (current state, newest log first) |
 | Rules for every package | `docs/BRIEFING.md` (ownership, engineering, audio-quality and git rules, report format) |

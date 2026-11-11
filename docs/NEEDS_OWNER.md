@@ -20,3 +20,8 @@ Only things the owner can give. Work continues on everything they do not block.
 - Platform: Windows is the release target for now. CI still builds and tests macOS and Linux to
   keep the code portable, but only Windows gates releases.
 - Git identity, commit rules and private GitHub repo `shanmukhram/praxis-sound`.
+- CI only when it matters (2026-11-11): the private repo's free Actions minutes ran out and every
+  job was blocked by billing. Pushes that change code run Windows only (release tests); docs-only
+  pushes run nothing; the full Linux/Windows/macOS + wasm check runs by hand at phase exits and
+  before a release (`gh workflow run ci --ref build/integration`). This replaces "every push tests
+  macOS and Linux". Buy nothing still holds: no spending limit raise.

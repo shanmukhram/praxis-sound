@@ -1,8 +1,23 @@
 name: ci
 
+# Owner's decision (2026-11-11): run CI only when it matters. The private repo's free Actions
+# minutes ran out (Windows minutes count 2x, macOS 10x), so:
+# - a push to build/integration that changes code runs Windows only (the release platform),
+#   release tests only; documentation, demo and Markdown-only pushes run nothing;
+# - the full check (Linux, Windows, macOS, debug and release tests, wasm32) runs only when started
+#   by hand: Actions -> ci -> Run workflow (or `gh workflow run ci --ref build/integration`),
+#   at phase exits and before a release.
+# Every package's checks also run locally before it is merged.
 on:
   push:
-  pull_request:
+    branches: [build/integration]
+    paths-ignore:
+      - 'docs/**'
+      - 'demos/**'
+      - '**/*.md'
+      - 'app/screenshots/**'
+      - 'crates/praxis-app/screenshots/**'
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: ${{ github.event_name == 'workflow_dispatch' && fromJSON('["ubuntu-latest", "windows-latest", "macos-latest"]') || fromJSON('["windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +44,8 @@ jobs:
         run: cargo fmt --all --check
       - name: Lint
         run: cargo clippy --workspace --all-targets
-      - name: Test (debug)
+      - name: Test (debug, full check only)
+        if: github.event_name == 'workflow_dispatch'
         run: cargo test --workspace
       - name: Test (release)
         run: cargo test --workspace --release
@@ -45,6 +61,7 @@ jobs:
 
   wasm:
     name: wasm32 build
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
