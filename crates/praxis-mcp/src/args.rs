@@ -5,8 +5,8 @@
 //! the command runs, so every path in a response is absolute.
 
 use praxis_cli::ops::{
-    AnalyzeRequest, CheckRequest, ExportMidiRequest, GenerateRequest, ProviderChoice,
-    RenderRequest, RenderSettings, ValidateRequest,
+    AnalyzeRequest, CheckRequest, ExportMidiRequest, GenerateRequest, MatchClipRequest,
+    ProviderChoice, RenderRequest, RenderSettings, ValidateRequest,
 };
 use praxis_cli::{ErrorCode, OpError};
 use schemars::JsonSchema;
@@ -250,6 +250,55 @@ impl AnalyzeArgs {
             clip: absolute(&self.clip),
             out: abs_opt(&self.out),
             beats_per_bar: self.beats_per_bar.unwrap_or(4),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct MatchArgs {
+    /// The reference clip (audio or video): the sound to make something like.
+    pub clip: PathBuf,
+    /// The `.praxis` project file to write.
+    pub project: PathBuf,
+    /// Mood brief, e.g. "melancholy" (mix and match: the mood comes from this text).
+    #[serde(default)]
+    pub prompt: Option<String>,
+    /// A second clip to take the timbre from; `clip` then gives the groove (mix and match).
+    #[serde(default)]
+    pub timbre: Option<PathBuf>,
+    /// Length in bars (music only; default: the reference's length).
+    #[serde(default)]
+    pub bars: Option<u32>,
+    /// Key, e.g. "A minor", "F#m", "Eb dorian" (default: the reference's).
+    #[serde(default)]
+    pub key: Option<String>,
+    /// Tempo, 40-220 BPM (default: the reference's).
+    #[serde(default)]
+    pub bpm: Option<f64>,
+    /// Seed (default 0). Same clip + options + seed = identical project.
+    #[serde(default)]
+    pub seed: Option<u64>,
+    /// Most renders inside the match loop (default 40, 10..=200).
+    #[serde(default)]
+    pub max_iterations: Option<usize>,
+    /// Also render the result to this audio file and return the render report with its checks.
+    #[serde(default)]
+    pub render: Option<PathBuf>,
+}
+
+impl MatchArgs {
+    pub fn request(&self) -> MatchClipRequest {
+        MatchClipRequest {
+            clip: absolute(&self.clip),
+            out: absolute(&self.project),
+            prompt: self.prompt.clone(),
+            timbre: abs_opt(&self.timbre),
+            bars: self.bars,
+            key: self.key.clone(),
+            bpm: self.bpm,
+            seed: self.seed,
+            max_iterations: self.max_iterations,
+            render: abs_opt(&self.render),
         }
     }
 }

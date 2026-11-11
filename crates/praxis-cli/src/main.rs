@@ -4,8 +4,6 @@
 //!
 //! This file only parses arguments. Every command is implemented once in `praxis_cli::ops`,
 //! which the MCP server (WP-X) calls too.
-//!
-//! Not here yet: `match` (WP-M).
 
 #![forbid(unsafe_code)]
 
@@ -239,6 +237,36 @@ enum Command {
         #[arg(long, default_value_t = 4)]
         beats_per_bar: u8,
     },
+    /// Make something like a reference clip: a new project with its character, refined by
+    /// rendering and measuring until the similarity stops improving (FR-14 to FR-18).
+    Match {
+        /// The reference clip (audio or video).
+        clip: PathBuf,
+        /// Mood brief, e.g. "melancholy".
+        #[arg(long)]
+        prompt: Option<String>,
+        /// Take the timbre from this second clip; the reference gives the groove.
+        #[arg(long)]
+        timbre: Option<PathBuf>,
+        #[arg(long)]
+        bars: Option<u32>,
+        /// Key, e.g. "A minor", "F#m", "Eb dorian".
+        #[arg(long)]
+        key: Option<String>,
+        #[arg(long)]
+        bpm: Option<f64>,
+        #[arg(long)]
+        seed: Option<u64>,
+        /// Most renders inside the match loop (default 40).
+        #[arg(long)]
+        max_iterations: Option<usize>,
+        /// Also render the result to this file and check it.
+        #[arg(long)]
+        render: Option<PathBuf>,
+        /// The new `.praxis` project.
+        #[arg(short, long)]
+        out: PathBuf,
+    },
     /// Export a score (or project) as a Standard MIDI File.
     ExportMidi {
         input: PathBuf,
@@ -297,6 +325,7 @@ fn name(c: &Command) -> &'static str {
         Command::KeepVariation { .. } => "keep-variation",
         Command::OpenView { .. } => "open-view",
         Command::Analyze { .. } => "analyze",
+        Command::Match { .. } => "match",
         Command::ExportMidi { .. } => "export-midi",
         Command::Packs { .. } => "packs",
         Command::Presets => "presets",
@@ -564,6 +593,29 @@ fn run(command: Command) -> Result<Value, OpError> {
             clip,
             out,
             beats_per_bar,
+        }),
+        Command::Match {
+            clip,
+            prompt,
+            timbre,
+            bars,
+            key,
+            bpm,
+            seed,
+            max_iterations,
+            render,
+            out,
+        } => ops::match_clip(&ops::MatchClipRequest {
+            clip,
+            out,
+            prompt,
+            timbre,
+            bars,
+            key,
+            bpm,
+            seed,
+            max_iterations,
+            render,
         }),
         Command::ExportMidi { input, out } => {
             ops::export_midi(&ops::ExportMidiRequest { input, out })

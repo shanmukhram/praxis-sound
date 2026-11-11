@@ -5,8 +5,8 @@
 
 use crate::args::{
     AnalyzeArgs, AskArgs, CheckArgs, ComposeArgs, EditArgs, Export, ExportArgs, GenerateArgs,
-    KeepVariationArgs, NoArgs, OpenViewArgs, PlanSchemaArgs, RenderArgs, RestoreArgs, TakesArgs,
-    ValidateArgs, VariationsArgs, parse,
+    KeepVariationArgs, MatchArgs, NoArgs, OpenViewArgs, PlanSchemaArgs, RenderArgs, RestoreArgs,
+    TakesArgs, ValidateArgs, VariationsArgs, parse,
 };
 use crate::guide;
 use praxis_cli::ops;
@@ -255,6 +255,25 @@ impl PraxisServer {
             Err(e) => return Ok(tool_result("analyze", Err(e))),
         };
         Ok(run("analyze", &meta, &peer, move || ops::analyze(&req)).await)
+    }
+
+    #[tool(
+        name = "praxis_match",
+        description = "Make something like a reference clip (FR-14 to FR-18): the clip is measured into a Sound Profile (numbers only; its audio is never used), turned into a new project with the same character (music: tempo, key, groove, instruments, brightness, room; effects: the matching whoosh/impact/riser/drone/glitch/tick patch with its macros; ambience: a bed), then refined by rendering and measuring until the similarity stops improving. Returns `project`, `similarity` (0..1), `iterations[]` (each render's similarity and the best so far) and `originality` (a close melodic copy is rejected and re-made with another motif). Optional: `key`, `bpm`, `bars`, a mood `prompt`, and `timbre` (a second clip: groove from `clip`, timbre from `timbre`). Takes tens of seconds.",
+        input_schema = input_schema::<MatchArgs>(),
+        annotations(read_only_hint = false, open_world_hint = false)
+    )]
+    async fn match_clip(
+        &self,
+        args: JsonObject,
+        meta: RequestMetaObject,
+        peer: Peer<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let req = match parse::<MatchArgs>(args) {
+            Ok(a) => a.request(),
+            Err(e) => return Ok(tool_result("match", Err(e))),
+        };
+        Ok(run("match", &meta, &peer, move || ops::match_clip(&req)).await)
     }
 
     #[tool(

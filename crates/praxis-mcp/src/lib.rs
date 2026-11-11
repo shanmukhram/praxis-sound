@@ -5,8 +5,8 @@
 //! measurements out: audio is written to files the agent names, never returned inline.
 //!
 //! Tools: `praxis_plan_schema`, `praxis_presets`, `praxis_compose`, `praxis_generate`,
-//! `praxis_render`, `praxis_check`, `praxis_analyze`, `praxis_export`, `praxis_validate`,
-//! `praxis_edit`, `praxis_variations`, and the shared take history (ADR-0011): `praxis_ask`,
+//! `praxis_render`, `praxis_check`, `praxis_analyze`, `praxis_match`, `praxis_export`,
+//! `praxis_validate`, `praxis_edit`, `praxis_variations`, and the shared take history (ADR-0011): `praxis_ask`,
 //! `praxis_takes`, `praxis_restore`, `praxis_keep_variation`, `praxis_open_view`. A take an
 //! agent makes is recorded as `"Agent · <MCP client name>"` unless the call names `who`.
 

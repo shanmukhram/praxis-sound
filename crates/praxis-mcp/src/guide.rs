@@ -9,7 +9,9 @@ the ScorePlan schema, how-to and an example; (2) praxis_presets for preset names
 here; (3) write the plan and call praxis_compose with `project` and `render` paths; (4) read the \
 checks, fix the plan, compose again; (5) praxis_export for WAV/FLAC/stems/MIDI. praxis_generate \
 takes a plain brief instead. Edits: praxis_edit changes only the bars and layers in scope \
-(locked layers never); praxis_variations makes alternates to audition. Shared history with the \
+(locked layers never); praxis_variations makes alternates to audition. praxis_match makes \
+something like a reference clip and returns its similarity per render and an originality check. \
+Shared history with the \
 person (a sound folder): praxis_ask makes a take (a brief on a new sound, then scoped edits; \
 `scope` {layer, bars} holds it to exactly those bars), praxis_takes lists them (watch \
 `revision`), praxis_restore goes back, praxis_keep_variation keeps an alternate, \
