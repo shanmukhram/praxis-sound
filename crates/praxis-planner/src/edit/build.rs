@@ -5,20 +5,33 @@
 //! Bar edits never mutate a pattern: changed material is a new pattern placed with `place_clip`
 //! (which splits the old clips at the edges) or a whole new layer, and dynamics in a bar range are
 //! a clip `velocity_scale`.
+//!
+//! Tone and space edits never touch notes. They change the layer's instrument parameters or
+//! effects through `update_layer`. `apply` refuses an `update_layer` that changes the sound in a
+//! bar-scoped patch, so a tone or space edit over some bars is a patch with `scope.bars` unset
+//! whose only change is an effect that is exactly transparent outside those bars: a filter (or a
+//! reverb) at `mix` 0, or the layer's own reverb mix, with a step automation lane that sets its
+//! `mix` inside the bars. Outside the bars and the effect tail the layer renders bit-identically
+//! (contracts/patch.md).
 
 use super::material::{
     self, Material, MaterialSpec, base_spoken, degrees_for, derive_seed, dynamics_of, global_phase,
     is_drum, layer_preset, melody_motif, octave_of, register_of, steps_per_bar, vary_spoken,
 };
-use super::plan::{DynamicsChange, EditIntent, EditIssue, EditIssueCode};
+use super::plan::{
+    ChangeAmount, DynamicsChange, EditIntent, EditIssue, EditIssueCode, SpaceChange, ToneChange,
+};
 use super::resolve::{Resolved, bars_text, new_class, plays_in};
 use crate::arrange::{display_name, slug};
-use crate::catalogue::{Catalogue, PresetSpec};
+use crate::catalogue::{Catalogue, PresetSpec, ToneControls};
 use crate::motifs::{default_degrees, default_spoken, fitting_grid, follows_chords, rhythm_role};
 use crate::plan::{Dynamics, Motif, Register};
 use crate::repair::Repair;
 use praxis_score::patch::{LayerUpdate, Origin, PatchOp, Scope, ScorePatch};
-use praxis_score::{Accent, BarRange, Clip, Grid, InstrumentRef, Layer, Pattern, Score};
+use praxis_score::{
+    Accent, AutoPoint, Automation, BarRange, Clip, Curve, Effect, EffectKind, Grid, InstrumentRef,
+    Layer, Pattern, Score,
+};
 use std::collections::BTreeMap;
 
 /// Default change for `change_dynamics`, in dB.
@@ -158,6 +171,18 @@ pub fn build_patch(
         EditIntent::ThinOut => thin_out(r, score, catalogue, &mut b, &where_),
         EditIntent::RewriteMotif => rewrite(r, score, catalogue, seed, &mut b, &where_)?,
         EditIntent::ChangeInstrument => change_instrument(r, score, &mut b, &where_)?,
+        EditIntent::ChangeTone => tone(r, score, catalogue, &mut b, &where_),
+        EditIntent::ChangeSpace => space(r, score, &mut b, &where_),
+        // Answered before resolution (edit.rs); there is nothing to build.
+        EditIntent::NotUnderstood => {}
+    }
+    if matches!(
+        r.plan.intent,
+        EditIntent::ChangeTone | EditIntent::ChangeSpace
+    ) {
+        // Layer settings change only in a patch without bars (see the module docs); the
+        // automation holds the change to the edited bars.
+        b.patch.scope.bars = None;
     }
     b.patch.scope.layers.extend(b.new_layers.iter().cloned());
     b.patch.description = format!(
@@ -771,4 +796,618 @@ fn change_instrument(
         }
     }
     Ok(())
+}
+
+// ---- tone and space ----
+
+/// Id of the whole-layer low-pass a darker edit adds when the preset has no tone controls.
+pub const TONE_FILTER_ID: &str = "tone_lp";
+/// Id of the high-shelf EQ a brighter edit adds when the preset's tone is at its top.
+pub const AIR_EQ_ID: &str = "air";
+/// Id of the room reverb a wetter edit adds.
+pub const ROOM_REVERB_ID: &str = "room";
+/// Lowest cutoff a darker edit moves the tone low-pass to.
+pub const MIN_TONE_LP_HZ: f64 = 250.0;
+/// A brighter edit removes the tone low-pass once its cutoff would reach this.
+pub const OPEN_TONE_LP_HZ: f64 = 16_000.0;
+/// High-pass cutoff of a brighter edit over some bars (a tilt mixed in by `mix`).
+pub const BAR_HP_HZ: f64 = 800.0;
+
+/// Change of the preset's `tone` (and `felt`) parameter.
+pub fn tone_step(a: ChangeAmount) -> f64 {
+    match a {
+        ChangeAmount::ALittle => 0.15,
+        ChangeAmount::Normal => 0.3,
+        ChangeAmount::Much => 0.45,
+    }
+}
+
+/// Factor on the tone low-pass cutoff per darker step (its inverse per brighter step).
+fn lp_factor(a: ChangeAmount) -> f64 {
+    match a {
+        ChangeAmount::ALittle => 0.75,
+        ChangeAmount::Normal => 0.5,
+        ChangeAmount::Much => 0.33,
+    }
+}
+
+/// Cutoff of a new whole-layer tone low-pass.
+fn new_lp_hz(a: ChangeAmount) -> f64 {
+    match a {
+        ChangeAmount::ALittle => 6000.0,
+        ChangeAmount::Normal => 3000.0,
+        ChangeAmount::Much => 1500.0,
+    }
+}
+
+/// Cutoff of the low-pass a darker edit switches on over some bars.
+pub fn bar_lp_hz(a: ChangeAmount) -> f64 {
+    match a {
+        ChangeAmount::ALittle => 3000.0,
+        ChangeAmount::Normal => 1500.0,
+        ChangeAmount::Much => 800.0,
+    }
+}
+
+/// Wet fraction of the high-pass tilt a brighter edit switches on over some bars.
+fn bar_hp_mix(a: ChangeAmount) -> f64 {
+    match a {
+        ChangeAmount::ALittle => 0.35,
+        ChangeAmount::Normal => 0.6,
+        ChangeAmount::Much => 0.85,
+    }
+}
+
+/// High-shelf boost of the air EQ per brighter step, in dB.
+fn air_db(a: ChangeAmount) -> f64 {
+    match a {
+        ChangeAmount::ALittle => 2.0,
+        ChangeAmount::Normal => 4.0,
+        ChangeAmount::Much => 6.0,
+    }
+}
+
+/// Reverb mix added per wetter step.
+fn wet_step(a: ChangeAmount) -> f64 {
+    match a {
+        ChangeAmount::ALittle => 0.06,
+        ChangeAmount::Normal => 0.12,
+        ChangeAmount::Much => 0.2,
+    }
+}
+
+/// Factor on the reverb mix per drier step.
+fn drier_factor(a: ChangeAmount) -> f64 {
+    match a {
+        ChangeAmount::ALittle => 0.75,
+        ChangeAmount::Normal => 0.55,
+        ChangeAmount::Much => 0.3,
+    }
+}
+
+fn round3(x: f64) -> f64 {
+    (x * 1000.0).round() / 1000.0
+}
+
+/// An effect parameter, or the parameter table's default.
+fn fx_param(e: &Effect, name: &str) -> f64 {
+    e.params.get(name).copied().unwrap_or_else(|| {
+        praxis_score::params::effect_param(e.kind, name)
+            .map(|s| s.default)
+            .unwrap_or(0.0)
+    })
+}
+
+fn effect(id: &str, kind: EffectKind, pairs: &[(&str, f64)]) -> Effect {
+    Effect {
+        id: id.to_string(),
+        kind,
+        params: pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
+        bypass: false,
+        sidechain: None,
+        impulse: None,
+    }
+}
+
+/// An effect id not used in `effects`.
+fn free_effect_id(effects: &[Effect], base: &str) -> String {
+    let free = |id: &str| !effects.iter().any(|e| e.id == id);
+    if free(base) {
+        return base.to_string();
+    }
+    (2..)
+        .map(|i| format!("{base}_{i}"))
+        .find(|id| free(id))
+        .unwrap_or_else(|| base.to_string())
+}
+
+/// True when an automation lane drives one of the effect's parameters.
+fn automated(automation: &[Automation], effect_id: &str) -> bool {
+    let prefix = format!("effects.{effect_id}.");
+    automation.iter().any(|a| a.target.starts_with(&prefix))
+}
+
+fn is_reverb(e: &Effect) -> bool {
+    matches!(e.kind, EffectKind::Reverb | EffectKind::ConvolutionReverb)
+}
+
+/// A step lane that holds `outside` and switches to `inside` over exactly `bars`.
+fn bar_lane(
+    target: String,
+    bars: BarRange,
+    total_bars: u32,
+    outside: f64,
+    inside: f64,
+) -> Automation {
+    let mut points = Vec::new();
+    if bars.start > 1 {
+        points.push(AutoPoint {
+            bar: 1.0,
+            value: outside,
+        });
+    }
+    points.push(AutoPoint {
+        bar: bars.start as f64,
+        value: inside,
+    });
+    if bars.end < total_bars {
+        points.push(AutoPoint {
+            bar: (bars.end + 1) as f64,
+            value: outside,
+        });
+    }
+    Automation {
+        target,
+        curve: Curve::Step,
+        points,
+    }
+}
+
+/// The `update_layer` op for a changed instrument, effects and automation (None when nothing
+/// changed).
+fn settings_op(
+    l: &Layer,
+    instrument: InstrumentRef,
+    effects: Vec<Effect>,
+    automation: Vec<Automation>,
+) -> Option<PatchOp> {
+    let update = LayerUpdate {
+        instrument: (instrument != l.instrument).then_some(instrument),
+        effects: (effects != l.effects).then_some(effects),
+        automation: (automation != l.automation).then_some(automation),
+        ..LayerUpdate::default()
+    };
+    if update == LayerUpdate::default() {
+        return None;
+    }
+    Some(PatchOp::UpdateLayer {
+        id: l.id.clone(),
+        update,
+    })
+}
+
+fn tone_word(t: ToneChange) -> &'static str {
+    match t {
+        ToneChange::Darker => "darker",
+        ToneChange::Brighter => "brighter",
+    }
+}
+
+fn tone(r: &Resolved, score: &Score, catalogue: &Catalogue, b: &mut Built, where_: &str) {
+    let dir = r.plan.params.tone.unwrap_or(ToneChange::Darker);
+    let amount = r.plan.params.amount.unwrap_or_default();
+    for id in &r.targets {
+        let Some(l) = score.layer(id) else { continue };
+        let changed = if r.whole {
+            whole_tone(l, catalogue, dir, amount)
+        } else {
+            bars_tone(l, score, r.bars, dir, amount)
+        };
+        if let Some((op, how)) = changed {
+            b.patch.ops.push(op);
+            b.actions
+                .push(format!("made `{id}` {} {where_} ({how})", tone_word(dir)));
+        }
+    }
+}
+
+/// A whole-layer tone change: first undo an earlier effect-level change that went the other
+/// way, then move the preset's tone controls, then fall back to a low-pass or an air EQ.
+fn whole_tone(
+    l: &Layer,
+    catalogue: &Catalogue,
+    dir: ToneChange,
+    amount: ChangeAmount,
+) -> Option<(PatchOp, String)> {
+    let mut effects = l.effects.clone();
+    let mut inst = l.instrument.clone();
+    let mut how: Option<String> = None;
+    let lp = effects.iter().position(|e| {
+        e.id == TONE_FILTER_ID
+            && e.kind == EffectKind::Filter
+            && fx_param(e, "mode") == 0.0
+            && !automated(&l.automation, &e.id)
+    });
+    let air = effects
+        .iter()
+        .position(|e| e.id == AIR_EQ_ID && e.kind == EffectKind::Eq);
+    match (dir, lp, air) {
+        (ToneChange::Darker, _, Some(i)) => {
+            let db = round3(fx_param(&effects[i], "high_db") - air_db(amount));
+            if db <= 0.05 {
+                effects.remove(i);
+                how = Some("took off the air boost".into());
+            } else {
+                effects[i].params.insert("high_db".into(), db);
+                how = Some(format!("air boost down to {db:.1} dB"));
+            }
+        }
+        (ToneChange::Brighter, Some(i), _) => {
+            let hz = (fx_param(&effects[i], "cutoff_hz") / lp_factor(amount)).round();
+            if hz >= OPEN_TONE_LP_HZ {
+                effects.remove(i);
+                how = Some("took off the tone low-pass".into());
+            } else {
+                effects[i].params.insert("cutoff_hz".into(), hz);
+                how = Some(format!("tone low-pass opened to {hz:.0} Hz"));
+            }
+        }
+        _ => {}
+    }
+    if how.is_none()
+        && let Some(tc) = layer_preset(catalogue, l).and_then(|p| p.tone)
+    {
+        let step = tone_step(amount);
+        let sign = match dir {
+            ToneChange::Darker => -1.0,
+            ToneChange::Brighter => 1.0,
+        };
+        let mut parts = Vec::new();
+        let t0 = inst
+            .params
+            .get(ToneControls::TONE)
+            .copied()
+            .unwrap_or(tc.tone_default);
+        let t1 = round3((t0 + sign * step).clamp(0.0, 1.0));
+        if t1 != t0 {
+            inst.params.insert(ToneControls::TONE.into(), t1);
+            parts.push(format!("tone {t0:.2} -> {t1:.2}"));
+        }
+        if let Some(fd) = tc.felt_default {
+            let f0 = inst.params.get(ToneControls::FELT).copied().unwrap_or(fd);
+            let f1 = round3((f0 - sign * step).clamp(0.0, 1.0));
+            if f1 != f0 {
+                inst.params.insert(ToneControls::FELT.into(), f1);
+                parts.push(format!("felt {f0:.2} -> {f1:.2}"));
+            }
+        }
+        if !parts.is_empty() {
+            how = Some(parts.join(", "));
+        }
+    }
+    if how.is_none() {
+        match (dir, lp, air) {
+            (ToneChange::Darker, Some(i), _) => {
+                let old = fx_param(&effects[i], "cutoff_hz");
+                let hz = (old * lp_factor(amount)).max(MIN_TONE_LP_HZ).round();
+                if hz < old {
+                    effects[i].params.insert("cutoff_hz".into(), hz);
+                    how = Some(format!("tone low-pass {old:.0} -> {hz:.0} Hz"));
+                }
+            }
+            (ToneChange::Darker, None, _) => {
+                let fid = free_effect_id(&effects, TONE_FILTER_ID);
+                let hz = new_lp_hz(amount);
+                effects.insert(
+                    0,
+                    effect(
+                        &fid,
+                        EffectKind::Filter,
+                        &[
+                            ("mode", 0.0),
+                            ("cutoff_hz", hz),
+                            ("resonance", 0.0),
+                            ("mix", 1.0),
+                        ],
+                    ),
+                );
+                how = Some(format!("a {hz:.0} Hz low-pass"));
+            }
+            (ToneChange::Brighter, _, Some(i)) => {
+                let old = fx_param(&effects[i], "high_db");
+                let db = (old + air_db(amount)).min(12.0);
+                if db > old {
+                    effects[i].params.insert("high_db".into(), db);
+                    how = Some(format!("air boost {old:.1} -> {db:.1} dB"));
+                }
+            }
+            (ToneChange::Brighter, _, None) => {
+                let fid = free_effect_id(&effects, AIR_EQ_ID);
+                let db = air_db(amount);
+                effects.insert(
+                    0,
+                    effect(
+                        &fid,
+                        EffectKind::Eq,
+                        &[("high_hz", 5000.0), ("high_db", db)],
+                    ),
+                );
+                how = Some(format!("a +{db:.0} dB air shelf at 5 kHz"));
+            }
+        }
+    }
+    let how = how?;
+    settings_op(l, inst, effects, l.automation.clone()).map(|op| (op, how))
+}
+
+/// A tone change over some bars: a filter at `mix` 0 that a step lane switches on in exactly
+/// those bars (a low-pass for darker, a high-pass tilt for brighter). An earlier change over the
+/// same bars is deepened, or taken off when it went the other way.
+fn bars_tone(
+    l: &Layer,
+    score: &Score,
+    bars: BarRange,
+    dir: ToneChange,
+    amount: ChangeAmount,
+) -> Option<(PatchOp, String)> {
+    let mut effects = l.effects.clone();
+    let mut automation = l.automation.clone();
+    let base = format!("tone_b{}_{}", bars.start, bars.end);
+    let range = bars_text(bars);
+    let how;
+    if let Some(i) = effects
+        .iter()
+        .position(|e| e.id == base && e.kind == EffectKind::Filter)
+    {
+        let darker_filter = fx_param(&effects[i], "mode") == 0.0;
+        let old = fx_param(&effects[i], "cutoff_hz");
+        if darker_filter != (dir == ToneChange::Darker) {
+            effects.remove(i);
+            let prefix = format!("effects.{base}.");
+            automation.retain(|a| !a.target.starts_with(&prefix));
+            how = format!("took off the earlier tone change in {range}");
+        } else if dir == ToneChange::Darker {
+            let hz = (old * lp_factor(amount)).max(MIN_TONE_LP_HZ).round();
+            if hz >= old {
+                return None;
+            }
+            effects[i].params.insert("cutoff_hz".into(), hz);
+            how = format!("low-pass in {range} {old:.0} -> {hz:.0} Hz");
+        } else {
+            let hz = (old / lp_factor(amount)).min(4000.0).round();
+            if hz <= old {
+                return None;
+            }
+            effects[i].params.insert("cutoff_hz".into(), hz);
+            how = format!("high-pass tilt in {range} {old:.0} -> {hz:.0} Hz");
+        }
+    } else {
+        let fid = free_effect_id(&effects, &base);
+        let (mode, hz, wet) = match dir {
+            ToneChange::Darker => (0.0, bar_lp_hz(amount), 1.0),
+            ToneChange::Brighter => (1.0, BAR_HP_HZ, bar_hp_mix(amount)),
+        };
+        effects.insert(
+            0,
+            effect(
+                &fid,
+                EffectKind::Filter,
+                &[
+                    ("mode", mode),
+                    ("cutoff_hz", hz),
+                    ("resonance", 0.0),
+                    ("mix", 0.0),
+                ],
+            ),
+        );
+        automation.push(bar_lane(
+            format!("effects.{fid}.mix"),
+            bars,
+            score.bars,
+            0.0,
+            wet,
+        ));
+        how = match dir {
+            ToneChange::Darker => format!("a {hz:.0} Hz low-pass switched on in {range} only"),
+            ToneChange::Brighter => format!(
+                "a {hz:.0} Hz high-pass tilt at {:.0}% switched on in {range} only",
+                wet * 100.0
+            ),
+        };
+    }
+    settings_op(l, l.instrument.clone(), effects, automation).map(|op| (op, how))
+}
+
+fn space(r: &Resolved, score: &Score, b: &mut Built, where_: &str) {
+    let dir = r.plan.params.space.unwrap_or(SpaceChange::Wetter);
+    let amount = r.plan.params.amount.unwrap_or_default();
+    for id in &r.targets {
+        let Some(l) = score.layer(id) else { continue };
+        let changed = if r.whole {
+            whole_space(l, dir, amount)
+        } else {
+            bars_space(l, score, r.bars, dir, amount)
+        };
+        if let Some((op, how)) = changed {
+            b.patch.ops.push(op);
+            b.actions.push(format!("{how} {where_}"));
+        }
+    }
+}
+
+/// The arranger's room reverb (`arrange::default_effects`), bigger for "much"; `mix` overrides
+/// its wet fraction.
+fn room_reverb(id: &str, amount: ChangeAmount, mix: Option<f64>) -> Effect {
+    let (decay, size, wet) = match amount {
+        ChangeAmount::Much => (2.6, 0.6, 0.26),
+        _ => (1.8, 0.35, 0.18),
+    };
+    effect(
+        id,
+        EffectKind::Reverb,
+        &[
+            ("decay_s", decay),
+            ("predelay_ms", 12.0),
+            ("size", size),
+            ("mix", mix.unwrap_or(wet)),
+        ],
+    )
+}
+
+fn whole_space(l: &Layer, dir: SpaceChange, amount: ChangeAmount) -> Option<(PatchOp, String)> {
+    let id = &l.id;
+    let mut effects = l.effects.clone();
+    let mut automation = l.automation.clone();
+    let reverbs: Vec<usize> = (0..effects.len())
+        .filter(|&i| is_reverb(&effects[i]))
+        .collect();
+    let how = match dir {
+        SpaceChange::Dry => {
+            if reverbs.is_empty() {
+                return None;
+            }
+            let gone: Vec<String> = reverbs
+                .iter()
+                .map(|&i| format!("effects.{}.", effects[i].id))
+                .collect();
+            effects.retain(|e| !is_reverb(e));
+            automation.retain(|a| !gone.iter().any(|g| a.target.starts_with(g.as_str())));
+            format!("took the reverb off `{id}` (dry)")
+        }
+        SpaceChange::Drier => {
+            if reverbs.is_empty() {
+                return None;
+            }
+            let f = drier_factor(amount);
+            let mut parts = Vec::new();
+            for &i in &reverbs {
+                let e = &mut effects[i];
+                let m0 = fx_param(e, "mix");
+                let m1 = round3(m0 * f);
+                e.params.insert("mix".into(), m1);
+                if e.kind == EffectKind::Reverb {
+                    let d0 = fx_param(e, "decay_s");
+                    let d1 = round3((d0 * (0.5 + f / 2.0)).max(0.3));
+                    let s0 = fx_param(e, "size");
+                    let s1 = round3((s0 - (1.0 - f) / 2.0).max(0.0));
+                    e.params.insert("decay_s".into(), d1);
+                    e.params.insert("size".into(), s1);
+                    parts.push(format!(
+                        "`{}` mix {m0:.2} -> {m1:.2}, decay {d0:.1} -> {d1:.1} s",
+                        e.id
+                    ));
+                } else {
+                    parts.push(format!("`{}` mix {m0:.2} -> {m1:.2}", e.id));
+                }
+            }
+            format!("made `{id}` drier ({})", parts.join("; "))
+        }
+        SpaceChange::Wetter if reverbs.is_empty() => {
+            let rid = free_effect_id(&effects, ROOM_REVERB_ID);
+            let room = room_reverb(&rid, amount, None);
+            let how = format!(
+                "gave `{id}` a room reverb (mix {:.2}, decay {:.1} s)",
+                fx_param(&room, "mix"),
+                fx_param(&room, "decay_s")
+            );
+            effects.push(room);
+            how
+        }
+        SpaceChange::Wetter => {
+            let step = wet_step(amount);
+            let grow = 1.0 + step * 2.5;
+            let mut parts = Vec::new();
+            for &i in &reverbs {
+                let e = &mut effects[i];
+                let m0 = fx_param(e, "mix");
+                let m1 = round3((m0 + step).min(0.6));
+                e.params.insert("mix".into(), m1);
+                if e.kind == EffectKind::Reverb {
+                    let d0 = fx_param(e, "decay_s");
+                    let d1 = round3((d0 * grow).min(8.0));
+                    let s0 = fx_param(e, "size");
+                    let s1 = round3((s0 + step).min(1.0));
+                    e.params.insert("decay_s".into(), d1);
+                    e.params.insert("size".into(), s1);
+                    parts.push(format!(
+                        "`{}` mix {m0:.2} -> {m1:.2}, decay {d0:.1} -> {d1:.1} s",
+                        e.id
+                    ));
+                } else {
+                    let d0 = fx_param(e, "decay_scale");
+                    e.params
+                        .insert("decay_scale".into(), round3((d0 * grow).min(2.0)));
+                    parts.push(format!("`{}` mix {m0:.2} -> {m1:.2}", e.id));
+                }
+            }
+            format!("gave `{id}` more room ({})", parts.join("; "))
+        }
+    };
+    settings_op(l, l.instrument.clone(), effects, automation).map(|op| (op, how))
+}
+
+/// A space change over some bars: a step lane on each reverb's `mix` that holds its own value
+/// outside the bars (a new room reverb sits at `mix` 0 outside them).
+fn bars_space(
+    l: &Layer,
+    score: &Score,
+    bars: BarRange,
+    dir: SpaceChange,
+    amount: ChangeAmount,
+) -> Option<(PatchOp, String)> {
+    let id = &l.id;
+    let mut effects = l.effects.clone();
+    let mut automation = l.automation.clone();
+    let range = bars_text(bars);
+    let mut parts = Vec::new();
+    let reverbs: Vec<usize> = (0..effects.len())
+        .filter(|&i| is_reverb(&effects[i]))
+        .collect();
+    if reverbs.is_empty() {
+        if dir != SpaceChange::Wetter {
+            return None;
+        }
+        let rid = free_effect_id(&effects, ROOM_REVERB_ID);
+        let wet = fx_param(&room_reverb(&rid, amount, None), "mix");
+        effects.push(room_reverb(&rid, amount, Some(0.0)));
+        automation.push(bar_lane(
+            format!("effects.{rid}.mix"),
+            bars,
+            score.bars,
+            0.0,
+            wet,
+        ));
+        parts.push(format!(
+            "a room reverb (mix {wet:.2}) switched on in {range} only"
+        ));
+    } else {
+        for &i in &reverbs {
+            let e = &effects[i];
+            let target = format!("effects.{}.mix", e.id);
+            if automation.iter().any(|a| a.target == target) {
+                continue;
+            }
+            let m0 = fx_param(e, "mix");
+            let m1 = round3(match dir {
+                SpaceChange::Wetter => (m0 + wet_step(amount)).min(0.6),
+                SpaceChange::Drier => m0 * drier_factor(amount),
+                SpaceChange::Dry => 0.0,
+            });
+            if m1 == m0 {
+                continue;
+            }
+            automation.push(bar_lane(target, bars, score.bars, m0, m1));
+            parts.push(format!("`{}` mix {m0:.2} -> {m1:.2} in {range} only", e.id));
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let word = match dir {
+        SpaceChange::Wetter => "more room",
+        SpaceChange::Drier => "less reverb",
+        SpaceChange::Dry => "no reverb",
+    };
+    let how = format!("gave `{id}` {word} ({})", parts.join("; "));
+    settings_op(l, l.instrument.clone(), effects, automation).map(|op| (op, how))
 }

@@ -5,6 +5,11 @@
 //! playable range, GM drum note). Where the contract lists a preset's class as "various" the class
 //! here is the planner's reading of the name; see the "Plan schema" section of
 //! docs/contracts/planner.md.
+//!
+//! Tone controls ([`ToneControls`]) copy the brightness parameters each preset declares in
+//! praxis-instruments (`tone` 0..1 on every pitched synth, the sampled pianos and the drums;
+//! `felt` 0..1 on `felt_piano`, see `sampler/presets.rs`), so a tone edit can change the sound
+//! through the instrument instead of an effect. The procedural sound effects have none.
 
 use praxis_score::{GeneratorClass, InstrumentKind};
 
@@ -25,6 +30,48 @@ pub struct PresetSpec {
     pub gm_note: Option<u8>,
     /// One line for the model.
     pub description: String,
+    /// The preset's brightness parameters, when it has any.
+    pub tone: Option<ToneControls>,
+}
+
+/// A preset's brightness parameters (names and defaults as the preset declares them).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ToneControls {
+    /// Default of `tone` (0 dark ..= 1 bright).
+    pub tone_default: f64,
+    /// Default of `felt` (0..=1, more is softer and more muffled), `felt_piano` only.
+    pub felt_default: Option<f64>,
+}
+
+impl ToneControls {
+    /// Name of the brightness parameter.
+    pub const TONE: &'static str = "tone";
+    /// Name of the felt parameter.
+    pub const FELT: &'static str = "felt";
+}
+
+/// Tone controls by preset name (praxis-instruments `PresetInfo::params`).
+fn tone_controls(name: &str) -> Option<ToneControls> {
+    let t = |tone_default: f64| {
+        Some(ToneControls {
+            tone_default,
+            felt_default: None,
+        })
+    };
+    match name {
+        "felt_piano" => Some(ToneControls {
+            tone_default: 0.5,
+            felt_default: Some(0.7),
+        }),
+        "upright_piano" | "bell" => t(0.5),
+        "soft_keys" | "fm_keys" | "warm_bass" | "granular_texture" => t(0.4),
+        "pluck" | "mallet" | "glass" => t(0.45),
+        "sub_bass" => t(0.3),
+        "noise_bed" => t(0.35),
+        "soft_kick" | "kick" | "snare" | "rim" | "hat_closed" | "hat_open" | "shaker"
+        | "tom_low" | "tom_mid" | "tom_high" | "clap" | "kit" => t(0.5),
+        _ => None,
+    }
 }
 
 /// The presets the planner can choose from.
@@ -59,6 +106,7 @@ fn spec(
         range,
         gm_note,
         description: description.to_string(),
+        tone: tone_controls(name),
     }
 }
 
@@ -423,6 +471,14 @@ impl Catalogue {
                     "range": [p.range.0, p.range.1],
                     "gm_note": p.gm_note,
                     "description": p.description,
+                    "tone_params": p.tone.map(|t| {
+                        let mut m = serde_json::Map::new();
+                        m.insert(ToneControls::TONE.into(), t.tone_default.into());
+                        if let Some(f) = t.felt_default {
+                            m.insert(ToneControls::FELT.into(), f.into());
+                        }
+                        serde_json::Value::Object(m)
+                    }),
                 })
             })
             .collect();
@@ -499,5 +555,27 @@ mod tests {
         }
         assert_eq!(class_name(GeneratorClass::Riser), "riser");
         assert!(c.prompt_listing().contains("felt_piano (kind sampler"));
+    }
+
+    #[test]
+    fn tone_controls_follow_the_presets() {
+        let c = Catalogue::standard();
+        let felt = c.get("felt_piano").and_then(|p| p.tone).expect("felt tone");
+        assert_eq!(felt.tone_default, 0.5);
+        assert_eq!(felt.felt_default, Some(0.7));
+        assert_eq!(
+            c.get("upright_piano")
+                .and_then(|p| p.tone)
+                .map(|t| t.felt_default),
+            Some(None)
+        );
+        for p in &c.presets {
+            let sfx = p.kind == InstrumentKind::Sfx;
+            assert_eq!(p.tone.is_none(), sfx, "{}", p.name);
+        }
+        assert_eq!(
+            c.to_json()["presets"][0]["tone_params"],
+            serde_json::json!({"tone": 0.5, "felt": 0.7})
+        );
     }
 }

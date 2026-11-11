@@ -23,8 +23,10 @@ pub struct EditPlan {
     pub scope: EditScope,
     /// Existing layers the edit changes, by id, name, preset or role ("piano", "kick",
     /// "melody"). Leave empty for `add_layer` and `add_melody` (they create a new layer). For
-    /// `rewrite_motif`, `change_dynamics` and `thin_out`, empty means every unlocked layer that
-    /// plays in the scope. Locked layers are never changed.
+    /// `rewrite_motif`, `change_dynamics`, `thin_out`, `change_tone` and `change_space`, empty
+    /// means every unlocked layer that
+    /// plays in the scope (for `change_space`, layers that already have a reverb plus pitched,
+    /// sustaining ones when a reverb is added). Locked layers are never changed.
     #[serde(default)]
     pub layers: Vec<String>,
     #[serde(default)]
@@ -60,7 +62,8 @@ pub enum EditIntent {
     /// A new melody layer (default: a soft upright piano in the high register that follows the
     /// chords) playing in the scope.
     AddMelody,
-    /// New motif material for the target layers in the scope (same instrument and role).
+    /// New motif material for the target layers in the scope (same instrument and role). Only
+    /// when the user asks for new notes: a new melody, motif or rhythm, a variation.
     RewriteMotif,
     /// The target layers play `params.preset` instead (in the scope only, when bars are given).
     ChangeInstrument,
@@ -70,6 +73,50 @@ pub enum EditIntent {
     RemoveLayer,
     /// The target layers keep only their accented notes and the beats in the scope.
     ThinOut,
+    /// The target layers sound darker (muffled, muted, warmer, mellow) or brighter (clearer,
+    /// crisper, more air): `params.tone`, `params.amount`. The notes never change.
+    ChangeTone,
+    /// The target layers get more or less reverb: `params.space`, `params.amount`. The notes
+    /// never change.
+    ChangeSpace,
+    /// The instruction asks for no change the planner can make. Nothing changes; the summary
+    /// says what edits are possible. Say why in `notes`.
+    NotUnderstood,
+}
+
+/// Darker or brighter.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ToneChange {
+    /// Muffled, muted, darker, warmer, duller, mellow, a softer tone.
+    Darker,
+    /// Brighter, clearer, crisper, more air.
+    Brighter,
+}
+
+/// More or less reverb.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SpaceChange {
+    /// More room, bigger, hall, more space, further away.
+    Wetter,
+    /// Less reverb, closer, more intimate.
+    Drier,
+    /// No reverb at all: the layer's reverbs are removed.
+    Dry,
+}
+
+/// Size of a tone or space change.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ChangeAmount {
+    /// "a little", "slightly", "a touch".
+    ALittle,
+    /// The default.
+    #[default]
+    Normal,
+    /// "much", "a lot", "very".
+    Much,
 }
 
 /// Softer or louder.
@@ -121,6 +168,15 @@ pub struct EditParams {
     /// Motif length of new material in bars (1..=8).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length_bars: Option<u32>,
+    /// `change_tone`: darker or brighter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tone: Option<ToneChange>,
+    /// `change_space`: wetter, drier or dry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub space: Option<SpaceChange>,
+    /// `change_tone` / `change_space`: how much (default `normal`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amount: Option<ChangeAmount>,
 }
 
 /// JSON Schema of [`EditPlan`] (the `edit_score` tool's input schema).

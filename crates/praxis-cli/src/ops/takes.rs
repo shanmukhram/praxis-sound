@@ -272,6 +272,9 @@ fn title_of(plan: &EditPlan, bars: Option<BarRange>) -> String {
         },
         EditIntent::RemoveLayer => "Layer removed",
         EditIntent::ThinOut => "Thinned out",
+        EditIntent::ChangeTone => "New tone",
+        EditIntent::ChangeSpace => "New space",
+        EditIntent::NotUnderstood => "No change",
     };
     match bars {
         Some(b) => format!("{word}, {}", bars_label([b.start, b.end])),

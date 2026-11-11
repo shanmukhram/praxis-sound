@@ -156,3 +156,71 @@ fn claude_edit_with_one_repair_round() {
     // The key never appears in a request body.
     assert!(!reqs.iter().any(|r| r.to_string().contains(FAKE_KEY)));
 }
+
+/// A tone request through Claude: the request teaches `change_tone` (system prompt and schema),
+/// the replayed answer changes the piano's sound and no note, and a `not_understood` answer
+/// changes nothing.
+#[test]
+fn claude_tone_edit_and_not_understood() {
+    use praxis_planner::edit::{EditIntent, ToneChange};
+    use praxis_score::timeline::expand_notes;
+    let score = plan_brief(BRIEF, &RuleProvider::new(), &Catalogue::standard(), 1)
+        .expect("plan")
+        .score;
+    let (p, replay) = provider(vec![tool_response(json!({
+        "intent": "change_tone",
+        "layers": ["piano"],
+        "params": {"tone": "darker", "amount": "normal"}
+    }))]);
+    let out = plan_edit(
+        &score,
+        "can you keep the piano but make it sound muffled?",
+        &p,
+        &Catalogue::standard(),
+        3,
+    )
+    .expect("edit");
+    assert_eq!(out.plan.intent, EditIntent::ChangeTone);
+    assert_eq!(out.plan.params.tone, Some(ToneChange::Darker));
+    assert_eq!(out.attempts, 1);
+    assert_eq!(
+        expand_notes(&score, 48_000),
+        expand_notes(&out.score, 48_000)
+    );
+    let piano = out.score.layer("piano").expect("piano");
+    assert_eq!(piano.instrument.params.get("tone"), Some(&0.2));
+    let reqs = replay.requests.lock().expect("lock");
+    let system = reqs[0]["system"].as_str().expect("system");
+    assert!(
+        system.contains("change_tone")
+            && system.contains("change_space")
+            && system.contains("not_understood")
+            && system.contains("felt_piano (tone 0.50, felt 0.70)"),
+        "{system}"
+    );
+    let schema = reqs[0]["tools"][0]["input_schema"].to_string();
+    for word in [
+        "change_tone",
+        "change_space",
+        "not_understood",
+        "darker",
+        "wetter",
+        "a_little",
+    ] {
+        assert!(schema.contains(word), "schema lacks {word}");
+    }
+    drop(reqs);
+
+    let (p, _) = provider(vec![tool_response(json!({
+        "intent": "not_understood",
+        "notes": ["\"make it pop\" does not say what to change"]
+    }))]);
+    let out = plan_edit(&score, "make it pop", &p, &Catalogue::standard(), 3).expect("edit");
+    assert!(!out.changed() && !out.understood());
+    assert_eq!(out.score, score);
+    assert!(
+        out.summary.starts_with("Nothing changed"),
+        "{}",
+        out.summary
+    );
+}

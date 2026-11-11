@@ -3,12 +3,17 @@
 //!
 //! It reads: bar phrases ("the last four bars", "bars 9-12", "second half", "from bar 9"),
 //! keep clauses ("keep the first half"), intents (add / add a melody, remove / drop, softer /
-//! louder, thin out / sparser, swap X for Y / change X to Y, rewrite / vary / new motif),
-//! instruments and layer references (piano, kick, bells, bass, hats, melody, drums ...),
-//! register and dynamics words for new material (subtle, soft, high, low), grid words and a
-//! quoted spoken rhythm.
+//! louder, thin out / sparser, swap X for Y / change X to Y, tone: muffled / darker / brighter,
+//! space: more room / drier / no reverb, and new notes: rewrite / vary / new motif / change the
+//! melody), instruments and layer references (piano, kick, bells, bass, hats, melody, drums ...),
+//! register and dynamics words for new material (subtle, soft, high, low), "a little" / "much"
+//! amounts, grid words and a quoted spoken rhythm. An instruction with none of these intents is
+//! `not_understood`: it never falls back to rewriting notes.
 
-use super::plan::{DynamicsChange, EDIT_TOOL_NAME, EditIntent, EditParams, EditPlan, EditScope};
+use super::plan::{
+    ChangeAmount, DynamicsChange, EDIT_TOOL_NAME, EditIntent, EditParams, EditPlan, EditScope,
+    SpaceChange, ToneChange,
+};
 use super::scope::{Phrase, find_phrase, words};
 use crate::catalogue::Catalogue;
 use crate::plan::{Dynamics, Register};
@@ -231,17 +236,217 @@ const LOUDER: [&str; 8] = [
     "louder", "stronger", "harder", "punchier", "up", "bigger", "boost", "more",
 ];
 
+/// Tone qualities: darker ones, brighter ones. "less"/"not as" before one flips it.
+const DARKER: &[&str] = &[
+    "muffled", "muffle", "muffles", "muffling", "muted", "darker", "dark", "darken", "warmer",
+    "warm", "warmth", "duller", "mellow", "mellower", "rounder", "smoother",
+];
+const BRIGHTER: &[&str] = &[
+    "brighter", "bright", "brighten", "clearer", "crisper", "crisp", "airier", "airy", "sparkly",
+    "shinier", "sharper",
+];
+/// Complaints that ask for the opposite quality, with or without "less" / "too".
+const TOO_BRIGHT: &[&str] = &["harsh", "harsher", "brittle", "shrill", "piercing", "tinny"];
+const TOO_DARK: &[&str] = &["muddy", "murky", "boomy"];
+/// Words that name the high end ("cut the highs" is darker, "more treble" brighter).
+const HIGHS: &[&str] = &["highs", "treble", "air", "sparkle"];
+/// Reverb nouns.
+const REVERB: &[&str] = &[
+    "reverb",
+    "reverberation",
+    "verb",
+    "room",
+    "space",
+    "ambience",
+    "ambiance",
+    "echo",
+];
+const WETTER: &[&str] = &[
+    "wetter",
+    "wet",
+    "roomier",
+    "spacious",
+    "spacier",
+    "bigger",
+    "huge",
+    "vast",
+    "distant",
+    "further",
+    "farther",
+    "washy",
+    "lush",
+    "hall",
+    "cathedral",
+];
+const DRIER: &[&str] = &["drier", "dryer", "closer", "intimate", "upfront"];
+const LESS: &[&str] = &[
+    "less", "reduce", "lower", "fewer", "smaller", "down", "tame",
+];
+const MORE: &[&str] = &[
+    "more", "add", "increase", "boost", "up", "extra", "lots", "bigger",
+];
+const NO: &[&str] = &[
+    "no", "without", "remove", "drop", "cut", "kill", "lose", "off",
+];
+const A_LITTLE: &[&str] = &[
+    "little", "slightly", "bit", "touch", "tad", "subtly", "somewhat", "hint", "gently",
+];
+const MUCH: &[&str] = &[
+    "much",
+    "lot",
+    "lots",
+    "way",
+    "very",
+    "really",
+    "far",
+    "heavily",
+    "completely",
+    "totally",
+    "hall",
+    "cathedral",
+];
+/// Things a request for new notes names.
+const NOTE_WORDS: &[&str] = &[
+    "melody",
+    "melodies",
+    "motif",
+    "motifs",
+    "rhythm",
+    "rhythms",
+    "notes",
+    "note",
+    "pattern",
+    "patterns",
+    "tune",
+    "riff",
+    "line",
+    "part",
+    "phrase",
+    "phrases",
+    "groove",
+    "chords",
+    "harmony",
+    "progression",
+];
+
+/// True when word `i` follows "less", "not as", "not so" or "no longer" within two words.
+fn negated(w: &[String], i: usize) -> bool {
+    let lo = i.saturating_sub(2);
+    w[lo..i]
+        .iter()
+        .any(|x| matches!(x.as_str(), "less" | "not" | "no" | "never"))
+}
+
+/// Size of a tone or space change.
+fn amount_of(w: &[String]) -> Option<ChangeAmount> {
+    if has(w, MUCH) {
+        Some(ChangeAmount::Much)
+    } else if has(w, A_LITTLE) {
+        Some(ChangeAmount::ALittle)
+    } else {
+        None
+    }
+}
+
+/// The tone change an instruction asks for, if any.
+fn tone_of(w: &[String]) -> Option<ToneChange> {
+    // "tone down" is a dynamics phrase.
+    let tone_word = w.iter().enumerate().any(|(i, x)| {
+        matches!(x.as_str(), "tone" | "timbre") && w.get(i + 1).is_none_or(|n| n != "down")
+    });
+    for (i, x) in w.iter().enumerate() {
+        let x = x.as_str();
+        if DARKER.contains(&x) {
+            return Some(if negated(w, i) {
+                ToneChange::Brighter
+            } else {
+                ToneChange::Darker
+            });
+        }
+        if BRIGHTER.contains(&x) {
+            return Some(if negated(w, i) {
+                ToneChange::Darker
+            } else {
+                ToneChange::Brighter
+            });
+        }
+        if TOO_BRIGHT.contains(&x) {
+            return Some(ToneChange::Darker);
+        }
+        if TOO_DARK.contains(&x) {
+            return Some(ToneChange::Brighter);
+        }
+        if HIGHS.contains(&x)
+            || (x == "end" && i > 0 && matches!(w[i - 1].as_str(), "high" | "top"))
+        {
+            let before = &w[..i];
+            if before
+                .iter()
+                .any(|b| LESS.contains(&b.as_str()) || NO.contains(&b.as_str()) || b == "roll")
+            {
+                return Some(ToneChange::Darker);
+            }
+            if before.iter().any(|b| MORE.contains(&b.as_str())) {
+                return Some(ToneChange::Brighter);
+            }
+        }
+        // "a softer tone", "a gentler timbre".
+        if tone_word && matches!(x, "softer" | "soft" | "gentler" | "gentle" | "rounder") {
+            return Some(ToneChange::Darker);
+        }
+        if tone_word && matches!(x, "harder" | "edgier" | "brighter") {
+            return Some(ToneChange::Brighter);
+        }
+    }
+    None
+}
+
+/// The space change an instruction asks for, if any.
+fn space_of(w: &[String]) -> Option<SpaceChange> {
+    // "too much reverb", "the room is too big": less of it.
+    let too_much = w.windows(2).any(|p| {
+        p[0] == "too" && (p[1] == "much" || p[1] == "big" || WETTER.contains(&p[1].as_str()))
+    });
+    let any = |list: &[&str]| w.iter().any(|x| list.contains(&x.as_str()));
+    if let Some(i) = w.iter().position(|x| REVERB.contains(&x.as_str())) {
+        let near = &w[i.saturating_sub(3)..i];
+        if any(NO) || (has(w, &["dry"]) && !near.iter().any(|b| b == "more")) {
+            return Some(SpaceChange::Dry);
+        }
+        if too_much || any(LESS) || any(DRIER) {
+            return Some(SpaceChange::Drier);
+        }
+        // "more room", "give it some space", "add reverb", "turn the reverb up": more.
+        return Some(SpaceChange::Wetter);
+    }
+    if has(w, &["dry"]) {
+        return Some(SpaceChange::Dry);
+    }
+    if too_much || any(DRIER) || has_seq(w, &["up", "front"]) {
+        return Some(SpaceChange::Drier);
+    }
+    if any(WETTER) || has_seq(w, &["far", "away"]) {
+        return Some(SpaceChange::Wetter);
+    }
+    None
+}
+
 /// Reads an edit instruction. Never fails: an instruction with no recognisable intent becomes
-/// a `rewrite_motif` of whatever it names, and the planner's resolution explains what is
-/// missing.
+/// a `not_understood` plan (no change), never a rewrite of notes.
 pub fn parse_edit(instruction: &str) -> EditPlan {
     let mut keep: Option<Phrase> = None;
     let mut scope: Option<Phrase> = None;
     let mut change_words: Vec<String> = Vec::new();
+    // Layers a keep clause names without bars ("keep the piano but make it muffled"): a tone or
+    // space edit, which keeps the notes, is about them.
+    let mut kept_layers: Vec<String> = Vec::new();
     for clause in clauses(instruction) {
         let w = words(&clause);
         let found = find_phrase(&w, 0).map(|(p, _, _)| p);
         if is_keep_clause(&w) && !has(&w, &["add", "change", "make", "remove", "drop"]) {
+            if found.is_none() {
+                kept_layers.extend(mentions(&w).into_iter().map(|m| m.reference));
+            }
             if keep.is_none() {
                 keep = found;
             }
@@ -276,19 +481,31 @@ pub fn parse_edit(instruction: &str) -> EditPlan {
     );
     let softer = has(&w, &SOFTER) || has_seq(&w, &["tone", "down"]);
     let louder = has(&w, &LOUDER) || has_seq(&w, &["bring", "up"]);
+    // New notes only when asked for: a rewrite verb, "change/redo the melody", a new rhythm.
     let rewrites = has(
         &w,
         &[
             "rewrite",
+            "rewrites",
             "vary",
             "variation",
+            "variations",
             "different",
             "new",
-            "change",
             "rework",
             "reimagine",
+            "recompose",
+            "reharmonise",
+            "reharmonize",
         ],
-    );
+    ) || (has(&w, &["change", "alter", "redo", "rewrite", "mix", "switch"])
+        && has(&w, NOTE_WORDS))
+        || quoted_spoken(instruction).is_some()
+        || (grid_of(&w).is_some() && !ms.is_empty());
+    let tone = tone_of(&w);
+    let space = space_of(&w);
+    // "add a bell with lots of reverb" adds a layer; "add reverb" / "add some warmth" do not.
+    let adds_instrument = adds && (ms.iter().any(|m| m.preset.is_some()) || melody_word);
 
     let mut plan = EditPlan {
         intent: EditIntent::RewriteMotif,
@@ -302,8 +519,23 @@ pub fn parse_edit(instruction: &str) -> EditPlan {
         notes: vec![],
     };
     let named: Vec<String> = ms.iter().map(|m| m.reference.clone()).collect();
+    let sound_targets = if named.is_empty() {
+        kept_layers
+    } else {
+        named.clone()
+    };
 
-    if adds && (melody_word || ms.is_empty()) && !removes {
+    if let Some(space) = space.filter(|_| !adds_instrument) {
+        plan.intent = EditIntent::ChangeSpace;
+        plan.layers = sound_targets;
+        plan.params.space = Some(space);
+        plan.params.amount = amount_of(&w);
+    } else if let Some(tone) = tone.filter(|_| !adds_instrument && !(swaps && ms.len() >= 2)) {
+        plan.intent = EditIntent::ChangeTone;
+        plan.layers = sound_targets;
+        plan.params.tone = Some(tone);
+        plan.params.amount = amount_of(&w);
+    } else if adds && (melody_word || ms.is_empty()) && !removes {
         plan.intent = EditIntent::AddMelody;
         // An instrument named for the melody ("add a bell melody").
         if let Some(m) = ms.iter().find(|m| m.preset.is_some()) {
@@ -356,15 +588,18 @@ pub fn parse_edit(instruction: &str) -> EditPlan {
         } else if has(&w, &["slightly", "little", "bit", "touch", "tad"]) {
             plan.params.amount_db = Some(2.0);
         }
-    } else {
+    } else if rewrites {
         plan.intent = EditIntent::RewriteMotif;
         plan.layers = named;
-        if !rewrites {
-            plan.notes
-                .push("no edit verb recognised; rewriting the motif of what was named".into());
-        }
         plan.params.spoken = quoted_spoken(instruction);
         plan.params.grid = grid_of(&w);
+    } else {
+        plan.intent = EditIntent::NotUnderstood;
+        plan.layers = named;
+        plan.notes.push(format!(
+            "\"{}\" names no change I recognise",
+            instruction.trim()
+        ));
     }
     plan
 }
@@ -517,5 +752,181 @@ mod tests {
         assert!(p.layers.is_empty());
         assert_eq!(p.params.change, Some(DynamicsChange::Louder));
         assert_eq!(p.params.amount_db, Some(6.0));
+    }
+
+    fn tone(
+        text: &str,
+    ) -> (
+        EditIntent,
+        Option<ToneChange>,
+        Option<ChangeAmount>,
+        Vec<String>,
+    ) {
+        let p = parse_edit(text);
+        (p.intent, p.params.tone, p.params.amount, p.layers)
+    }
+
+    fn space(text: &str) -> (EditIntent, Option<SpaceChange>, Option<ChangeAmount>) {
+        let p = parse_edit(text);
+        (p.intent, p.params.space, p.params.amount)
+    }
+
+    #[test]
+    fn reads_tone_requests() {
+        use ChangeAmount::*;
+        use EditIntent::ChangeTone as T;
+        use ToneChange::*;
+        let piano = vec!["piano".to_string()];
+        assert_eq!(
+            tone("make the piano muffled"),
+            (T, Some(Darker), None, piano.clone())
+        );
+        // The owner's question: the kept piano is the layer whose sound changes.
+        assert_eq!(
+            tone("can you keep the piano but make it sound muffled?"),
+            (T, Some(Darker), None, piano.clone())
+        );
+        assert_eq!(
+            tone("make it a little darker"),
+            (T, Some(Darker), Some(ALittle), vec![])
+        );
+        assert_eq!(
+            tone("Make it a little brighter"),
+            (T, Some(Brighter), Some(ALittle), vec![])
+        );
+        assert_eq!(tone("much warmer piano").1, Some(Darker));
+        assert_eq!(tone("much warmer piano").2, Some(Much));
+        for t in [
+            "muted piano",
+            "duller",
+            "mellow it out",
+            "give the piano a softer tone",
+        ] {
+            assert_eq!(tone(t).0, T, "{t}");
+            assert_eq!(tone(t).1, Some(Darker), "{t}");
+        }
+        for t in [
+            "clearer please",
+            "crisper hats",
+            "more air on the bells",
+            "less muffled",
+        ] {
+            assert_eq!(tone(t).0, T, "{t}");
+            assert_eq!(tone(t).1, Some(Brighter), "{t}");
+        }
+        assert_eq!(tone("it's too harsh").1, Some(Darker));
+        assert_eq!(tone("less bright").1, Some(Darker));
+        let p = parse_edit("muffle the piano in the last four bars");
+        assert_eq!(p.intent, T);
+        assert_eq!(p.scope.phrase.as_deref(), Some("the last 4 bars"));
+        // "tone down" stays a dynamics phrase; "make the kick softer" too.
+        assert_eq!(
+            parse_edit("tone down the kick").intent,
+            EditIntent::ChangeDynamics
+        );
+        assert_eq!(
+            parse_edit("make the kick softer").intent,
+            EditIntent::ChangeDynamics
+        );
+        // Adding a darker melody is still an add.
+        assert_eq!(
+            parse_edit("add a dark bell melody").intent,
+            EditIntent::AddMelody
+        );
+    }
+
+    #[test]
+    fn reads_space_requests() {
+        use ChangeAmount::*;
+        use EditIntent::ChangeSpace as S;
+        use SpaceChange::*;
+        assert_eq!(space("Give it more room"), (S, Some(Wetter), None));
+        assert_eq!(space("Make it drier"), (S, Some(Drier), None));
+        assert_eq!(space("less reverb on the piano"), (S, Some(Drier), None));
+        assert_eq!(
+            space("put the piano in a hall"),
+            (S, Some(Wetter), Some(Much))
+        );
+        assert_eq!(
+            space("make it a bit wetter"),
+            (S, Some(Wetter), Some(ALittle))
+        );
+        assert_eq!(space("more space"), (S, Some(Wetter), None));
+        assert_eq!(space("make it bigger"), (S, Some(Wetter), None));
+        assert_eq!(space("bring the piano closer"), (S, Some(Drier), None));
+        assert_eq!(space("remove the reverb"), (S, Some(Dry), None));
+        assert_eq!(space("make it completely dry"), (S, Some(Dry), Some(Much)));
+        assert_eq!(space("no reverb on the kick").1, Some(Dry));
+        assert_eq!(space("add some reverb").1, Some(Wetter));
+        assert_eq!(space("turn the reverb down").1, Some(Drier));
+        assert_eq!(space("turn the reverb up").1, Some(Wetter));
+        assert_eq!(space("there is too much reverb").1, Some(Drier));
+        assert_eq!(space("take the reverb off the piano").1, Some(Dry));
+        // An instrument with reverb is still a new layer.
+        assert_eq!(
+            parse_edit("add a bell with lots of reverb").intent,
+            EditIntent::AddLayer
+        );
+    }
+
+    #[test]
+    fn new_notes_only_when_asked_and_never_as_a_fallback() {
+        for t in [
+            "change the melody",
+            "a different rhythm for the piano",
+            "new motif in bars 9-12",
+            "vary it",
+            "play the hats in sixteenths",
+        ] {
+            assert_eq!(parse_edit(t).intent, EditIntent::RewriteMotif, "{t}");
+        }
+        for t in [
+            "make it pop",
+            "piano",
+            "do something cool",
+            "change the piano",
+        ] {
+            let p = parse_edit(t);
+            assert_eq!(p.intent, EditIntent::NotUnderstood, "{t}");
+            assert!(p.notes[0].contains(t), "{:?}", p.notes);
+        }
+    }
+
+    /// The Feel sliders' phrases (app/src/ui/views/overview.ts `MACROS`).
+    #[test]
+    fn reads_every_feel_slider_phrase() {
+        use EditIntent::*;
+        let cases: [(&str, EditIntent); 8] = [
+            ("Make the mood calmer", ChangeDynamics),
+            ("Make the mood more tense", ChangeDynamics),
+            ("Make it a little darker", ChangeTone),
+            ("Make it a little brighter", ChangeTone),
+            ("Make it drier", ChangeSpace),
+            ("Give it more room", ChangeSpace),
+            ("Calmer, less energy", ChangeDynamics),
+            ("More energy", ChangeDynamics),
+        ];
+        for (text, intent) in cases {
+            let p = parse_edit(text);
+            assert_eq!(p.intent, intent, "{text}");
+            assert!(p.layers.is_empty(), "{text}: {:?}", p.layers);
+            assert_eq!(p.scope, EditScope::default(), "{text}");
+        }
+        assert_eq!(
+            parse_edit("Make the mood calmer").params.change,
+            Some(DynamicsChange::Softer)
+        );
+        assert_eq!(
+            parse_edit("Make the mood more tense").params.change,
+            Some(DynamicsChange::Louder)
+        );
+        assert_eq!(
+            parse_edit("Calmer, less energy").params.change,
+            Some(DynamicsChange::Softer)
+        );
+        assert_eq!(
+            parse_edit("More energy").params.change,
+            Some(DynamicsChange::Louder)
+        );
     }
 }
