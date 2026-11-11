@@ -9,7 +9,8 @@
 // with the acceptance-1 motif entered in Rhythm (the rhythm, said a bar at a time) and Notes (the
 // pitches, note by note); a soft-kick layer in bars 9-16; one take; 60 s of playback through the
 // real-time engine; WAV, FLAC, stems and MIDI exported. It prints the numbers and writes
-// screenshots to app/screenshots/exit-*.png. Never plays through the speakers.
+// screenshots to app/screenshots/exit-*.png. Never plays through the speakers, and never calls the
+// Claude API (PRAXIS_KEYCHAIN=off; hand takes need no planner).
 
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
@@ -32,6 +33,9 @@ const app = spawn(exe, [], {
     ...process.env,
     PRAXIS_HOME: home,
     PRAXIS_AUDIO_OUTPUT: 'fake',
+    // No paid API call from a test run: requests in words use the offline planner.
+    PRAXIS_KEYCHAIN: 'off',
+    ANTHROPIC_API_KEY: '',
     PRAXIS_PACKS: process.env.PRAXIS_PACKS ?? path.join(repo, 'packs'),
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${PORT}`,
   },
