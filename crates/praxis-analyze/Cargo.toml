@@ -17,6 +17,7 @@ thiserror.workspace = true
 realfft.workspace = true
 rustfft.workspace = true
 ebur128.workspace = true
+blake3.workspace = true
 [dev-dependencies]
 praxis-testkit.workspace = true
 [lints]

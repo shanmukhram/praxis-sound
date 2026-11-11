@@ -32,8 +32,8 @@ the module docs of `features/*`). Pure and WebAssembly-safe: no files, clocks or
 same samples give the same profile. Details beyond the table:
 
 - **source.pcm_hash**: BLAKE3 over the little-endian bits of every left sample, then every right
-  sample (the same bytes as `praxis_testkit::audio_hash`), implemented in `hash.rs` because the
-  crate has no `blake3` dependency; tested against the published vectors and the `blake3` crate.
+  sample (the same bytes as `praxis_testkit::audio_hash`), with the `blake3` crate (std only,
+  WebAssembly-safe); tested against the published vectors and `praxis_testkit::audio_hash`.
 - **tempo**: no tempo with fewer than 4 onsets. Profiles use the tempo estimator with an octave
   tie ratio of 0.9 (a faster octave relative within 10 % of the strongest wins) instead of the
   0.97 that render verification keeps: with 0.97, eighth-note music at 155-175 BPM read at half

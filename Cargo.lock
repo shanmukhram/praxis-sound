@@ -3683,6 +3683,7 @@ checksum = "cd4acc8d264ea385db64ccfdcdfd5909ee9eda0975666723d59f3bfec80b3611"
 name = "praxis-analyze"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "ebur128",
  "praxis-dsp",
  "praxis-score",
