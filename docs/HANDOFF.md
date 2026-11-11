@@ -129,7 +129,11 @@ cleanly with them, move both settings into `.claude/worktrees/.cargo/config.toml
 Dev Drive is the owner's call (not set up); Cranelift was rejected (tests run optimised). Running now:
 WP-H sound-effect patches (session `local_deff1b16-ac90-43ee-bf77-188cb404cccd`, brief
 `docs/briefs/WP-H-sfx-patches.md`). WP-D1b, WP-R, WP-K2 and WP-U3 are merged. The second slot is
-free for reviews or the next package (next: wire the real-time engine into the app, see section 6).
+now WP-U4 real-time playback in the app (`local_357d4a07-2ba0-438e-8411-b2a171c1a850`, brief
+`docs/briefs/WP-U4-realtime-in-app.md`, allowed to edit the playback part of `app/src/ui/shell.ts`).
+Waiting for a slot: WP-P2b tone and space edits (`local_0bb0fb8b-9b03-4896-a09b-59cd7c6a1d28`,
+brief `docs/briefs/WP-P2b-tone-space-edits.md`): it reads and writes code but must not build
+until messaged "slot free"; send that when WP-H or WP-U4 finishes.
 
 Merge order: WP-D1b and WP-R whenever they are ready; WP-K2 before finishing WP-U3. WP-U3 and
 WP-R both may touch `Cargo.lock` (and U3 the root `Cargo.toml`): resolve by keeping both
