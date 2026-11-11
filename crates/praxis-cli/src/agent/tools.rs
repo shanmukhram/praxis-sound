@@ -290,8 +290,8 @@ impl ToolResult {
                     m["summary"].as_str().unwrap_or("").to_string()
                 }
                 Value::Object(m) if m.contains_key("check") => format!(
-                    "passed {}, failed {}",
-                    m["check"]["passed"], m["check"]["failed"]
+                    "passed {}, failed {}, can't tell {}",
+                    m["check"]["passed"], m["check"]["failed"], m["check"]["inconclusive"]
                 ),
                 _ => "ok".to_string(),
             }
@@ -449,6 +449,7 @@ fn take_line(t: &ops::TakeRecord) -> Value {
         "identical_bars": t.identical_bars,
         "checks_passed": t.checks["passed"],
         "checks_failed": t.checks["failed"],
+        "checks_cant_tell": t.checks["inconclusive"],
     })
 }
 
@@ -799,6 +800,8 @@ fn render_check(draft: &mut Draft) -> ToolResult {
         "check": {
             "passed": check["passed"],
             "failed": check["failed"],
+            "inconclusive": check["inconclusive"],
+            "summary": check["summary"],
             "checks": check["checks"],
         },
         "loudness_lufs": r["loudness_lufs"],
@@ -882,6 +885,7 @@ fn make_variations(
                 "changed_layers": i["changed_layers"],
                 "checks_passed": i["render"]["check"]["passed"],
                 "checks_failed": i["render"]["check"]["failed"],
+                "checks_cant_tell": i["render"]["check"]["inconclusive"],
             })).collect::<Vec<_>>()),
             "next": "keep_variation with the index of the one to keep, or leave them",
         })),

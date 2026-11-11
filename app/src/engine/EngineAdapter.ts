@@ -122,9 +122,16 @@ export type Unsubscribe = () => void;
 export interface VerifyCheck {
   /** "tempo", "key", "grid", "loudness", "true_peak", "loop_seam", "clipping", "silence". */
   name: string;
+  /** False for a failed check and for an inconclusive one. */
   passed: boolean;
+  /** An inconclusive check's ends with "; can't tell: <reason in plain words>". */
   measured: string;
   expected: string;
+  /**
+   * The material cannot decide this check (tempo or key): "can't tell from these notes". Neither
+   * passed nor failed; `VerifyReport.passed` ignores it.
+   */
+  inconclusive?: boolean;
 }
 
 /**

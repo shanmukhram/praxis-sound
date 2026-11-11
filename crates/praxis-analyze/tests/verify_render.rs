@@ -89,7 +89,9 @@ fn octave_error_fails_tempo() {
     wrong.bars = 4;
     let r = verify_render(&wrong, &b, SR, &Tolerances::default());
     print_report("128 bpm render vs 64 bpm score", &r);
-    assert!(!check(&r, "tempo").passed);
+    // Heard with confidence 0.85: a failure, not "can't tell".
+    let t = check(&r, "tempo");
+    assert!(!t.passed && !t.inconclusive);
 }
 
 #[test]
