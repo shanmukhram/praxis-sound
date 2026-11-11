@@ -6,7 +6,7 @@ Only things the owner can give. Work continues on everything they do not block.
 | --- | --- | --- | --- |
 | 1 | **Anthropic API key** for the Claude planner and the assistant agent. | Live Claude planning, the assistant's live run | **done 2026-11-11**: stored by the owner with `praxis key set` (Windows Credential Manager, service `praxis-sound`) |
 | 2 | **Listening sign-off, Phase 2**: `demos/phase-2/acceptance1_mixed_loop.flac` (+ x3 seam file). | Phase 2 exit | **done 2026-11-11**: owner listened and said "its perfect" |
-| 3 | **Real-hardware check, Phase 3**: open the release app yourself and play; checklist in `docs/phase-3-hardware-check.md`. Nothing plays unless you press Play. | Phase 3 sign-off | **ready** |
+| 3 | **Real-hardware check, Phase 3** (`docs/phase-3-hardware-check.md`). | Phase 3 sign-off | **done 2026-11-11**: owner built a sound by hand in the release app and tested play, loop, mute/solo, swaps, seek, loop range and export on their speakers: "everything is good" |
 | 4 | **Labelled reference clips** you own with known tempo/key (optional; we self-make the test set). | Nothing | optional |
 
 ## Decided by the owner (2026-11-10)
@@ -25,3 +25,7 @@ Only things the owner can give. Work continues on everything they do not block.
   pushes run nothing; the full Linux/Windows/macOS + wasm check runs by hand at phase exits and
   before a release (`gh workflow run ci --ref build/integration`). This replaces "every push tests
   macOS and Linux". Buy nothing still holds: no spending limit raise.
+- Sounds live in `C:\Users\admin\Praxis Sound` by default (2026-11-11), not Documents: Windows'
+  Controlled Folder Access (ransomware protection, on for this PC) blocked the unsigned app from
+  writing there and it closed at start. If its folder cannot be created, the app now falls back to
+  `%LOCALAPPDATA%\Praxis Sound` instead of closing.

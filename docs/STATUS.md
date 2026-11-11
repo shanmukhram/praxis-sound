@@ -2,7 +2,7 @@
 
 Updated after every merge. Newest first. Branch: `build/integration` (pushed to `origin`).
 
-## Current phase: 3 exit passed on this machine; waiting for the owner's real-hardware check (docs/NEEDS_OWNER.md item 3)
+## Current phase: 4 (Phases 0-3 closed; Phase 3 signed off by the owner 2026-11-11). Next: the assistant's live run
 
 Wave 1 (WP-A, B1, B2, C1, D1, E, F, P) runs as background agents in worktrees. From wave 2 on,
 work packages run as visible sessions (owner's choice), briefed from `docs/briefs/`. WP-X (MCP
@@ -36,6 +36,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- **Phase 3 closed.** The owner's real-hardware check passed: a sound built by hand in the release app (sounds in `C:\Users\admin\Praxis Sound`); play, loop seam, mute/solo, a scoped swap while playing, seek, loop range and export all good on their speakers. Found during it: (1) the release app closed at start because Windows' Controlled Folder Access blocks the unsigned app from writing into Documents; the owner chose `C:\Users\admin\Praxis Sound` as the default, and the app now falls back to `%LOCALAPPDATA%\Praxis Sound` instead of closing (fix written, building next). (2) The owner's hand-built take showed 2 of 8 checks failed: tempo 85.34 BPM (confidence 0.42) and key A major (confidence 0.58), for material with no third (A, B, D, E only) and an uneven rhythm; the render itself was exactly on the grid (100% of notes within 10 ms). Low-confidence detections are reported as failures; proposed: report them as "can't tell from this material". (3) The thread's "Add a layer" button opens the Overview, which is already shown at desktop width, so it seems to do nothing; the owner said to leave it for now.
 
 - **Phase 3 exit (machine side) passed.** Merged WP-U5 build a sound by hand (912b997): blank sounds, sound settings, layers by hand, batched note entry with one "Make a take", spoken-rhythm bars, seek, loop strip, keyboard transport, phone layout. Its exit run built acceptance 1 entirely by hand in the release app (fake output): 18 notes identical to acceptance 1, take 1 8/8 checks, 60 s with 0 xruns, WAV/FLAC/stems/MIDI exported, `praxis check` passes. Full suite here (keychain off, Chromium muted, no device tests): fmt, workspace clippy, `cargo test --workspace --release` 594 passed / 0 failed / 6 ignored (device opt-ins), acceptance 1 all 8 checks (grid 100%), wasm release build, tsc, Vitest 172/172, Playwright 11/11. Release app rebuilt with `npm run tauri -- build --no-bundle` (a cargo-only build embeds no current front end). Full three-OS CI by hand is blocked by Actions billing until the free minutes reset. Remaining for the phase: the owner's real-hardware check.
 
