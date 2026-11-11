@@ -7,6 +7,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod audio;
 pub mod commands;
 mod shell;
 pub mod sounds;
