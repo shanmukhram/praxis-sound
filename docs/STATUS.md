@@ -37,6 +37,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 
 ## Log
 
+- Found with the owner: "make the piano muffled" / "make it a little darker" rewrite the melody (offline edit reader has no tone or space intent and falls back to rewrite_motif); the app's Brightness and Space sliders send such phrases. Queued WP-P2b (brief docs/briefs/WP-P2b-tone-space-edits.md).
+
 - **Phase 2 closed**: the owner listened to `demos/phase-2/acceptance1_mixed_loop.flac` and the x3 seam file and signed off ("its perfect"). No changes requested; the FDN reverb stays without modulation.
 
 - Merged WP-U3 desktop app (1ef3c5f + review fix e5d6bc6): Tauri 2.12.5 shell `crates/praxis-app` (workspace member, not default) and `TauriEngine` adapter; take commands are thin wrappers over `praxis_cli::ops` (one take history shared with agents via `takes.json` revision polling); `<audio>` playback through the asset protocol, which serves only a real sound folder's `takes/`, `variations/`, `live/` (review fix: it first allowed any folder the front end named). Release exe 22 MB: "a calm 30-second felt piano loop in A minor" made take 1 in 3.0 s with 8/8 checks; an agent's take (`praxis ask --who cut-assistant`) appeared live. Rerun here: fmt, clippy, praxis-app 6/6, tsc, Vitest 146/146. Run it: `cd app && npm run tauri -- dev`. Follow-ups: real-time engine for transport and meters (Phase 3 exit), shell re-reads connected agents, NSIS installer, undo/redo into `praxis_cli::ops` (app has its own today), planner solves "30-second" to 31.4 s (11 bars at 84 BPM).

@@ -163,6 +163,13 @@ FR-7, FR-8. Owns: `crates/praxis-planner/src/{edit,variations}.rs`. Depends: WP-
 Done: edit instructions -> scoped patches (RuleProvider + Claude); locked layers never in scope;
 N variations with own seeds; render-level isolation test of "change the last four bars".
 
+### WP-P2b tone and space edits
+FR-7 (edits that change sound, not notes). Owns: `crates/praxis-planner/src/edit.rs` + `edit/**`,
+`catalogue.rs` (tone parameters only), tests `edit_*`, the "Edits" section of contracts/planner.md.
+Depends: WP-P2. Brief: `docs/briefs/WP-P2b-tone-space-edits.md`. Done: "make the piano muffled"
+keeps every note and lowers the measured brightness; space edits; unknown instructions refused
+instead of rewriting notes; the app's Feel slider phrases all map to tested intents.
+
 ### WP-K cli
 FR-33. Owns: `crates/praxis-cli/**`. Depends: grows with P, D, E, M. Done: every command in
 contracts/cli.md, JSON payload tests (`assert_cmd`-style via std::process).
