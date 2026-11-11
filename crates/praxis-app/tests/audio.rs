@@ -390,6 +390,7 @@ fn real_sound(test: &str) -> String {
         seed: None,
         skip_missing: false,
         include_score: false,
+        reference: None,
     })
     .expect("take 1");
     sound

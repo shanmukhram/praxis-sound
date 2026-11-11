@@ -237,18 +237,30 @@ pub fn definitions() -> Vec<Value> {
              `timbre_path` takes the instruments and tone from a second clip, `mood` the \
              feeling from words. Takes tens of seconds.",
             object(&[
-                ("path", string("The reference clip's path.")),
+                (
+                    "path",
+                    string("The reference clip's path, or \"library:<id>\" for a saved style."),
+                ),
                 (
                     "timbre_path",
                     string("A second clip to take the timbre from, or \"\" for none."),
                 ),
-                ("mood", string("Mood words, e.g. \"melancholy\", or \"\" to keep the clip's.")),
+                (
+                    "mood",
+                    string("Mood words, e.g. \"melancholy\", or \"\" to keep the clip's."),
+                ),
                 (
                     "key",
                     string("Key, e.g. \"A minor\" or \"F#m\", or \"\" for the clip's."),
                 ),
-                ("bpm", integer("Tempo in BPM (40-220), or 0 for the clip's.")),
-                ("bars", integer("Length in bars (music), or 0 for the clip's length.")),
+                (
+                    "bpm",
+                    integer("Tempo in BPM (40-220), or 0 for the clip's."),
+                ),
+                (
+                    "bars",
+                    integer("Length in bars (music), or 0 for the clip's length."),
+                ),
             ]),
         ),
         tool(
@@ -1081,7 +1093,7 @@ fn match_reference(draft: &mut Draft, input: &Value) -> ToolResult {
         return ToolResult::fail("`path` is empty: give the reference clip's path");
     };
     let req = ops::MatchClipRequest {
-        clip: path.into(),
+        clip: path.clone().into(),
         out: std::path::PathBuf::new(),
         prompt: text("mood"),
         timbre: text("timbre_path").map(Into::into),
@@ -1092,7 +1104,34 @@ fn match_reference(draft: &mut Draft, input: &Value) -> ToolResult {
         max_iterations: None,
         render: None,
     };
-    let (request, out) = match ops::r#match::matched(&req) {
+    let result = match path.strip_prefix("library:") {
+        Some(id) => {
+            let r = ops::takes::ReferenceArg {
+                name: id.to_string(),
+                clip: None,
+                library_id: Some(id.to_string()),
+            };
+            ops::takes::load_reference(&r).and_then(|p| {
+                let timbre = req
+                    .timbre
+                    .as_deref()
+                    .map(|t| ops::analyze::profile_clip(t, 4).map(|x| x.0))
+                    .transpose()?;
+                let key = match req.key.as_deref() {
+                    Some(k) => Some(praxis_match::parse_key(k).ok_or_else(|| {
+                        OpError::new(
+                            crate::error::ErrorCode::Error,
+                            format!("cannot read the key `{k}`"),
+                        )
+                    })?),
+                    None => None,
+                };
+                ops::r#match::matched_profiles(p, timbre, key, &req)
+            })
+        }
+        None => ops::r#match::matched(&req),
+    };
+    let (request, out) = match result {
         Ok(r) => r,
         Err(e) => return ToolResult::fail(err_text(&e)),
     };

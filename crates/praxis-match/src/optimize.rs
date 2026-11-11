@@ -130,7 +130,11 @@ where
 }
 
 fn clamp01(v: f64) -> f64 {
-    if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.5 }
+    if v.is_finite() {
+        v.clamp(0.0, 1.0)
+    } else {
+        0.5
+    }
 }
 
 #[cfg(test)]

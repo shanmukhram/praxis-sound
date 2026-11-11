@@ -64,9 +64,47 @@ fn every_result_is_closest_to_its_own_reference_and_original() {
         );
     }
     let mut failures = Vec::new();
-    for (i, (r, _)) in set.iter().enumerate() {
-        let out = matched(i);
-        let first = out.iterations.first().map(|it| it.similarity).unwrap_or(0.0);
+    // `PRAXIS_MATCH_ONLY=name,name` limits the run to some references (for investigating).
+    let only: Vec<String> = std::env::var("PRAXIS_MATCH_ONLY")
+        .map(|v| v.split(',').map(|x| x.trim().to_string()).collect())
+        .unwrap_or_default();
+    for (i, (r, p)) in set.iter().enumerate() {
+        if !only.is_empty() && !only.iter().any(|o| o == r.name) {
+            continue;
+        }
+        println!(
+            "  {} class scores music/sfx/ambience {:.2}/{:.2}/{:.2}, tempo {:?}, groove {}",
+            r.name,
+            p.class.scores[0],
+            p.class.scores[1],
+            p.class.scores[2],
+            p.tempo
+                .as_ref()
+                .map(|t| (t.bpm.round(), (t.confidence * 100.0).round() / 100.0)),
+            p.groove.is_some()
+        );
+        let mut req = MatchRequest::new(p.clone());
+        req.seed = 7;
+        let out = match match_reference(&req, registry()) {
+            Ok(o) => o,
+            Err(e) => {
+                println!("{:<14} FAILED: {e}", r.name);
+                failures.push(format!("{}: {e}", r.name));
+                continue;
+            }
+        };
+        let auditions: Vec<String> = out
+            .iterations
+            .iter()
+            .filter(|it| it.stage == "candidate")
+            .map(|it| format!("{} {:.3}", it.tried, it.similarity))
+            .collect();
+        println!("    candidates: {}", auditions.join(" | "));
+        let first = out
+            .iterations
+            .first()
+            .map(|it| it.similarity)
+            .unwrap_or(0.0);
         let loop_best = out
             .iterations
             .iter()
@@ -120,7 +158,10 @@ fn every_result_is_closest_to_its_own_reference_and_original() {
             ));
         }
         if !out.originality.passed {
-            failures.push(format!("{}: not original ({})", r.name, out.originality.reason));
+            failures.push(format!(
+                "{}: not original ({})",
+                r.name, out.originality.reason
+            ));
         }
         if loop_best < first {
             failures.push(format!("{}: similarity fell", r.name));
@@ -221,10 +262,72 @@ fn requested_key_tempo_and_length_are_kept() {
     // Only presets of the instrument registry: nothing of the reference's audio is in the Score.
     for l in &out.score.layers {
         assert!(
-            registry().entry(l.instrument.kind, &l.instrument.preset).is_some(),
+            registry()
+                .entry(l.instrument.kind, &l.instrument.preset)
+                .is_some(),
             "{}",
             l.instrument.preset
         );
         assert!(l.effects.iter().all(|e| e.impulse.is_none()));
     }
+}
+
+/// Investigation aid: `PRAXIS_MATCH_ONLY=<reference>` prints D2's group distances between that
+/// reference and a bell, a pluck and a granular-texture candidate at the matcher's first point.
+#[test]
+#[ignore = "investigation aid"]
+fn group_distances_of_first_candidates() {
+    use praxis_analyze::similarity::group_distances;
+    use praxis_match::character::Character;
+    use praxis_match::music::{self, Palette, Setup};
+    use praxis_planner::Catalogue;
+    use praxis_score::InstrumentKind;
+    let name = std::env::var("PRAXIS_MATCH_ONLY").unwrap_or_else(|_| "bell_arp".into());
+    let (_, p) = set().iter().find(|(r, _)| r.name == name).unwrap();
+    let c = Character::of(p);
+    println!("{name}: {c:#?}");
+    let ts = c.time_signature();
+    let setup = Setup {
+        key: c.key_or_default(),
+        bpm: c.bpm.unwrap_or(100.0),
+        ts,
+        groove: c.groove.clone(),
+        emotion: "calm".into(),
+        octave: 5,
+        intro: false,
+        target_lufs: c.lufs,
+        brief: None,
+        references: vec![],
+        seed: 1,
+    };
+    let x = music::first_params(&c);
+    for lead in [
+        ("bell", InstrumentKind::Synth),
+        ("pluck", InstrumentKind::Synth),
+    ] {
+        let pal = Palette {
+            lead: Some(lead),
+            bass: None,
+            drums: false,
+        };
+        let s = music::score(&setup, &pal, &x, 4, 0, &Catalogue::standard()).unwrap();
+        let r = profile_of(&render(&s), SR, "c.wav").unwrap();
+        println!(
+            "{}: sim {:.3} kind {:?} {:?}",
+            lead.0,
+            similarity(p, &r),
+            r.class.scores,
+            group_distances(p, &r)
+        );
+    }
+    let setup = praxis_match::sfx::SfxSetup::from_character(&c, None, None, vec![], None, 1);
+    let s =
+        praxis_match::sfx::bed_score(1, &setup, &praxis_match::sfx::first_bed_params(&c)).unwrap();
+    let r = profile_of(&render(&s), SR, "c.wav").unwrap();
+    println!(
+        "granular: sim {:.3} kind {:?} {:?}",
+        similarity(p, &r),
+        r.class.scores,
+        group_distances(p, &r)
+    );
 }

@@ -99,6 +99,40 @@ fn finish_reply(finish: Option<&Finish>, said: String) -> String {
 }
 
 /// The sound's state as the model reads it at the top of a request.
+/// The synthetic `analyze_clip` exchange for a request's reference.
+fn push_reference(
+    conv: &mut Conversation,
+    r: &crate::ops::takes::ReferenceArg,
+    profile: &praxis_analyze::SoundProfile,
+    n: u32,
+) {
+    let id = format!("toolu_reference_{n}");
+    let path = match (&r.clip, &r.library_id) {
+        (Some(c), _) => c.display().to_string(),
+        (None, Some(lib)) => format!("library:{lib}"),
+        (None, None) => r.name.clone(),
+    };
+    conv.push_assistant(json!([{
+        "type": "tool_use",
+        "id": id,
+        "name": "analyze_clip",
+        "input": {"path": path},
+    }]));
+    let content = serde_json::to_string(&json!({
+        "reference": r.name,
+        "profile": crate::ops::takes::trimmed_profile(profile),
+    }))
+    .unwrap_or_default();
+    conv.push_user(vec![
+        tool_result(&id, content, false),
+        json!({"type": "text", "text": format!(
+            "That is the reference the person gave with the request (\"{}\"). To make a new \
+             sound like it, call match_reference with path \"{path}\".",
+            r.name
+        )}),
+    ]);
+}
+
 fn state_text(
     sound: &Sound,
     conv: &Conversation,
@@ -298,6 +332,12 @@ pub fn run_ask(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
     });
     let first = format!("{}{text}", state_text(&sound, &conv, &draft, &who, req));
     conv.push_user(vec![json!({"type": "text", "text": first})]);
+    if let Some(r) = &req.reference {
+        // The reference arrives as if the assistant had measured it: an analyze_clip call and
+        // its result holding the trimmed profile, so the model reads numbers, not prose.
+        let profile = crate::ops::takes::load_reference(r)?;
+        push_reference(&mut conv, r, &profile, sound.takes.next_n());
+    }
     drop(sound);
 
     let system = prompt::system_prompt();
@@ -549,6 +589,7 @@ pub fn run_ask(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
             scope: req.scope.clone(),
             provider: format!("agent:{}", config.model),
             seed,
+            reference: req.reference.clone(),
         };
         match draft.commit(take_words) {
             Ok(Some(t)) => {

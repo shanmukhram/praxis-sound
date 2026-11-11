@@ -71,7 +71,10 @@ mod tests {
         assert_eq!(parse_key("Bb minor"), k(PitchClass::Bb, Mode::Minor));
         assert_eq!(parse_key("bm"), k(PitchClass::B, Mode::Minor));
         assert_eq!(parse_key("D major"), k(PitchClass::D, Mode::Major));
-        assert_eq!(parse_key("G harmonic minor"), k(PitchClass::G, Mode::HarmonicMinor));
+        assert_eq!(
+            parse_key("G harmonic minor"),
+            k(PitchClass::G, Mode::HarmonicMinor)
+        );
     }
 
     #[test]

@@ -31,7 +31,11 @@ pub const FAMILIES: &[&str] = &["whoosh", "impact", "riser", "drone", "glitch", 
 /// Beds for ambience: (preset, kind, class).
 pub const BEDS: &[(&str, InstrumentKind, GeneratorClass)] = &[
     ("noise_bed", InstrumentKind::Synth, GeneratorClass::Texture),
-    ("granular_texture", InstrumentKind::Synth, GeneratorClass::Pad),
+    (
+        "granular_texture",
+        InstrumentKind::Synth,
+        GeneratorClass::Pad,
+    ),
     ("drone", InstrumentKind::Sfx, GeneratorClass::Drone),
 ];
 
@@ -63,6 +67,9 @@ pub struct SfxSetup {
     pub brief: Option<String>,
     pub references: Vec<String>,
     pub seed: u64,
+    /// 0: a bed holds one note. Above 0 (an originality retry): the bed walks through a few
+    /// in-key notes, one every two bars, a different walk for each value.
+    pub motion: u32,
 }
 
 impl SfxSetup {
@@ -94,6 +101,7 @@ impl SfxSetup {
             brief,
             references,
             seed,
+            motion: 0,
         }
     }
 
@@ -172,7 +180,10 @@ pub fn score(family: &str, setup: &SfxSetup, x: &[f64]) -> Result<Score, MatchEr
     let beat = setup.beat_s();
     let bar_s = 4.0 * beat;
     let mut params = BTreeMap::new();
-    for (i, name) in ["length", "brightness", "weight", "pitch"].iter().enumerate() {
+    for (i, name) in ["length", "brightness", "weight", "pitch"]
+        .iter()
+        .enumerate()
+    {
         params.insert(name.to_string(), x[i].clamp(0.0, 1.0));
     }
     let velocity = 0.8;
@@ -189,7 +200,9 @@ pub fn score(family: &str, setup: &SfxSetup, x: &[f64]) -> Result<Score, MatchEr
         "drone" => {
             // Held for the reference's length minus its release, on a quarter-note grid.
             let release = exp_map(x[0], drone::LENGTH_S.0, drone::LENGTH_S.1);
-            let held = (setup.active_s - release).max(setup.active_s * 0.5).max(beat);
+            let held = (setup.active_s - release)
+                .max(setup.active_s * 0.5)
+                .max(beat);
             let steps = (held / beat).round().clamp(1.0, 64.0) as f32;
             notes.push(note(0, setup.note, velocity, steps));
             tail_s = release + 0.5;
@@ -355,7 +368,7 @@ pub fn bed_score(bed: usize, setup: &SfxSetup, x: &[f64]) -> Result<Score, Match
         id: "held".into(),
         grid: Grid::Quarter,
         length_steps: steps,
-        notes: vec![note(0, setup.note, 0.7, steps as f32)],
+        notes: bed_notes(setup, steps),
         spoken: None,
     };
     Ok(finish_score(
@@ -367,6 +380,48 @@ pub fn bed_score(bed: usize, setup: &SfxSetup, x: &[f64]) -> Result<Score, Match
         Playback::OneShot { tail_seconds: 2.0 },
         preset,
     ))
+}
+
+/// Walks of an ambience bed for originality retries, in scale steps from the note.
+const WALKS: &[&[i32]] = &[
+    &[0, 2, -1, 3],
+    &[0, -2, 1, -3],
+    &[0, 4, 2, 5],
+    &[0, -1, -3, 1],
+];
+
+/// The bed's notes on a quarter grid of `steps`: one held note, or a walk (see [`SfxSetup::motion`]).
+fn bed_notes(setup: &SfxSetup, steps: u32) -> Vec<Note> {
+    if setup.motion == 0 || steps < 16 {
+        return vec![note(0, setup.note, 0.7, steps as f32)];
+    }
+    let walk = WALKS[(setup.motion as usize - 1) % WALKS.len()];
+    (0..steps)
+        .step_by(8)
+        .enumerate()
+        .map(|(i, step)| {
+            let pitch = scale_step(setup.note, &setup.key, walk[i % walk.len()]);
+            let len = (steps - step).min(8) as f32 + 0.5;
+            note(step, pitch, 0.7, len.min((steps - step) as f32))
+        })
+        .collect()
+}
+
+/// `note` moved by `steps` scale steps of `key` (the note itself when that leaves 24..=96).
+pub fn scale_step(note: u8, key: &Key, steps: i32) -> u8 {
+    let mut p = key.snap(note) as i32;
+    let dir = steps.signum();
+    let mut left = steps.abs();
+    while left > 0 {
+        p += dir;
+        if !(24..=96).contains(&p) {
+            return note;
+        }
+        if key.contains(p as u8) {
+            left -= 1;
+        }
+    }
+    p as u8
 }
 
 fn note(step: u32, pitch: u8, velocity: f32, length: f32) -> Note {
@@ -451,6 +506,7 @@ mod tests {
             brief: None,
             references: vec!["r".into()],
             seed: 1,
+            motion: 0,
         }
     }
 
@@ -467,6 +523,20 @@ mod tests {
             let r = praxis_score::validate::validate(&score);
             assert!(r.is_valid(), "{b}: {:?}", r.errors);
         }
+    }
+
+    #[test]
+    fn a_retried_bed_walks_in_key() {
+        let mut s = setup(vec![]);
+        s.active_s = 16.0;
+        s.motion = 1;
+        let score = bed_score(0, &s, &[0.5; 5]).unwrap();
+        let pitches: Vec<u8> = score.patterns[0].notes.iter().map(|n| n.pitch).collect();
+        assert!(pitches.len() >= 3, "{pitches:?}");
+        assert!(pitches.iter().all(|p| s.key.contains(*p)));
+        assert!(pitches.windows(2).any(|w| w[0] != w[1]));
+        let r = praxis_score::validate::validate(&score);
+        assert!(r.is_valid(), "{:?}", r.errors);
     }
 
     #[test]

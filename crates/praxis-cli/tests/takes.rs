@@ -61,6 +61,7 @@ fn ask(sound: &Path, text: &str) -> ops::AskRequest {
         seed: None,
         skip_missing: false,
         include_score: false,
+        reference: None,
     }
 }
 

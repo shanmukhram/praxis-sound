@@ -91,7 +91,12 @@ fn match_writes_a_project_with_similarity_iterations_and_originality() {
         assert!(v["originality"].get(k).is_some(), "{k}");
     }
     assert!(v["made_with"].is_string());
-    assert!(v["reference"]["file_name"].as_str().unwrap().ends_with(".wav"));
+    assert!(
+        v["reference"]["file_name"]
+            .as_str()
+            .unwrap()
+            .ends_with(".wav")
+    );
     // The project holds a Score, never the reference's audio.
     let text = std::fs::read_to_string(&project).unwrap();
     assert!(text.contains("\"praxis-project\""));

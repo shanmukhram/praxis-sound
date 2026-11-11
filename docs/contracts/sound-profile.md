@@ -184,3 +184,87 @@ Profiles are kept as named, tagged styles in `PRAXIS_HOME/library/<id>.profile.j
 `SoundProfile` per file (`style_name`, `tags`); never audio. The same decoded clip (same
 `pcm_hash`) is kept once. Commands and payloads: docs/contracts/cli.md, "Sound Profile and
 library".
+
+## Matching (WP-M, FR-14 to FR-18)
+
+Code: `crates/praxis-match` (wasm-safe: no threads, clock or files). `match_reference(&MatchRequest,
+&dyn InstrumentFactory) -> Result<MatchOutcome, MatchError>`. The reference enters only as a
+`SoundProfile`; its audio never reaches the engine, a Score or an export. Every render is
+measured with `sound_profile` and compared with `similarity::similarity` (analysis by synthesis).
+
+- **Request**: `reference` (clip A: its whole character, or its groove with `timbre`), `timbre`
+  (clip B, mix and match), `mood` (words; the offline planner's emotion word, `None` when the
+  words name none), `bars`, `key`, `bpm`, `seed`, `options {max_evals 40, sample_rate 48000,
+  max_loop_s 10, originality_attempts 4, lead_candidates 8}`.
+- **Kinds auditioned**: the classifier's kind first; music too when the clip has a detected
+  pulse (tempo confidence >= 0.3), a regular groove or a music probability >= 0.1; ambience when
+  its probability >= 0.2; sound effects when theirs >= 0.2. With `timbre`, music only. The renders
+  decide, not the label (the classifier reads sparse keys and bass grooves as ambience; see
+  below).
+- **Music** (profile to ScorePlan, composed by the planner's `compose_plan`): tempo and key (or
+  the requested ones; a mood that clearly asks for the other mode moves to the relative key), the
+  groove's step weights become every motif's spoken rhythm (no measured groove: a plain grid
+  that holds the clip's onset rate), swing becomes micro-timing, an intro with the lead alone when
+  the clip has two or more sections, a diatonic progression, the loudness target. Candidates: 8
+  leads (felt/upright piano, soft keys, mallet, pluck, bell, glass, FM keys) with the bass and
+  drums the character suggests, then the best lead with no bass / sub / warm bass and drums on or
+  off. Tuned (each 0..1): `tone`, `air` (master low-pass 1.5-22 kHz), `reverb_mix`,
+  `reverb_decay` (0.3-8 s), `sustain` (1.1-6 steps), `density` (groove threshold), `bass_db` and
+  `drums_db` (-18..+6 dB), `width` (0-2).
+- **Sound effects**: the six families (`whoosh`, `impact`, `riser`, `drone`, `glitch`, `tick`)
+  at macros set from the profile (`length` from the sounding time, the riser's in beats;
+  `brightness` from the centroid; `weight` from the share of energy at or below 125 Hz; the note
+  from the median pitch, snapped to the key), plus a room; ticks and glitches repeat on the
+  clip's onsets. **Ambience**: a held `noise_bed`, `granular_texture` or `drone` with tone, air,
+  room and width.
+- **Loop**: stage 1 renders every candidate at its starting point (each render an `Iteration`);
+  stage 2 is coordinate descent over the winner's tuned parameters (steps 0.25, halved after a
+  sweep without a gain above 1e-4, down to 0.05, within the budget), rendering at most
+  `max_loop_s` of the piece; the best similarity never falls. Stage 3 renders the final length.
+- **Originality guard**: the final render is checked with `originality::check` against every
+  reference; a failure is re-made with the next melodic contour and the next of four
+  progressions (music), or a walking bed (ambience) or a note moved by scale steps (effects), up
+  to `originality_attempts`; when every attempt fails, the next two best auditions are tried the
+  same way (a note says so). `MatchError::NotOriginal` only when all fail. The melody is never
+  taken from the reference: contours are fixed shapes chosen by the seed.
+- **Outcome**: `score`, `kind`, `made_with`, `similarity` (the final render; the 50/50 mean for
+  mix and match), `similarities[] {reference, role: character|groove|timbre, similarity}`,
+  `iterations[] {n, stage: candidate|refine|final|originality, tried, similarity, best,
+  accepted}`, `originality {passed, melodic_similarity, rhythmic_similarity, reason,
+  reference}`, `originality_attempts`, `params`, `notes[]`. Scores carry `meta.reference_profiles`,
+  the tag `matched` and `meta.provenance.matcher`.
+
+### Reference set and the Phase 6 exit (WP-M)
+
+`praxis_match::refset::references()`: ten Scores written by hand and rendered by the engine
+(no downloads), with settings the matcher never sees (their own melodies, voicings, delays,
+chorus, saturation, filters, pans, rooms): five music (felt-piano lullaby, bass-and-drums
+groove, bell arpeggio over a sub, swung mallet tune, dark soft-keys chords), four effects
+(whoosh, impact, riser, drone) and one ambience bed. Test:
+`crates/praxis-match/tests/refset_match.rs` (`--nocapture` prints every audition, the loop and the
+similarity matrix).
+
+Measured 2026-11-12 (seed 7, 48 kHz, default options; release build, about 25 s per match):
+
+| Reference | Profiled as | Made with | Renders | First -> final similarity | Own vs nearest other | Melodic similarity (attempt) |
+| --- | --- | --- | --- | --- | --- | --- |
+| lullaby_felt | music 0.87 | mallet | 41 | 0.568 -> 0.867 | 0.867 vs 0.554 (mallet_bounce) | 0.07 (1) |
+| night_groove | ambience 0.63 | pluck + sub bass + kick and hat | 41 | 0.609 -> 0.736 | 0.736 vs 0.613 (dark_keys) | 0.24 (1) |
+| bell_arp | ambience 0.81 | pluck + warm bass | 41 | 0.626 -> 0.751 | 0.751 vs 0.638 (lullaby_felt) | 0.16 (1) |
+| mallet_bounce | ambience 0.59 | upright piano + sub bass | 41 | 0.741 -> 0.790 | 0.790 vs 0.621 (bell_arp) | 0.17 (1) |
+| dark_keys | ambience 0.82 | mallet + sub bass | 45 | 0.705 -> 0.731 | 0.731 vs 0.554 (lullaby_felt) | 0.36 (5: the granular bed it first chose stayed at 0.61-0.63) |
+| whoosh_by | sfx 0.97 | glitch | 41 | 0.518 -> 0.810 | 0.810 vs 0.573 (heavy_impact) | 0.00 (1) |
+| heavy_impact | sfx 0.98 | whoosh | 41 | 0.799 -> 0.838 | 0.838 vs 0.701 (bright_riser) | 0.00 (1) |
+| bright_riser | sfx 0.99 | riser | 41 | 0.538 -> 0.951 | 0.951 vs 0.642 (heavy_impact) | 0.00 (1) |
+| low_drone | ambience 0.81 | fm keys | 41 | 0.686 -> 0.830 | 0.830 vs 0.722 (bell_arp) | 0.50 (1) |
+| rain_bed | ambience 0.95 | noise bed | 41 | 0.410 -> 0.943 | 0.943 vs 0.657 (low_drone) | 0.00 (1) |
+
+Every result is closest to its own reference and passes the originality check. Mix and match
+(groove night_groove, timbre bell_arp, mood "melancholy", 8 bars): pluck + sub bass, 0.643 to
+the groove clip and 0.579 to the timbre clip against a mean of 0.486 to the other eight.
+
+Known limits: the character similarity sometimes prefers another family (the whoosh is matched
+by a `glitch`, the impact by a `whoosh`, the drone by FM keys), because it weighs envelope,
+spectrum and the classifier's probabilities, not what a listener names; the blind review is the
+judge of that. Four of the five music references profile as ambience, which is why every
+plausible kind is auditioned.

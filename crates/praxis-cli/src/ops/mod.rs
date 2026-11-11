@@ -45,8 +45,8 @@ pub use render::{RenderRequest, RenderSettings, render};
 pub use schema::{SchemaRequest, schema};
 pub use sound::{TakeRecord, TakeScope, ViewName, praxis_home, resolve_sound};
 pub use takes::{
-    AskOptions, AskRequest, KeepVariationRequest, OpenViewRequest, RestoreRequest, TakesRequest,
-    ask, ask_with, keep_variation, open_view, restore, takes,
+    AskOptions, AskRequest, KeepVariationRequest, OpenViewRequest, ReferenceArg, RestoreRequest,
+    TakesRequest, ask, ask_with, keep_variation, open_view, restore, takes,
 };
 pub use validate::{ValidateRequest, validate};
 pub use variations::{VariationsRequest, variations};

@@ -55,7 +55,9 @@ pub fn matched(req: &MatchClipRequest) -> Result<(MatchRequest, MatchOutcome), O
         Some(k) => Some(parse_key(k).ok_or_else(|| {
             OpError::new(
                 ErrorCode::Error,
-                format!("cannot read the key `{k}`; write e.g. \"A minor\", \"F#m\" or \"Eb dorian\""),
+                format!(
+                    "cannot read the key `{k}`; write e.g. \"A minor\", \"F#m\" or \"Eb dorian\""
+                ),
             )
         })?),
         None => None,
@@ -72,6 +74,17 @@ pub fn matched(req: &MatchClipRequest) -> Result<(MatchRequest, MatchOutcome), O
     }
     let reference = profile_clip(&req.clip)?;
     let timbre = req.timbre.as_deref().map(profile_clip).transpose()?;
+    matched_profiles(reference, timbre, key, req)
+}
+
+/// [`matched`] with the profiles already measured (a library entry, or a clip measured earlier).
+/// `req.clip` and `req.timbre` are not read.
+pub(crate) fn matched_profiles(
+    reference: SoundProfile,
+    timbre: Option<SoundProfile>,
+    key: Option<praxis_score::Key>,
+    req: &MatchClipRequest,
+) -> Result<(MatchRequest, MatchOutcome), OpError> {
     let mut options = MatchOptions::default();
     if let Some(n) = req.max_iterations {
         options.max_evals = n.clamp(10, 200);
@@ -136,7 +149,7 @@ fn profile_clip(path: &Path) -> Result<SoundProfile, OpError> {
     Ok(profile)
 }
 
-fn match_error(e: MatchError) -> OpError {
+pub(crate) fn match_error(e: MatchError) -> OpError {
     match e {
         MatchError::Render(RenderError::Instrument(InstrumentError::PackMissing(p))) => {
             OpError::new(

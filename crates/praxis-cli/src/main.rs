@@ -193,6 +193,12 @@ enum Command {
         /// Include the take's full score in the output.
         #[arg(long)]
         include_score: bool,
+        /// A reference clip the request is about; "make something like this" runs the match loop.
+        #[arg(long, conflicts_with = "reference_library")]
+        reference: Option<PathBuf>,
+        /// A reference-library entry id instead of a clip.
+        #[arg(long)]
+        reference_library: Option<String>,
     },
     /// List a sound's takes, the current take and the live score.
     Takes {
@@ -369,6 +375,26 @@ fn name(c: &Command) -> &'static str {
     }
 }
 
+/// `--reference CLIP` or `--reference-library ID` as `ask`'s reference.
+fn reference_arg(clip: Option<PathBuf>, library: Option<String>) -> Option<ops::ReferenceArg> {
+    match (clip, library) {
+        (Some(c), _) => Some(ops::ReferenceArg {
+            name: c
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| c.display().to_string()),
+            clip: Some(c),
+            library_id: None,
+        }),
+        (None, Some(id)) => Some(ops::ReferenceArg {
+            name: id.clone(),
+            clip: None,
+            library_id: Some(id),
+        }),
+        (None, None) => None,
+    }
+}
+
 fn read_stdin() -> Result<String, OpError> {
     let mut s = String::new();
     std::io::stdin()
@@ -523,6 +549,8 @@ fn run(command: Command) -> Result<Value, OpError> {
             seed,
             skip_missing,
             include_score,
+            reference,
+            reference_library,
         } => {
             let mut agent = praxis_cli::agent::AgentConfig::default();
             if let Some(e) = effort {
@@ -583,6 +611,7 @@ fn run(command: Command) -> Result<Value, OpError> {
                     seed,
                     skip_missing,
                     include_score,
+                    reference: reference_arg(reference, reference_library),
                 },
                 &opts,
             )

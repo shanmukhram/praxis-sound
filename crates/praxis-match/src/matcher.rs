@@ -145,6 +145,14 @@ enum Candidate {
 }
 
 impl Candidate {
+    fn kind(&self) -> ClipKind {
+        match self {
+            Candidate::Music(_) => ClipKind::Music,
+            Candidate::Sfx(_) => ClipKind::Sfx,
+            Candidate::Bed(_) => ClipKind::Ambience,
+        }
+    }
+
     fn describe(&self) -> String {
         match self {
             Candidate::Music(p) => p.describe(),
@@ -216,6 +224,7 @@ impl Ctx<'_> {
                     .clone()
                     .ok_or_else(|| MatchError::Invalid("no effect setup".into()))?;
                 setup.seed = setup.seed.wrapping_add(variant as u64 * 7919);
+                setup.note = retry_note(setup.note, &setup.key, variant);
                 sfx::score(f, &setup, x)
             }
             Candidate::Bed(b) => {
@@ -223,7 +232,9 @@ impl Ctx<'_> {
                     .sfx
                     .clone()
                     .ok_or_else(|| MatchError::Invalid("no bed setup".into()))?;
+                // Transposing a held note keeps its intervals: a retry walks the bed instead.
                 setup.seed = setup.seed.wrapping_add(variant as u64 * 7919);
+                setup.motion = variant;
                 sfx::bed_score(*b, &setup, x)
             }
         }
@@ -305,22 +316,28 @@ pub fn match_reference(
     let sound = b.as_ref().unwrap_or(&a);
     let kind = a.kind;
     if req.timbre.is_some() && kind != ClipKind::Music {
-        notes.push(
-            "mix and match takes the groove from a music clip; this reference is not music, so \
-             both clips only steer the similarity"
-                .into(),
-        );
+        notes.push(format!(
+            "mix and match makes music; the groove clip measured as {}, so its pulse and onsets \
+             set the rhythm",
+            match kind {
+                ClipKind::Sfx => "a sound effect",
+                _ => "ambience",
+            }
+        ));
     }
 
     // Key, tempo and mood.
     let mut key = req.key.unwrap_or_else(|| a.key_or_default());
     if req.key.is_none() && a.key.is_none() {
-        notes.push(format!("no clear key in the reference; used {}", key.display()));
+        notes.push(format!(
+            "no clear key in the reference; used {}",
+            key.display()
+        ));
     }
     let emotion = req
         .mood
         .as_deref()
-        .map(|m| emotion_from_text(m, &catalogue, req.seed))
+        .and_then(|m| emotion_from_text(m, &catalogue, req.seed))
         .unwrap_or_else(|| emotion_from(&key, a.bpm.unwrap_or(90.0)));
     if req.key.is_none()
         && let Some(k) = mood_key(&key, &emotion)
@@ -358,96 +375,106 @@ pub fn match_reference(
         best: f32::NEG_INFINITY,
         last_error: None,
     };
-    let candidates: Vec<(Candidate, Vec<f64>)> = match kind {
-        ClipKind::Music => {
-            let ts = a.time_signature();
-            let mut probe = Score::empty(1, bpm);
-            probe.time_signature = ts;
-            let bar_s = TimeMap::new(&probe, 48_000).bar_s().max(0.1);
-            let final_bars = match req.bars {
-                Some(b) => b.clamp(1, 512),
-                None => ((a.duration_s / bar_s).round() as u32).clamp(2, 64),
-            };
-            let loop_bars = ((a.duration_s.min(req.options.max_loop_s) / bar_s).ceil() as u32)
-                .clamp(2, final_bars.max(2))
-                .min(final_bars);
-            ctx.final_bars = final_bars;
-            ctx.loop_bars = loop_bars.max(1);
-            let octave = sound
-                .median_midi
-                .map(|m| ((m / 12.0).floor() as i32 - 1).clamp(3, 5))
-                .unwrap_or(4);
-            ctx.music = Some(Setup {
-                key,
-                bpm,
-                ts,
-                groove: a.groove.clone(),
-                emotion: emotion.clone(),
-                octave,
-                intro: a.sections >= 2,
-                target_lufs: a.lufs,
-                brief: req.mood.clone(),
-                references: references.clone(),
-                seed: req.seed,
-            });
-            let mut x0 = music::first_params(sound);
-            x0[music::dim::TONE] = (x0[music::dim::TONE] + mood_tone(&emotion)).clamp(0.0, 1.0);
-            // Density follows the groove clip.
-            x0[music::dim::DENSITY] = music::first_params(&a)[music::dim::DENSITY];
-            let first = music::first_palette(sound);
-            let mut list: Vec<(Candidate, Vec<f64>)> = Vec::new();
-            if first.lead.is_none() {
-                list.push((Candidate::Music(first.clone()), x0.clone()));
-            }
-            for lead in music::leads_by_distance(sound)
-                .into_iter()
-                .take(req.options.lead_candidates.max(1))
-            {
-                list.push((
-                    Candidate::Music(Palette {
-                        lead: Some(lead),
-                        ..first.clone()
-                    }),
-                    x0.clone(),
-                ));
-            }
-            list
-        }
-        ClipKind::Sfx | ClipKind::Ambience => {
-            if req.bars.is_some() {
-                notes.push("bars apply to music; the effect keeps the reference's length".into());
-            }
-            let setup = SfxSetup::from_character(
-                sound,
-                req.key,
-                req.bpm,
-                references.clone(),
-                req.mood.clone(),
-                req.seed,
-            );
-            let list = if kind == ClipKind::Sfx {
-                FAMILIES
-                    .iter()
-                    .map(|&f| (Candidate::Sfx(f), sfx::first_params(f, sound, &setup)))
-                    .collect()
-            } else {
-                (0..BEDS.len())
-                    .map(|b| (Candidate::Bed(b), sfx::first_bed_params(sound)))
-                    .collect()
-            };
-            ctx.sfx = Some(setup);
-            list
-        }
+    // Which kinds to audition: the classifier's, plus any other the clip plausibly is. The
+    // renders decide (analysis by synthesis), not the label.
+    // Mix and match is music: a groove from one clip, a timbre from another.
+    let kinds = if req.timbre.is_some() {
+        vec![ClipKind::Music]
+    } else {
+        kinds_to_try(&req.reference, &a)
     };
+    let mut candidates: Vec<(Candidate, Vec<f64>)> = Vec::new();
+    if req.bars.is_some() && !kinds.contains(&ClipKind::Music) {
+        notes.push("bars apply to music; the effect keeps the reference's length".into());
+    }
+    if kinds.contains(&ClipKind::Music) {
+        let ts = a.time_signature();
+        let mut probe = Score::empty(1, bpm);
+        probe.time_signature = ts;
+        let bar_s = TimeMap::new(&probe, 48_000).bar_s().max(0.1);
+        let final_bars = match req.bars {
+            Some(b) => b.clamp(1, 512),
+            None => ((a.duration_s / bar_s).round() as u32).clamp(2, 64),
+        };
+        let loop_bars = ((a.duration_s.min(req.options.max_loop_s) / bar_s).ceil() as u32)
+            .clamp(2, final_bars.max(2))
+            .min(final_bars);
+        ctx.final_bars = final_bars;
+        ctx.loop_bars = loop_bars.max(1);
+        let octave = sound
+            .median_midi
+            .map(|m| ((m / 12.0).floor() as i32 - 1).clamp(3, 5))
+            .unwrap_or(4);
+        ctx.music = Some(Setup {
+            key,
+            bpm,
+            ts,
+            groove: a.groove.clone(),
+            emotion: emotion.clone(),
+            octave,
+            intro: a.sections >= 2,
+            target_lufs: a.lufs,
+            brief: req.mood.clone(),
+            references: references.clone(),
+            seed: req.seed,
+        });
+        let mut x0 = music::first_params(sound);
+        x0[music::dim::TONE] = (x0[music::dim::TONE] + mood_tone(&emotion)).clamp(0.0, 1.0);
+        // Density follows the groove clip.
+        x0[music::dim::DENSITY] = music::first_params(&a)[music::dim::DENSITY];
+        let first = music::first_palette(sound);
+        if first.lead.is_none() {
+            candidates.push((Candidate::Music(first.clone()), x0.clone()));
+        }
+        for lead in music::leads_by_distance(sound)
+            .into_iter()
+            .take(req.options.lead_candidates.max(1))
+        {
+            candidates.push((
+                Candidate::Music(Palette {
+                    lead: Some(lead),
+                    ..first.clone()
+                }),
+                x0.clone(),
+            ));
+        }
+    }
+    if kinds.contains(&ClipKind::Sfx) || kinds.contains(&ClipKind::Ambience) {
+        let setup = SfxSetup::from_character(
+            sound,
+            req.key,
+            req.bpm,
+            references.clone(),
+            req.mood.clone(),
+            req.seed,
+        );
+        for k in &kinds {
+            match k {
+                ClipKind::Sfx => candidates.extend(
+                    FAMILIES
+                        .iter()
+                        .map(|&f| (Candidate::Sfx(f), sfx::first_params(f, sound, &setup))),
+                ),
+                ClipKind::Ambience => candidates.extend(
+                    (0..BEDS.len()).map(|b| (Candidate::Bed(b), sfx::first_bed_params(sound))),
+                ),
+                ClipKind::Music => {}
+            }
+        }
+        ctx.sfx = Some(setup);
+    }
 
     // Stage 1: audition the candidates.
     let mut best: Option<(Candidate, Vec<f64>, f32)> = None;
+    // Every audition that rendered, for the originality fallback.
+    let mut auditions: Vec<(Candidate, Vec<f64>, f32)> = Vec::new();
     for (c, x) in candidates {
         let tried = c.describe();
-        if let Some(s) = ctx.evaluate(&c, &x, "candidate", tried)
-            && best.as_ref().is_none_or(|b| s > b.2)
-        {
-            best = Some((c, x, s));
+        if let Some(s) = ctx.evaluate(&c, &x, "candidate", tried) {
+            auditions.push((c.clone(), x.clone(), s));
+            if best.as_ref().is_none_or(|b| s > b.2) {
+                best = Some((c, x, s));
+            }
         }
     }
     // Music: try the bass and drums choices around the best lead.
@@ -455,10 +482,7 @@ pub fn match_reference(
         let mut variants = Vec::new();
         for bass in std::iter::once(None).chain(BASSES.iter().map(|b| Some(*b))) {
             if bass != p.bass {
-                variants.push(Palette {
-                    bass,
-                    ..p.clone()
-                });
+                variants.push(Palette { bass, ..p.clone() });
             }
         }
         if p.lead.is_some() {
@@ -470,10 +494,11 @@ pub fn match_reference(
         for v in variants {
             let c = Candidate::Music(v);
             let tried = c.describe();
-            if let Some(s) = ctx.evaluate(&c, &x, "candidate", tried)
-                && best.as_ref().is_none_or(|b| s > b.2)
-            {
-                best = Some((c, x.clone(), s));
+            if let Some(s) = ctx.evaluate(&c, &x, "candidate", tried) {
+                auditions.push((c.clone(), x.clone(), s));
+                if best.as_ref().is_none_or(|b| s > b.2) {
+                    best = Some((c, x.clone(), s));
+                }
             }
         }
     }
@@ -524,97 +549,160 @@ pub fn match_reference(
     });
     let x_best = full(&out.best_x);
 
-    // Stage 3: the final length, the originality guard.
+    // Stage 3: the final length, the originality guard. When every motif of the winner is too
+    // close to the reference's melody, the next-best auditions (another instrument or family)
+    // are tried the same way.
     let attempts = req.options.originality_attempts.max(1);
-    let base = match &candidate {
-        Candidate::Music(_) => (req.seed % CONTOURS.len() as u64) as u32,
-        _ => 0,
-    };
-    let mut last: Option<(Score, f32, Vec<ReferenceSimilarity>, Originality)> = None;
-    for k in 0..attempts {
-        let score = ctx.build(&candidate, &x_best, ctx.final_bars, base + k)?;
-        let (profile, sim) = ctx.measure(&score)?;
-        let mut checks: Vec<Originality> = ctx
-            .targets
-            .iter()
-            .map(|(p, _, _)| analysis::originality(p, &profile))
-            .collect();
-        checks.sort_by(|x, y| {
-            x.passed
-                .cmp(&y.passed)
-                .then(y.melodic_similarity.total_cmp(&x.melodic_similarity))
-        });
-        let worst = checks.into_iter().next().unwrap_or_else(|| Originality {
-            passed: true,
-            melodic_similarity: 0.0,
-            rhythmic_similarity: 0.0,
-            reason: String::new(),
-            reference: String::new(),
-        });
-        let sims: Vec<ReferenceSimilarity> = ctx
-            .targets
-            .iter()
-            .map(|(p, _, role)| ReferenceSimilarity {
-                reference: name(p),
-                role: (*role).to_string(),
-                similarity: analysis::similarity(p, &profile),
-            })
-            .collect();
-        let passed = worst.passed;
-        ctx.iterations.push(Iteration {
-            n: ctx.iterations.len() as u32 + 1,
-            stage: if k == 0 { "final" } else { "originality" }.into(),
-            tried: if k == 0 {
-                format!("{} bars", ctx.final_bars)
-            } else {
-                format!("another motif ({})", k + 1)
-            },
-            similarity: sim,
-            best: ctx.best.max(sim),
-            accepted: passed,
-        });
-        let done = passed;
-        last = Some((score, sim, sims, worst));
-        if done {
-            let (score, sim, sims, worst) = last.take().ok_or_else(|| {
-                MatchError::Invalid("internal: lost the final render".into())
-            })?;
-            let params = candidate
+    auditions.sort_by(|p, q| q.2.total_cmp(&p.2));
+    let mut finalists: Vec<(Candidate, Vec<f64>)> = vec![(candidate.clone(), x_best.clone())];
+    for (c, x, _) in auditions {
+        if finalists.len() >= 3 {
+            break;
+        }
+        if !finalists.iter().any(|(f, _)| *f == c) {
+            finalists.push((c, x));
+        }
+    }
+    let mut last: Option<Originality> = None;
+    for (fi, (cand, xf)) in finalists.iter().enumerate() {
+        let base = match cand {
+            Candidate::Music(_) => (req.seed % CONTOURS.len() as u64) as u32,
+            _ => 0,
+        };
+        for k in 0..attempts {
+            let score = ctx.build(cand, xf, ctx.final_bars, base + k)?;
+            let (profile, sim) = ctx.measure(&score)?;
+            let mut checks: Vec<Originality> = ctx
+                .targets
+                .iter()
+                .map(|(p, _, _)| analysis::originality(p, &profile))
+                .collect();
+            checks.sort_by(|x, y| {
+                x.passed
+                    .cmp(&y.passed)
+                    .then(y.melodic_similarity.total_cmp(&x.melodic_similarity))
+            });
+            let worst = checks.into_iter().next().unwrap_or_else(|| Originality {
+                passed: true,
+                melodic_similarity: 0.0,
+                rhythmic_similarity: 0.0,
+                reason: String::new(),
+                reference: String::new(),
+            });
+            let passed = worst.passed;
+            ctx.iterations.push(Iteration {
+                n: ctx.iterations.len() as u32 + 1,
+                stage: if fi == 0 && k == 0 {
+                    "final"
+                } else {
+                    "originality"
+                }
+                .into(),
+                tried: match (fi, k) {
+                    (0, 0) => format!("{} bars", ctx.final_bars),
+                    (_, 0) => format!("{} instead", cand.describe()),
+                    _ => format!("another motif ({})", k + 1),
+                },
+                similarity: sim,
+                best: ctx.best.max(sim),
+                accepted: passed,
+            });
+            if !passed {
+                last = Some(worst);
+                continue;
+            }
+            if fi > 0 {
+                notes.push(format!(
+                    "the closest sound ({}) kept too much of the reference's melodic shape, so \
+                     this is the next closest ({})",
+                    candidate.describe(),
+                    cand.describe()
+                ));
+            }
+            let similarities = ctx
+                .targets
+                .iter()
+                .map(|(p, _, role)| ReferenceSimilarity {
+                    reference: name(p),
+                    role: (*role).to_string(),
+                    similarity: analysis::similarity(p, &profile),
+                })
+                .collect();
+            let params = cand
                 .dim_names()
                 .iter()
                 .enumerate()
-                .map(|(i, n)| (n.to_string(), round3(x_best[i])))
+                .map(|(i, n)| (n.to_string(), round3(xf[i])))
                 .collect();
             return Ok(MatchOutcome {
                 score,
-                kind,
-                made_with: candidate.describe(),
+                kind: cand.kind(),
+                made_with: cand.describe(),
                 similarity: sim,
-                similarities: sims,
+                similarities,
                 iterations: ctx.iterations,
                 originality: worst,
-                originality_attempts: k + 1,
+                originality_attempts: (fi as u32) * attempts + k + 1,
                 params,
                 notes,
             });
         }
     }
+    let tried: Vec<String> = finalists.iter().map(|(c, _)| c.describe()).collect();
     let reason = last
-        .map(|l| l.3.reason)
+        .map(|o| o.reason)
         .unwrap_or_else(|| "no attempt".into());
-    Err(MatchError::NotOriginal(reason))
+    Err(MatchError::NotOriginal(format!(
+        "{reason} (tried {} motifs each of {})",
+        attempts,
+        tried.join(", ")
+    )))
+}
+
+/// Kinds worth auditioning for a reference: the classifier's first, then music when the clip
+/// has any detected pulse (tempo confidence 0.3 or more), a regular groove or a music
+/// probability of 0.1 or more, then the other non-music kind when it is not unlikely. The
+/// classifier was tuned on clips unlike some music (sparse keys, bass grooves read as ambience),
+/// so the renders decide.
+pub fn kinds_to_try(p: &SoundProfile, c: &Character) -> Vec<ClipKind> {
+    let [music, sfx, ambience] = p.class.scores;
+    let mut v = vec![p.class.kind];
+    let pulse = p.tempo.as_ref().is_some_and(|t| t.confidence >= 0.3);
+    let musical = pulse || (c.bpm.is_some() && p.groove.is_some());
+    if !v.contains(&ClipKind::Music) && (music >= 0.1 || musical) {
+        v.push(ClipKind::Music);
+    }
+    if !v.contains(&ClipKind::Ambience) && ambience >= 0.2 {
+        v.push(ClipKind::Ambience);
+    }
+    if !v.contains(&ClipKind::Sfx) && sfx >= 0.2 {
+        v.push(ClipKind::Sfx);
+    }
+    v
+}
+
+/// The note of originality attempt `variant` (0 = the reference's own note): up two scale
+/// steps, down two, up four, down three, ...
+pub fn retry_note(note: u8, key: &Key, variant: u32) -> u8 {
+    const STEPS: [i32; 4] = [2, -2, 4, -3];
+    if variant == 0 {
+        return note;
+    }
+    sfx::scale_step(note, key, STEPS[(variant as usize - 1) % STEPS.len()])
 }
 
 fn round3(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
 }
 
-/// The planner's reading of a mood brief: its one emotion word.
-pub fn emotion_from_text(text: &str, catalogue: &Catalogue, seed: u64) -> String {
-    praxis_planner::offline::parse_brief(text, catalogue, seed)
-        .emotion
-        .trim()
-        .to_lowercase()
+/// The planner's reading of a mood brief: its one emotion word, `None` when the words name no
+/// emotion (the offline planner then notes that it used a default).
+pub fn emotion_from_text(text: &str, catalogue: &Catalogue, seed: u64) -> Option<String> {
+    let plan = praxis_planner::offline::parse_brief(text, catalogue, seed);
+    if plan.notes.iter().any(|n| n.starts_with("no emotion word")) {
+        return None;
+    }
+    Some(plan.emotion.trim().to_lowercase()).filter(|e| !e.is_empty())
 }
 
 /// An emotion when no mood is given: from the key's mode and the tempo.
@@ -704,6 +792,18 @@ mod tests {
     use praxis_score::InstrumentKind;
 
     #[test]
+    fn retry_notes_move_by_scale_steps() {
+        let a_minor = Key {
+            tonic: PitchClass::A,
+            mode: Mode::Minor,
+        };
+        assert_eq!(retry_note(57, &a_minor, 0), 57);
+        assert_eq!(retry_note(57, &a_minor, 1), 60); // A3 -> C4
+        assert_eq!(retry_note(57, &a_minor, 2), 53); // A3 -> F3
+        assert!(a_minor.contains(retry_note(57, &a_minor, 3)));
+    }
+
+    #[test]
     fn mood_moves_to_the_relative_key() {
         let c_major = Key {
             tonic: PitchClass::C,
@@ -723,8 +823,15 @@ mod tests {
     #[test]
     fn emotion_from_mood_text() {
         let cat = Catalogue::standard();
-        assert_eq!(emotion_from_text("something sad and slow", &cat, 1), "sad");
-        assert_eq!(emotion_from_text("melancholic", &cat, 1), "melancholy");
+        assert_eq!(
+            emotion_from_text("something sad and slow", &cat, 1).as_deref(),
+            Some("sad")
+        );
+        assert_eq!(
+            emotion_from_text("melancholic", &cat, 1).as_deref(),
+            Some("melancholy")
+        );
+        assert_eq!(emotion_from_text("make one like this", &cat, 1), None);
     }
 
     #[test]

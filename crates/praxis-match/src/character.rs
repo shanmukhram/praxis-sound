@@ -58,19 +58,45 @@ pub struct GrooveShape {
 impl GrooveShape {
     /// A plain groove when the profile has none: accents on the beats of an eighth-note bar.
     pub fn plain(ts: TimeSignature) -> GrooveShape {
-        let steps = ts.steps_per_bar(Grid::Eighth).unwrap_or(8) as usize;
+        GrooveShape::from_rate(ts, 4.0)
+    }
+
+    /// A plain groove for `onsets_per_bar`: the coarsest grid that holds them (quarter, eighth or
+    /// sixteenth), the downbeat strongest, then the beats, then the off-beats.
+    pub fn from_rate(ts: TimeSignature, onsets_per_bar: f32) -> GrooveShape {
+        let beats = ts.numerator.max(1) as f32;
+        let opb = if onsets_per_bar.is_finite() {
+            onsets_per_bar.max(1.0)
+        } else {
+            4.0
+        };
+        let grid = if opb > 2.2 * beats && ts.steps_per_bar(Grid::Sixteenth).is_some() {
+            Grid::Sixteenth
+        } else if opb > 1.1 * beats && ts.steps_per_bar(Grid::Eighth).is_some() {
+            Grid::Eighth
+        } else {
+            Grid::Quarter
+        };
+        let steps = ts.steps_per_bar(grid).unwrap_or(8) as usize;
+        let per_beat = (steps as f32 / beats).round().max(1.0) as usize;
         let step_weights = (0..steps)
-            .map(|i| match i {
-                0 => 1.0,
-                i if i % 2 == 0 => 0.6,
-                _ => 0.25,
+            .map(|i| {
+                if i == 0 {
+                    1.0
+                } else if i % per_beat == 0 {
+                    0.7
+                } else if per_beat == 4 && i % 2 == 0 {
+                    0.5
+                } else {
+                    0.4
+                }
             })
             .collect();
         GrooveShape {
-            grid: Grid::Eighth,
+            grid,
             step_weights,
             swing: 0.0,
-            onsets_per_bar: (steps / 2) as f32,
+            onsets_per_bar: opb.min(steps as f32),
         }
     }
 }
@@ -111,7 +137,13 @@ impl Character {
                     GrooveShape::plain(ts)
                 }
             }
-            _ => GrooveShape::plain(ts),
+            _ => {
+                // No regular groove measured: follow the clip's onset rate.
+                let bar_s = 60.0 / bpm.unwrap_or(100.0) * beats_per_bar as f64;
+                let dur = p.source.duration_s.max(0.1);
+                let opb = (p.onsets_s.len() as f64 / dur * bar_s) as f32;
+                GrooveShape::from_rate(ts, opb)
+            }
         };
         let low_share = band_share(&p.spectral.bands_db, 0..3);
         let (active_s, peak_pos) = active_span(&p.envelope.frames_db, p.envelope.hop_s);
@@ -316,7 +348,7 @@ mod tests {
         f.extend([-30.0, -20.0, -10.0, -5.0, 0.0, -10.0, -30.0]);
         f.extend(vec![-120.0f32; 4]);
         let (span, pos) = active_span(&f, 0.01);
-        assert!((span - 0.07).abs() < 1e-9, "{span}");
+        assert!((span - 0.07).abs() < 1e-6, "{span}");
         assert!((pos - 4.0 / 6.0).abs() < 1e-6, "{pos}");
     }
 

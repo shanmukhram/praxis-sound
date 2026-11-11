@@ -30,12 +30,14 @@ use crate::ops::sound::{
     normalize_who, resolve_sound,
 };
 use crate::ops::variations::{load_variations, variations_dir};
+use praxis_analyze::SoundProfile;
 use praxis_planner::edit::{DynamicsChange, EditIntent, EditPlan, EditScope, edit_request};
 use praxis_planner::{Catalogue, EditOutcome, compose_edit, plan_brief, plan_edit};
 use praxis_score::patch::{Origin, PatchOp, Scope, ScorePatch};
 use praxis_score::{BarRange, Score};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Who a take is from when the request does not say (the CLI's default).
@@ -72,6 +74,155 @@ pub struct AskRequest {
     /// Also return the take's score under `take.score`.
     #[serde(default)]
     pub include_score: bool,
+    /// A reference clip or library style the request is about ("make something like this").
+    /// A request that asks for something like it runs the match loop (WP-M); otherwise the
+    /// planner gets the reference's summary and key numbers, and the assistant its trimmed
+    /// profile. Recorded on the take.
+    #[serde(default)]
+    pub reference: Option<ReferenceArg>,
+}
+
+/// A reference for [`AskRequest`]: a dropped clip or a library entry (docs/contracts/cli.md).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReferenceArg {
+    /// What the person calls it: the file name or the style name.
+    pub name: String,
+    /// The clip, measured with `praxis analyze`'s code (its audio is never used).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clip: Option<PathBuf>,
+    /// A reference-library entry id (`praxis library list`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub library_id: Option<String>,
+}
+
+/// Loads a reference's Sound Profile: the clip measured, or the library entry read.
+pub(crate) fn load_reference(r: &ReferenceArg) -> Result<SoundProfile, OpError> {
+    match (&r.clip, &r.library_id) {
+        (Some(clip), _) => Ok(crate::ops::analyze::profile_clip(clip, 4)?.0),
+        (None, Some(id)) => {
+            let v = crate::ops::library(&crate::ops::LibraryRequest {
+                action: crate::ops::LibraryAction::Show { id: id.clone() },
+                dir: None,
+            })?;
+            serde_json::from_value(v["profile"].clone()).map_err(|e| {
+                OpError::new(
+                    ErrorCode::BadJson,
+                    format!("library entry `{id}` is not a Sound Profile: {e}"),
+                )
+            })
+        }
+        (None, None) => Err(OpError::new(
+            ErrorCode::Error,
+            format!(
+                "the reference `{}` needs a `clip` path or a `library_id`",
+                r.name
+            ),
+        )),
+    }
+}
+
+/// The reference in words for the planner: its summary and key numbers, e.g. `Reference
+/// "rain.wav": music (93% sure) · 30.0 s · 96 BPM · f# minor · -16.0 LUFS · tonal. Around 96 BPM
+/// in f# minor.`
+pub(crate) fn reference_words(name: &str, p: &SoundProfile) -> String {
+    let mut out = format!("Reference \"{name}\": {}.", crate::ops::analyze::summary(p));
+    let music = p.class.kind == praxis_analyze::profile::ClipKind::Music;
+    let bpm = p
+        .tempo
+        .as_ref()
+        .filter(|t| music && t.confidence >= 0.2)
+        .map(|t| t.bpm.round());
+    let key = p
+        .key
+        .as_ref()
+        .filter(|k| k.confidence >= 0.2)
+        .map(|k| k.key.display());
+    match (bpm, key) {
+        (Some(b), Some(k)) => out.push_str(&format!(" Around {b} BPM in {k}.")),
+        (Some(b), None) => out.push_str(&format!(" Around {b} BPM.")),
+        (None, Some(k)) => out.push_str(&format!(" In {k}.")),
+        (None, None) => {}
+    }
+    out
+}
+
+/// The profile for the assistant, trimmed to a few kB: the long tracks (pitch frames, envelope
+/// and centroid tracks, onset and beat times) and the raw feature vector are dropped, floats
+/// rounded, and the plain-words summary added.
+pub fn trimmed_profile(p: &SoundProfile) -> Value {
+    let mut v = serde_json::to_value(p).unwrap_or(Value::Null);
+    for path in [
+        &["pitch", "midi"][..],
+        &["envelope", "frames_db"],
+        &["spectral", "centroid_track_hz"],
+        &["onsets_s"],
+        &["tempo", "beats_s"],
+        &["features"],
+    ] {
+        remove_path(&mut v, path);
+    }
+    round_floats(&mut v);
+    v["summary"] = json!(crate::ops::analyze::summary(p));
+    v
+}
+
+fn remove_path(v: &mut Value, path: &[&str]) {
+    let Some((last, parents)) = path.split_last() else {
+        return;
+    };
+    let mut cur = v;
+    for k in parents {
+        match cur.get_mut(*k) {
+            Some(next) => cur = next,
+            None => return,
+        }
+    }
+    if let Some(o) = cur.as_object_mut() {
+        o.remove(*last);
+    }
+}
+
+/// Rounds every float to three decimals (keeps the trimmed profile short).
+fn round_floats(v: &mut Value) {
+    match v {
+        Value::Number(n) if n.is_f64() => {
+            if let Some(f) = n.as_f64() {
+                *v = json!((f * 1000.0).round() / 1000.0);
+            }
+        }
+        Value::Array(a) => a.iter_mut().for_each(round_floats),
+        Value::Object(o) => o.values_mut().for_each(round_floats),
+        _ => {}
+    }
+}
+
+/// True when the request asks for something like the reference ("make something like this",
+/// "similar", "in the style of"), or says nothing but the reference.
+pub fn wants_like(text: &str) -> bool {
+    let t = text.trim().to_lowercase();
+    if t.is_empty() {
+        return true;
+    }
+    [
+        "like this",
+        "like that",
+        "like it",
+        "like the reference",
+        "like the clip",
+        "something like",
+        "sounds like",
+        "similar",
+        "in the style of",
+        "same style",
+        "same vibe",
+        "same feel",
+        "same character",
+        "match this",
+        "match it",
+        "match the reference",
+    ]
+    .iter()
+    .any(|w| t.contains(w))
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -125,6 +276,7 @@ pub(crate) struct Words {
     pub(crate) scope: Option<TakeScope>,
     pub(crate) provider: String,
     pub(crate) seed: u64,
+    pub(crate) reference: Option<ReferenceArg>,
 }
 
 pub(crate) fn render_settings(skip_missing: bool) -> RenderSettings {
@@ -249,6 +401,7 @@ pub(crate) fn make_take(
         identical_bars: identical,
         provider: words.provider,
         seed: words.seed,
+        reference: words.reference,
     };
     sound.takes.takes.push(record.clone());
     sound.takes.current = n;
@@ -434,6 +587,10 @@ pub fn ask(req: &AskRequest) -> Result<Value, OpError> {
 
 /// [`ask`] with an explicit model client, assistant settings and progress callback.
 pub fn ask_with(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
+    // "Make something like this" runs the match loop (deterministic, no model needed).
+    if req.patch.is_none() && req.reference.is_some() && wants_like(&req.text) {
+        return ask_planner(req);
+    }
     if req.patch.is_none() && use_agent(req, opts)? {
         return crate::agent::run_ask(req, opts);
     }
@@ -465,6 +622,11 @@ fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
     let settings = render_settings(req.skip_missing);
     let n = sound.takes.next_n();
     let seed = req.seed.unwrap_or(n as u64);
+    let reference = match &req.reference {
+        Some(r) => Some((r.clone(), load_reference(r)?)),
+        None => None,
+    };
+    let like = req.patch.is_none() && reference.is_some() && wants_like(&text);
 
     if sound.takes.takes.is_empty() {
         if sound.project.is_some() {
@@ -482,6 +644,28 @@ fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
                 "this sound has no takes yet: describe the sound first (no patch or scope)",
             ));
         }
+        if like && let Some((r, p)) = reference.clone() {
+            let (score, say) = match_score(&r, p, &text, seed)?;
+            let title = req
+                .title
+                .clone()
+                .unwrap_or_else(|| format!("Like {}", r.name));
+            sound.project = Some(praxis_score::project::Project::new(score));
+            let words = Words {
+                who,
+                ask: ask_words(&text, &r),
+                title,
+                say,
+                scope: None,
+                provider: "match".into(),
+                seed,
+                reference: Some(r),
+            };
+            let take = make_take(&mut sound, None, None, words, &settings)?;
+            let mut v = take_payload(&sound, &take, req.include_score);
+            v["provider_note"] = json!("made by the match loop (no model)");
+            return Ok(v);
+        }
         if text.is_empty() {
             return Err(OpError::new(
                 ErrorCode::Error,
@@ -489,7 +673,12 @@ fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
             ));
         }
         let (provider, note) = choose_provider(req.provider, req.model.as_deref())?;
-        let outcome = plan_brief(&text, provider.as_ref(), &Catalogue::standard(), seed)
+        // The planner reads the reference's summary and key numbers with the brief.
+        let brief = match &reference {
+            Some((r, p)) => format!("{text}\n{}", reference_words(&r.name, p)),
+            None => text.clone(),
+        };
+        let outcome = plan_brief(&brief, provider.as_ref(), &Catalogue::standard(), seed)
             .map_err(plan_error_of)?;
         let title = req.title.clone().unwrap_or_else(|| {
             if outcome.score.title.trim().is_empty() {
@@ -507,6 +696,7 @@ fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
             scope: None,
             provider: outcome.provider_id.clone(),
             seed,
+            reference: req.reference.clone(),
         };
         let take = make_take(&mut sound, None, None, words, &settings)?;
         let mut v = take_payload(&sound, &take, req.include_score);
@@ -527,6 +717,35 @@ fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
         Some(s) => format!("{text} ({})", scope_label(&before, s)),
         None => text.clone(),
     };
+    if like && let Some((r, p)) = reference.clone() {
+        // "Like this" on a sound with takes: the matched sound replaces the current one (one
+        // undoable patch; locked layers refuse it).
+        let (score, say) = match_score(&r, p, &text, seed)?;
+        let patch = praxis_score::project::patch_between(
+            &before,
+            &score,
+            format!("new sound made like {}", r.name),
+        )
+        .map_err(|e| OpError::new(ErrorCode::PatchRejected, e))?;
+        project.commit(patch.clone()).map_err(project_error)?;
+        let words = Words {
+            who,
+            ask: ask_words(&text, &r),
+            title: req
+                .title
+                .clone()
+                .unwrap_or_else(|| format!("Like {}", r.name)),
+            say,
+            scope: None,
+            provider: "match".into(),
+            seed,
+            reference: Some(r),
+        };
+        let take = make_take(&mut sound, Some(&before), Some(patch), words, &settings)?;
+        let mut v = take_payload(&sound, &take, req.include_score);
+        v["provider_note"] = json!("made by the match loop (no model)");
+        return Ok(v);
+    }
     let (patch, words, note, edit) = if let Some(patch) = &req.patch {
         project.commit(patch.clone()).map_err(project_error)?;
         let bars = patch.scope.bars.or(req.scope.as_ref().map(|s| s.bars));
@@ -550,6 +769,7 @@ fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
             scope: req.scope.clone(),
             provider: "hand".into(),
             seed,
+            reference: req.reference.clone(),
         };
         (patch.clone(), words, None, Value::Null)
     } else {
@@ -591,6 +811,7 @@ fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
             scope: req.scope.clone(),
             provider: out.provider_id.clone(),
             seed,
+            reference: req.reference.clone(),
         };
         let edit = outcome_json(&before, &out);
         (out.patch.clone(), words, note, edit)
@@ -609,6 +830,50 @@ fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
         });
     }
     Ok(v)
+}
+
+/// The take's `ask` for a match: the person's words, or what they asked for by dropping a clip.
+fn ask_words(text: &str, r: &ReferenceArg) -> String {
+    if text.is_empty() {
+        format!("Make something like {}", r.name)
+    } else {
+        text.to_string()
+    }
+}
+
+/// Runs the match loop on a reference; the request's words are its mood (FR-17).
+fn match_score(
+    r: &ReferenceArg,
+    profile: SoundProfile,
+    text: &str,
+    seed: u64,
+) -> Result<(Score, String), OpError> {
+    let req = crate::ops::r#match::MatchClipRequest {
+        clip: PathBuf::new(),
+        out: PathBuf::new(),
+        prompt: Some(text.to_string()).filter(|t| !t.is_empty()),
+        timbre: None,
+        bars: None,
+        key: None,
+        bpm: None,
+        seed: Some(seed),
+        max_iterations: None,
+        render: None,
+    };
+    let (_, out) = crate::ops::r#match::matched_profiles(profile, None, None, &req)?;
+    let say = format!(
+        "Made something like {}: {} (similarity {:.2} after {} renders); {}.",
+        r.name,
+        out.made_with,
+        out.similarity,
+        out.iterations.len(),
+        if out.originality_attempts > 1 {
+            "a first melody came too close to the reference's, so it uses another one"
+        } else {
+            "its melody is its own"
+        }
+    );
+    Ok((out.score, say))
 }
 
 /// Replaces the title and/or `say` of take `n` (the assistant's words for a variation it kept
@@ -818,6 +1083,7 @@ pub fn keep_variation(req: &KeepVariationRequest) -> Result<Value, OpError> {
         scope,
         provider: "variation".into(),
         seed: rec.seed,
+        reference: None,
     };
     let take = make_take(
         &mut sound,

@@ -120,6 +120,9 @@ pub struct TakeRecord {
     /// Extra: the planner / arranger seed.
     #[serde(default)]
     pub seed: u64,
+    /// The reference clip or library style the request came with (`ask`'s `reference`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<crate::ops::takes::ReferenceArg>,
 }
 
 /// A request to show a panel view ("Notes opened by cut-assistant").

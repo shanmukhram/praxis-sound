@@ -356,7 +356,9 @@ pub fn plan(
         ));
     }
     if layers.is_empty() {
-        return Err(MatchError::Invalid("a palette needs at least one layer".into()));
+        return Err(MatchError::Invalid(
+            "a palette needs at least one layer".into(),
+        ));
     }
     let all: Vec<String> = layers.iter().map(|l| l.id.clone()).collect();
     let sections = match (setup.intro && bars >= 8, lead_id) {
@@ -408,9 +410,13 @@ pub fn plan(
         avoid: vec![],
         sections,
         layers,
-        chords: progression(&setup.key, bars, setup.bpm),
+        chords: progression(&setup.key, bars, setup.bpm, contour),
         notes: vec![],
         requested: vec![],
+        form: vec![],
+        hits: vec![],
+        progression: None,
+        tempo_range: None,
     })
 }
 
@@ -450,19 +456,24 @@ fn exp_db(x: f64) -> f32 {
     (-18.0 + 24.0 * x.clamp(0.0, 1.0)) as f32
 }
 
-/// A plain diatonic progression (i VI III VII in minor keys, I V vi IV in major ones), one chord
-/// per bar, or per two bars below 90 BPM. None for pentatonic and chromatic keys.
-pub fn progression(key: &Key, bars: u32, bpm: f64) -> Vec<PlanChord> {
-    let degrees: &[i32] = match key.mode {
+/// A plain diatonic progression, one chord per bar, or per two bars below 90 BPM; `variant`
+/// picks one of four (minor: i VI III VII, i iv v i, i VI iv v, i VII VI v; major: I V vi IV,
+/// I IV V I, I vi IV V, I iii IV V), so an originality retry changes the harmony as well as the
+/// melody. None for pentatonic and chromatic keys.
+pub fn progression(key: &Key, bars: u32, bpm: f64, variant: usize) -> Vec<PlanChord> {
+    const MINOR: &[&[i32]] = &[&[0, 5, 2, 6], &[0, 3, 4, 0], &[0, 5, 3, 4], &[0, 6, 5, 4]];
+    const MAJOR: &[&[i32]] = &[&[0, 4, 5, 3], &[0, 3, 4, 0], &[0, 5, 3, 4], &[0, 2, 3, 4]];
+    let set = match key.mode {
         Mode::Minor
         | Mode::HarmonicMinor
         | Mode::MelodicMinor
         | Mode::Dorian
         | Mode::Phrygian
-        | Mode::Locrian => &[0, 5, 2, 6],
-        Mode::Major | Mode::Lydian | Mode::Mixolydian => &[0, 4, 5, 3],
+        | Mode::Locrian => MINOR,
+        Mode::Major | Mode::Lydian | Mode::Mixolydian => MAJOR,
         Mode::MajorPentatonic | Mode::MinorPentatonic | Mode::Chromatic => return vec![],
     };
+    let degrees = set[variant % set.len()];
     let per = if bpm < 90.0 { 2 } else { 1 };
     let mut out = Vec::new();
     let mut start = 1;
@@ -527,7 +538,9 @@ fn finish(s: &mut Score, setup: &Setup, palette: &Palette, x: &[f64], catalogue:
         }
     }
     // Air: a gentle low-pass on the master; width: side gain.
-    s.master.effects.retain(|e| e.id != "air" && e.id != "width");
+    s.master
+        .effects
+        .retain(|e| e.id != "air" && e.id != "width");
     s.master.effects.push(effect(
         "air",
         EffectKind::Eq,
@@ -650,10 +663,12 @@ mod tests {
             tonic: PitchClass::A,
             mode: Mode::Minor,
         };
-        let c = progression(&key, 7, 120.0);
+        let c = progression(&key, 7, 120.0, 0);
         assert_eq!(c.len(), 7);
         assert_eq!(c[0].symbol, diatonic_symbol(&key, 0));
-        let slow = progression(&key, 7, 70.0);
+        let slow = progression(&key, 7, 70.0, 0);
+        let other = progression(&key, 4, 120.0, 1);
+        assert_ne!(other[1].symbol, c[1].symbol);
         assert_eq!(slow.len(), 4);
         assert_eq!(slow[3].bars, BarRange { start: 7, end: 7 });
     }

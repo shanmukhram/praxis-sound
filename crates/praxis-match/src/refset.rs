@@ -374,7 +374,7 @@ fn bell_arp() -> Reference {
                     grid: Grid::Sixteenth,
                     length_steps: 16,
                     notes: sub,
-                    gain_db: -4.0,
+                    gain_db: -14.0,
                     pan: 0.0,
                     effects: vec![],
                     bars: (1, 8),
@@ -703,7 +703,11 @@ fn rain_bed() -> Reference {
         Grid::Quarter,
         16.0,
         vec![
-            fx("soft", EffectKind::Eq, &[("lp_hz", 6000.0), ("hp_hz", 150.0)]),
+            fx(
+                "soft",
+                EffectKind::Eq,
+                &[("lp_hz", 6000.0), ("hp_hz", 150.0)],
+            ),
             reverb(2.0, 0.3),
         ],
         2.0,

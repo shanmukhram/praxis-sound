@@ -3,9 +3,9 @@
 //! measured by the same code (PRD design rule), so this module only adapts types.
 
 use crate::error::MatchError;
-use praxis_analyze::{ProfileOptions, SoundProfile, sound_profile};
 use praxis_analyze::originality::{self, OriginalityReport};
 use praxis_analyze::similarity;
+use praxis_analyze::{ProfileOptions, SoundProfile, sound_profile};
 use praxis_dsp::StereoBuffer;
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,11 @@ pub fn profile_of(
 /// Character similarity, 0..1 (contracts/sound-profile.md).
 pub fn similarity(reference: &SoundProfile, render: &SoundProfile) -> f32 {
     let s = similarity::similarity(reference, render);
-    if s.is_finite() { s.clamp(0.0, 1.0) } else { 0.0 }
+    if s.is_finite() {
+        s.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
 }
 
 /// The originality guard's check of one render against one reference (FR-18).
