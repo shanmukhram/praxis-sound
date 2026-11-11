@@ -2,7 +2,7 @@
 
 Updated after every merge. Newest first. Branch: `build/integration` (pushed to `origin`).
 
-## Current phase: 5-8 in progress (Phases 0-4 closed 2026-11-11)
+## Current phase: 6 and 8 in progress (Phases 0-5 and 7 closed)
 
 Wave 1 (WP-A, B1, B2, C1, D1, E, F, P) runs as background agents in worktrees. From wave 2 on,
 work packages run as visible sessions (owner's choice), briefed from `docs/briefs/`. WP-X (MCP
@@ -36,6 +36,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- **Phase 5 closed.** Merged WP-U6 reference clips in the app (78ab661): drop a clip (or "Add a clip"), the shell keeps it under PRAXIS_HOME/clips and measures it with `ops::analyze`; a Reference view shows the profile in plain words with envelope, onsets, sections, spectral bars and groove ("can't tell" when unsure), "Make something like this", Save to library, a loudness-matched A/B on the real-time master (the louder side turned down by the LUFS difference), library list / use / tag / remove, a reference chip in the composer. Exit met: tempo within 2 BPM and key on >= 90% of the labelled set (WP-D2: 94.2% / 97.9%), and profiles display for a music clip, a sound effect and an ambience (release app on the fake output, screenshots `app/screenshots/release-reference-*.png`). Rerun here: praxis-app tests, tsc, Vitest 202/202, Playwright 16/16 (muted). Not exercised: a real OS drag from the desktop, a real video through ffmpeg. WP-M adds the proper `reference` field to `ask` (today the app sends a short reference block in words).
 
 - **Phase 7 closed.** Merged WP-P3 scoring depth (c7ac6de..b07bbef): plan `form[]`, `hits[]`, `progression`, `tempo_range`; forms solved to the length with hits pulling boundaries; tempo chosen so hits land on strong beats; voice-led progressions (symbols or Roman numerals), bass passing tones, motif development by intensity, a tension curve (per-bar velocity and a low-pass lane), drop / hold / pickup transitions (never a riser), hit accents and markers; eight emotion presets; offline reader and Claude prompt rules; 6 new suite cases (offline 33/33; live 6/6 on the second run, US$0.58 total). Exit: "A 2-minute tense cue in D minor ... hits at 0:42, 1:05 and 1:38" plans 120 BPM / 60 bars; the render puts an onset 0.17 ms from each marker; 7/7 checks. The owner listened to `demos/phase-7/cue_hits_2min.flac` and signed off ("Sounds right", 2026-11-12). Follow-ups: borrowed chords need a Score change (a scale on ChordSpan); the analyzer reads synth basses alone and low piano poorly (a D1-style package); a tempo map (Score v2) for more hits on bar lines.
 
