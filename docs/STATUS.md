@@ -37,6 +37,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
 
 ## Log
 
+- Owner asked for a real assistant: requests are understood and carried out by an agent with every tool, the app's details and the conversation's history. Queued WP-AG (brief docs/briefs/WP-AG-in-app-agent.md): Claude Opus 5.5 tool loop inside the command layer, conversation.json per sound, offline planner kept as the no-key fallback. Live run needs the owner's API key after it merges.
+
 - Found with the owner: "make the piano muffled" / "make it a little darker" rewrite the melody (offline edit reader has no tone or space intent and falls back to rewrite_motif); the app's Brightness and Space sliders send such phrases. Queued WP-P2b (brief docs/briefs/WP-P2b-tone-space-edits.md).
 
 - **Phase 2 closed**: the owner listened to `demos/phase-2/acceptance1_mixed_loop.flac` and the x3 seam file and signed off ("its perfect"). No changes requested; the FDN reverb stays without modulation.

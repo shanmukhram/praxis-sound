@@ -170,6 +170,14 @@ Depends: WP-P2. Brief: `docs/briefs/WP-P2b-tone-space-edits.md`. Done: "make the
 keeps every note and lowers the measured brightness; space edits; unknown instructions refused
 instead of rewriting notes; the app's Feel slider phrases all map to tested intents.
 
+### WP-AG sound assistant agent
+FR-1, FR-7, FR-8, FR-34 as an agent: Claude with every Praxis tool, memory of the conversation
+per sound, self-checking renders. Owns: `crates/praxis-cli/src/agent/**`, the `ask` routing and
+conversation log in `ops/`, CLI tests, `crates/praxis-mcp/**`, `docs/agents/**`. Depends: WP-K2.
+Brief: `docs/briefs/WP-AG-in-app-agent.md`. Done: scripted and replayed conversations pass
+(muffled piano keeps its notes, follow-ups use the history, scoped edits keep other bars
+identical); live run after merge with the owner's key.
+
 ### WP-K cli
 FR-33. Owns: `crates/praxis-cli/**`. Depends: grows with P, D, E, M. Done: every command in
 contracts/cli.md, JSON payload tests (`assert_cmd`-style via std::process).
