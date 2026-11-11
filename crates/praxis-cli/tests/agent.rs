@@ -295,12 +295,20 @@ fn a_conversation_new_sound_muffled_then_brighter() {
             "tool_use",
         ),
         message(vec![tool_use("m3", "render_check", json!({}))], "tool_use"),
+        // The reply, and the take's title through finish_turn (no further request).
         message(
-            vec![text(
-                "Muffled the felt piano by lowering its tone to 0.2 and raising the felt to 0.9; \
-                 every note is the same.",
-            )],
-            "end_turn",
+            vec![
+                text(
+                    "Muffled the felt piano by lowering its tone to 0.2 and raising the felt to \
+                     0.9; every note is the same.",
+                ),
+                tool_use(
+                    "m4",
+                    "finish_turn",
+                    json!({"title": "Muffled felt piano", "no_take": ""}),
+                ),
+            ],
+            "tool_use",
         ),
     ];
     let model = ScriptedModel::new(muffled.clone());
@@ -313,7 +321,21 @@ fn a_conversation_new_sound_muffled_then_brighter() {
     let t2 = &two["take"];
     assert_eq!(t2["n"], 2);
     assert_eq!(t2["from"], 1);
-    assert_eq!(t2["title"], "Muffled the felt piano");
+    assert_eq!(
+        t2["title"], "Muffled felt piano",
+        "the assistant's own title"
+    );
+    assert!(
+        t2["say"]
+            .as_str()
+            .unwrap()
+            .starts_with("Muffled the felt piano by")
+    );
+    assert_eq!(
+        two["agent"]["steps"].as_array().unwrap().len(),
+        3,
+        "finish_turn is not a step"
+    );
     let reqs2 = model.requests();
     assert_eq!(reqs2.len(), 4);
     reqs2.iter().for_each(assert_api_rules);
@@ -411,20 +433,31 @@ fn a_conversation_new_sound_muffled_then_brighter() {
     )
     .expect("take 3");
     assert_eq!(three["take"]["n"], 3);
+    // No title from the assistant: a summary of what changed, never the reply clipped.
+    let title3 = three["take"]["title"].as_str().unwrap();
+    println!("take 3 title: {title3}");
+    assert!(
+        title3.ends_with(" sound") && !title3.starts_with("Opened"),
+        "{title3}"
+    );
     let reqs3 = model.requests();
     reqs3.iter().for_each(assert_api_rules);
     assert_history_appended(&reqs3, &brighter);
     // The earlier set_params call (tone 0.2) is in the history the model reads.
     let history = reqs3[0].body["messages"].to_string();
     assert!(history.contains("\"value\":0.2") && history.contains("sig-m1"));
-    let state = reqs3[0].body["messages"]
+    // finish_turn's result waits in the last user message; the new request joins it.
+    let last = reqs3[0].body["messages"]
         .as_array()
         .unwrap()
         .last()
-        .unwrap()["content"][0]["text"]
-        .as_str()
+        .unwrap()["content"]
+        .as_array()
         .unwrap()
-        .to_string();
+        .clone();
+    assert_eq!(last[0]["type"], "tool_result");
+    assert_eq!(last[0]["tool_use_id"], "m4");
+    let state = last[1]["text"].as_str().unwrap().to_string();
     assert!(state.contains("tone 0.2"), "{state}");
     let scores = take_scores(&sound);
     assert_eq!(piano_tone(&scores[2]), 0.35);
@@ -570,7 +603,16 @@ fn a_locked_layer_is_refused_out_loud() {
         }))
         .unwrap(),
     );
-    ops::ask(&lock).expect("take 2");
+    let revision = read_json(&sound.join("takes.json"))["revision"]
+        .as_u64()
+        .unwrap();
+    let locked = ops::ask(&lock).expect("the lock is committed");
+    // A lock changes how the live score plays: committed and undoable, no render, no take.
+    assert_eq!(locked["take"], Value::Null);
+    assert_eq!(locked["no_take"], "live");
+    assert_eq!(locked["revision"].as_u64().unwrap(), revision + 1);
+    assert_eq!(locked["can_undo"], true);
+    assert!(!sound.join("takes").join("2").exists(), "nothing rendered");
 
     let reply = "The kick is locked, so I left it alone; unlock it if you want me to change it.";
     let script = vec![
@@ -588,15 +630,18 @@ fn a_locked_layer_is_refused_out_loud() {
         message(vec![text(reply)], "end_turn"),
     ];
     let model = ScriptedModel::new(script.clone());
-    let err = ops::ask_with(
+    // A refusal is a reply, not an error.
+    let out = ops::ask_with(
         &ask(&sound, "make the kick quieter"),
         &options(model.clone(), &events()),
     )
-    .unwrap_err();
-    assert_eq!(err.code, ErrorCode::PatchRejected);
-    assert_eq!(err.message, reply);
-    let agent = &err.issues[0]["agent"];
+    .expect("a reply without a take");
+    assert_eq!(out["take"], Value::Null);
+    assert_eq!(out["no_take"], "refused");
+    assert_eq!(out["reply"], reply);
+    let agent = &out["agent"];
     assert_eq!(agent["outcome"], "no_change");
+    assert_eq!(agent["reply"], reply);
     assert_eq!(agent["steps"][0]["ok"], false);
     let reqs = model.requests();
     let r = &last_results(&reqs[1])[0];
@@ -613,10 +658,136 @@ fn a_locked_layer_is_refused_out_loud() {
         include_scores: false,
     })
     .unwrap();
-    assert_eq!(takes["takes"].as_array().unwrap().len(), 2, "no take 3");
+    assert_eq!(takes["takes"].as_array().unwrap().len(), 1, "no take 2");
     let conv = read_json(&sound.join("conversation.json"));
     assert_eq!(conv["turns"][1]["outcome"], "no_change");
     assert_eq!(conv["turns"][1]["reply"], reply);
+
+    // The lock is one undo step.
+    let undone = ops::undo_redo(&ops::UndoRedoRequest {
+        sound: sound.display().to_string(),
+        action: ops::HistoryAction::Undo,
+    })
+    .unwrap();
+    assert_eq!(undone["moved"], true);
+    let live: Score = serde_json::from_value(
+        ops::takes(&ops::TakesRequest {
+            sound: sound.display().to_string(),
+            include_scores: false,
+        })
+        .unwrap()["score"]
+            .clone(),
+    )
+    .unwrap();
+    assert!(!live.layer("kick").unwrap().locked, "undo unlocks the kick");
+}
+
+#[test]
+fn a_refusal_the_model_names_and_a_mute_by_patch_make_no_take() {
+    if !have_piano("a_refusal_the_model_names_and_a_mute_by_patch_make_no_take") {
+        return;
+    }
+    let sound = scratch("refused-by-name").join("loop");
+    new_sound(&sound);
+    // A mute through `ask --patch` makes no take either.
+    let mut mute = ask(&sound, "Mute the kick");
+    mute.patch = Some(
+        serde_json::from_value(json!({
+            "description": "Kick muted",
+            "origin": "user",
+            "ops": [{"op": "update_layer", "id": "kick", "update": {"muted": true}}],
+        }))
+        .unwrap(),
+    );
+    let muted = ops::ask(&mute).unwrap();
+    assert_eq!(muted["no_take"], "live");
+    assert_eq!(muted["reply"], "Kick muted; no take was made.");
+    // A gain change by patch is a sound change: it still makes a take.
+    let mut louder = ask(&sound, "Louder kick");
+    louder.patch = Some(
+        serde_json::from_value(json!({
+            "description": "kick +1 dB",
+            "origin": "user",
+            "ops": [{"op": "update_layer", "id": "kick", "update": {"gain_db": -4.0}}],
+        }))
+        .unwrap(),
+    );
+    assert_eq!(ops::ask(&louder).unwrap()["take"]["n"], 2);
+
+    // The model refuses without trying and says why through finish_turn.
+    let reply = "I would rather not add a riser: you asked for none.";
+    let model = ScriptedModel::new(vec![message(
+        vec![
+            text(reply),
+            tool_use(
+                "f1",
+                "finish_turn",
+                json!({"title": "", "no_take": "refused"}),
+            ),
+        ],
+        "tool_use",
+    )]);
+    let out = ops::ask_with(&ask(&sound, "add a riser"), &options(model, &events())).unwrap();
+    assert_eq!(out["take"], Value::Null);
+    assert_eq!(out["no_take"], "refused");
+    assert_eq!(out["reply"], reply);
+    assert_eq!(out["current"], 2);
+}
+
+#[test]
+fn undo_and_a_view_are_replies_without_a_take() {
+    if !have_piano("undo_and_a_view_are_replies_without_a_take") {
+        return;
+    }
+    let sound = scratch("undo-view").join("loop");
+    new_sound(&sound);
+    let mut louder = ask(&sound, "Louder kick");
+    louder.patch = Some(
+        serde_json::from_value(json!({
+            "description": "kick +1 dB",
+            "origin": "user",
+            "ops": [{"op": "update_layer", "id": "kick", "update": {"gain_db": -4.0}}],
+        }))
+        .unwrap(),
+    );
+    ops::ask(&louder).unwrap();
+
+    let reply = "Take 1 is current again; say redo to bring the louder kick back.";
+    let model = ScriptedModel::new(vec![
+        message(
+            vec![tool_use("u1", "undo_redo", json!({"action": "undo"}))],
+            "tool_use",
+        ),
+        message(vec![text(reply)], "end_turn"),
+    ]);
+    let ev = events();
+    let out = ops::ask_with(&ask(&sound, "undo what you just did"), &options(model, &ev))
+        .expect("an undo is a reply");
+    assert_eq!(out["take"], Value::Null);
+    assert_eq!(out["no_take"], "undo");
+    assert_eq!(out["reply"], reply);
+    assert_eq!(out["current"], 1);
+    assert_eq!(out["can_redo"], true);
+    assert_eq!(step_words(&ev), ["Undoing the last step"]);
+
+    let model = ScriptedModel::new(vec![
+        message(
+            vec![tool_use("v1", "open_view", json!({"view": "notes"}))],
+            "tool_use",
+        ),
+        message(vec![text("The notes are open.")], "end_turn"),
+    ]);
+    let out = ops::ask_with(
+        &ask(&sound, "show me the notes"),
+        &options(model, &events()),
+    )
+    .expect("a view is a reply");
+    assert_eq!(out["take"], Value::Null);
+    assert_eq!(out["no_take"], "view");
+    let views = read_json(&sound.join("takes.json"))["views"].clone();
+    assert_eq!(views.as_array().unwrap().last().unwrap()["view"], "notes");
+    let takes = read_json(&sound.join("takes.json"))["takes"].clone();
+    assert_eq!(takes.as_array().unwrap().len(), 2, "no take for either");
 }
 
 #[test]
@@ -638,10 +809,11 @@ fn the_step_budget_is_reached_and_explained() {
     let model = ScriptedModel::new(script.clone());
     let mut opts = options(model.clone(), &events());
     opts.agent.max_steps = 2;
-    let err = ops::ask_with(&ask(&sound, "something calm"), &opts).unwrap_err();
-    assert_eq!(err.code, ErrorCode::Error);
-    assert_eq!(err.message, reply);
-    assert_eq!(err.issues[0]["agent"]["outcome"], "out_of_steps");
+    let out = ops::ask_with(&ask(&sound, "something calm"), &opts).unwrap();
+    assert_eq!(out["take"], Value::Null);
+    assert_eq!(out["no_take"], "nothing_to_change");
+    assert_eq!(out["reply"], reply);
+    assert_eq!(out["agent"]["outcome"], "out_of_steps");
     let reqs = model.requests();
     assert_eq!(reqs.len(), 3);
     reqs.iter().for_each(assert_api_rules);
@@ -684,14 +856,17 @@ fn ask_user_ends_the_turn_and_the_answer_continues_it() {
         ],
         "tool_use",
     )]);
-    let err = ops::ask_with(
+    let out = ops::ask_with(
         &ask(&sound, "make me something for a logo"),
         &options(model.clone(), &events()),
     )
-    .unwrap_err();
-    assert_eq!(err.message, q);
-    assert_eq!(err.issues[0]["agent"]["outcome"], "question");
-    assert_eq!(err.issues[0]["agent"]["question"], q);
+    .expect("a question is a reply");
+    assert_eq!(out["take"], Value::Null);
+    assert_eq!(out["no_take"], "question");
+    assert_eq!(out["reply"], q);
+    assert_eq!(out["current"], 0);
+    assert_eq!(out["agent"]["outcome"], "question");
+    assert_eq!(out["agent"]["question"], q);
     assert_eq!(
         model.requests().len(),
         1,
@@ -714,9 +889,9 @@ fn ask_user_ends_the_turn_and_the_answer_continues_it() {
         )],
         "end_turn",
     )]);
-    let err =
-        ops::ask_with(&ask(&sound, "a loop"), &options(model.clone(), &events())).unwrap_err();
-    assert_eq!(err.issues[0]["agent"]["outcome"], "no_change");
+    let out = ops::ask_with(&ask(&sound, "a loop"), &options(model.clone(), &events())).unwrap();
+    assert_eq!(out["agent"]["outcome"], "no_change");
+    assert_eq!(out["no_take"], "nothing_to_change");
     let sent = model.requests()[0].body["messages"]
         .as_array()
         .unwrap()
@@ -735,10 +910,15 @@ fn refusals_and_api_failures() {
     let mut refusal = message(vec![], "refusal");
     refusal["stop_details"] = json!({"type": "refusal", "category": "cyber"});
     let model = ScriptedModel::new(vec![refusal]);
-    let err = ops::ask_with(&ask(&sound, "something"), &options(model, &events())).unwrap_err();
-    assert_eq!(err.code, ErrorCode::ProviderFailed);
-    assert!(err.message.contains("declined") && err.message.contains("cyber"));
-    assert_eq!(err.issues[0]["agent"]["outcome"], "declined");
+    // A declined request is a reply (nothing changed), not a failure.
+    let out = ops::ask_with(&ask(&sound, "something"), &options(model, &events())).unwrap();
+    assert_eq!(out["no_take"], "refused");
+    let said = out["reply"].as_str().unwrap();
+    assert!(
+        said.contains("declined") && said.contains("cyber"),
+        "{said}"
+    );
+    assert_eq!(out["agent"]["outcome"], "declined");
 
     let model = Arc::new(ScriptedModel::default());
     model.push(Reply::Error(ModelError::Http {
@@ -811,17 +991,18 @@ fn replayed_streams_through_the_http_client() {
         Box::new(|| Ok(FAKE_KEY.to_string())),
     );
     let ev = events();
-    let err = ops::ask_with(
+    let out = ops::ask_with(
         &ask(&sound, "make a sound for my app's logo"),
         &options(Arc::new(client), &ev),
     )
-    .unwrap_err();
-    assert_eq!(err.issues[0]["agent"]["outcome"], "question");
+    .unwrap();
+    assert_eq!(out["agent"]["outcome"], "question");
+    assert_eq!(out["no_take"], "question");
     assert_eq!(
-        err.message,
+        out["reply"],
         "Should the logo sound be a short rising sting or a soft tonal chime?"
     );
-    let agent = &err.issues[0]["agent"];
+    let agent = &out["agent"];
     assert_eq!(agent["usage"]["requests"], 2);
     assert!(agent["usage"]["cache_read_input_tokens"].as_u64().unwrap() > 0);
 
@@ -842,7 +1023,7 @@ fn replayed_streams_through_the_http_client() {
             assert!(!text.contains(FAKE_KEY), "{:?}", entry.path());
         }
     }
-    assert!(!format!("{err:?}").contains(FAKE_KEY));
+    assert!(!out.to_string().contains(FAKE_KEY));
     // The streamed thinking block (with its signature) is kept exactly.
     let conv = read_json(&sound.join("conversation.json"));
     let assistant = &conv["messages"][1]["content"];
@@ -873,4 +1054,92 @@ fn request_sizes_for_the_cost_estimate() {
         system.len() + tools.len() < 120_000,
         "the prefix stays small"
     );
+}
+
+/// "Make these bars muffled" with bars 5-8 of the piano pointed at: a tone change held to the
+/// bars by automation passes the request's scope, and the render keeps every other bar
+/// identical within the patch contract (bit-identical, or below -120 dBFS where the piano's
+/// recirculating reverb carries the change).
+#[test]
+fn a_bar_limited_tone_edit_passes_the_scope_and_keeps_the_other_bars() {
+    if !have_piano("a_bar_limited_tone_edit_passes_the_scope_and_keeps_the_other_bars") {
+        return;
+    }
+    let sound = scratch("tone-bars").join("loop");
+    let one = new_sound(&sound);
+    let score = take_scores(&sound).remove(0);
+    let piano = score.layer("piano").unwrap();
+    let tone = piano.instrument.params.get("tone").copied().unwrap_or(0.5);
+    let mut automation = serde_json::to_value(&piano.automation).unwrap();
+    automation.as_array_mut().unwrap().push(json!({
+        "target": "instrument.tone",
+        "curve": "step",
+        "points": [{"bar": 1.0, "value": tone}, {"bar": 5.0, "value": 0.15}, {"bar": 9.0, "value": tone}],
+    }));
+    let patch = json!({
+        "description": "muffle the piano in bars 5-8",
+        "ops": [{"op": "update_layer", "id": "piano", "update": {"automation": automation}}],
+    });
+    let script = vec![
+        message(
+            vec![tool_use(
+                "t1",
+                "apply_patch",
+                json!({"patch_json": patch.to_string()}),
+            )],
+            "tool_use",
+        ),
+        message(vec![tool_use("t2", "render_check", json!({}))], "tool_use"),
+        message(
+            vec![
+                text("Muffled the piano in bars 5-8 only; every other bar is as it was."),
+                tool_use(
+                    "t3",
+                    "finish_turn",
+                    json!({"title": "Muffled piano, bars 5-8", "no_take": ""}),
+                ),
+            ],
+            "tool_use",
+        ),
+    ];
+    let model = ScriptedModel::new(script);
+    let mut req = ask(&sound, "make these bars muffled");
+    req.scope = Some(TakeScope {
+        layer: "piano".into(),
+        bars: BarRange { start: 5, end: 8 },
+    });
+    let two = ops::ask_with(&req, &options(model.clone(), &events())).expect("take 2");
+    let steps = two["agent"]["steps"].as_array().unwrap();
+    assert_eq!(steps[0]["ok"], true, "the scope accepts it: {}", steps[0]);
+    let t2 = &two["take"];
+    assert_eq!(t2["title"], "Muffled piano, bars 5-8");
+    assert_eq!(t2["changed"], json!({"piano": [5, 8]}));
+
+    let a = praxis_audio_io::decode::decode_file(Path::new(
+        one["take"]["render"]["path"].as_str().unwrap(),
+    ))
+    .unwrap();
+    let b = praxis_audio_io::decode::decode_file(Path::new(t2["render"]["path"].as_str().unwrap()))
+        .unwrap();
+    let after = take_scores(&sound).remove(1);
+    let db =
+        praxis_cli::ops::changes::bar_differences_db(&after, &a.audio, &b.audio, b.sample_rate);
+    println!("largest difference per bar (dBFS): {db:?}");
+    println!(
+        "untouched: {}; identical: {}",
+        t2["untouched"], t2["identical_bars"]
+    );
+    // The change is audible in its bars...
+    for bar in 5..=8 {
+        assert!(db[bar - 1] > -60.0, "bar {bar}: {}", db[bar - 1]);
+    }
+    // ... and nothing else moved beyond rounding, outside the notes' release and reverb tail
+    // just after the bars (bars 9-10, allowed by contracts/patch.md).
+    for bar in (1..=4).chain(11..=16) {
+        assert!(
+            db[bar - 1] < praxis_cli::ops::changes::ROUNDING_DBFS,
+            "bar {bar}: {} dBFS",
+            db[bar - 1]
+        );
+    }
 }

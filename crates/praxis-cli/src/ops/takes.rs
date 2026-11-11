@@ -17,7 +17,9 @@
 
 use crate::agent::{AgentConfig, ModelClient, Progress};
 use crate::error::{ErrorCode, OpError};
-use crate::ops::changes::{bars_label, changed_layers, identical_bars, untouched_text};
+use crate::ops::changes::{
+    bar_differences_db, bars_label, changed_layers, identical_bars, untouched_text_measured,
+};
 use crate::ops::check::decode;
 use crate::ops::edit::{drop_view_lock_note, edit_error, only_layers, outcome_json};
 use crate::ops::generate::{ProviderChoice, choose_provider, plan_error_of};
@@ -208,12 +210,20 @@ pub(crate) fn make_take(
             let changed = changed_layers(before, &after);
             let a = decode(&sound.absolute(&prev_take.render.path))?;
             let b = decode(&path)?;
-            let identical = if a.sample_rate == b.sample_rate {
+            let same_rate = a.sample_rate == b.sample_rate;
+            let identical = if same_rate {
                 identical_bars(&after, &a.audio, &b.audio, b.sample_rate)
             } else {
                 Vec::new()
             };
-            let text = untouched_text(before, &after, &changed, &identical, prev);
+            // No bar bit-identical: measure how far each bar is from the take before, so
+            // rounding-level reverb differences read as such.
+            let bar_db = if same_rate && identical.is_empty() {
+                bar_differences_db(&after, &a.audio, &b.audio, b.sample_rate)
+            } else {
+                Vec::new()
+            };
+            let text = untouched_text_measured(before, &after, &changed, &identical, &bar_db, prev);
             (changed, identical, text)
         }
         _ => (Default::default(), Vec::new(), String::new()),
@@ -408,14 +418,16 @@ impl std::fmt::Debug for AskOptions {
 
 /// A request on a sound (the app's conversation, `praxis ask`, MCP `praxis_ask`).
 ///
-/// - With `patch`: the hand edit is committed as given (no model).
+/// - With `patch`: the hand edit is committed as given (no model). A patch that only locks,
+///   mutes or solos layers changes how the live score plays: it is committed (undoable, new
+///   `revision`) with no render and no take (`take: null`, `no_take: "live"`).
 /// - Otherwise the sound assistant ([`crate::agent`]) carries it out when it can: `provider`
 ///   unset and an API key available, or `provider: claude` (then a missing key is `no_api_key`).
 /// - Otherwise (`provider: offline`, or no key) the offline planner does, as before.
 ///
 /// Same payload as before; an assistant take adds `agent {outcome, reply, steps[], usage,
-/// model}`. A turn that makes no take (a question, a refusal, nothing to change) fails with the
-/// assistant's reply as the message and the same `agent` record as the error's only issue.
+/// model}`. An assistant turn that makes no take is a reply: `take: null`, `reply`, `no_take`
+/// (`question`, `refused`, `undo`, `view` or `nothing_to_change`) and the same `agent` record.
 pub fn ask(req: &AskRequest) -> Result<Value, OpError> {
     ask_with(req, &AskOptions::default())
 }
@@ -503,6 +515,9 @@ fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
         return Ok(v);
     }
 
+    if let Some(patch) = req.patch.as_ref().filter(|p| live_only(p)) {
+        return commit_live(&mut sound, patch);
+    }
     let project = sound
         .project
         .as_mut()
@@ -594,6 +609,57 @@ fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
         });
     }
     Ok(v)
+}
+
+/// True for a patch that only locks, unlocks, mutes or solos layers: a change to how the live
+/// score plays, not to the sound, so it makes no take (as in the app).
+pub(crate) fn live_only(patch: &ScorePatch) -> bool {
+    !patch.ops.is_empty()
+        && patch.ops.iter().all(|op| match op {
+            PatchOp::SetLock { .. } => true,
+            PatchOp::UpdateLayer { update, .. } => {
+                let mut rest = update.clone();
+                rest.muted = None;
+                rest.solo = None;
+                (update.muted.is_some() || update.solo.is_some())
+                    && rest == praxis_score::patch::LayerUpdate::default()
+            }
+            _ => false,
+        })
+}
+
+/// Commits a lock/mute/solo patch to the project's undo history and bumps `revision` (so the
+/// app and other agents see it), with no render and no take. `{sound, project, revision,
+/// current, take: null, no_take: "live", reply, score_summary, can_undo, can_redo}`.
+fn commit_live(sound: &mut Sound, patch: &ScorePatch) -> Result<Value, OpError> {
+    let project = sound
+        .project
+        .as_mut()
+        .expect("Sound::open checks takes need a project");
+    project.commit(patch.clone()).map_err(project_error)?;
+    sound.save()?;
+    let reply = if patch.description.trim().is_empty() {
+        "Changed how the sound plays; no take was made.".to_string()
+    } else {
+        format!(
+            "{}; no take was made.",
+            patch.description.trim().trim_end_matches('.')
+        )
+    };
+    let project = sound.project.as_ref().expect("committed above");
+    Ok(json!({
+        "sound": sound.dir.display().to_string(),
+        "project": sound.project_path().display().to_string(),
+        "revision": sound.takes.revision,
+        "current": sound.takes.current,
+        "take": null,
+        "no_take": "live",
+        "reply": reply,
+        "score_summary": score_summary(&project.score),
+        "can_undo": project.can_undo(),
+        "can_redo": project.can_redo(),
+        "provider_note": null,
+    }))
 }
 
 /// `{sound, project, revision, current, takes[], score, can_undo, can_redo, views[]}`. A folder

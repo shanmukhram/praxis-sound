@@ -86,6 +86,8 @@ impl Default for UreqPoster {
             // A long agent turn streams for minutes; the stream itself keeps the connection busy.
             .timeout_global(Some(Duration::from_secs(1200)))
             .http_status_as_error(false)
+            // The API never redirects; following one could carry the key to another host.
+            .max_redirects(0)
             .build();
         UreqPoster {
             agent: ureq::Agent::new_with_config(config),
@@ -129,7 +131,9 @@ pub fn default_key() -> Result<String, ModelError> {
 
 /// The Messages API over HTTP.
 pub struct HttpClient {
-    url: String,
+    /// Where requests go, or why the address was refused (a `PRAXIS_CLAUDE_URL` that is not
+    /// loopback): then nothing is sent and the key is never read.
+    url: Result<String, String>,
     poster: Box<dyn Poster>,
     key: KeySource,
     /// Retries for 429, 5xx, 529 and mid-stream overloads.
@@ -148,19 +152,25 @@ impl std::fmt::Debug for HttpClient {
 }
 
 impl HttpClient {
-    /// The real API (or `PRAXIS_CLAUDE_URL`), key from the environment or keychain.
+    /// The real API (or a loopback `PRAXIS_CLAUDE_URL` in tests), key from the environment or
+    /// keychain. Any other `PRAXIS_CLAUDE_URL` makes every request fail before the key is read.
     pub fn new() -> HttpClient {
-        let url = std::env::var(crate::ops::generate::CLAUDE_URL_ENV)
-            .ok()
-            .map(|u| u.trim().to_string())
-            .filter(|u| !u.is_empty())
-            .unwrap_or_else(|| API_URL.to_string());
-        HttpClient::with_parts(url, Box::new(UreqPoster::default()), Box::new(default_key))
+        let url = match crate::ops::generate::claude_url_override() {
+            Ok(u) => Ok(u.unwrap_or_else(|| API_URL.to_string())),
+            Err(e) => Err(e.message),
+        };
+        let mut c = HttpClient::with_parts(
+            String::new(),
+            Box::new(UreqPoster::default()),
+            Box::new(default_key),
+        );
+        c.url = url;
+        c
     }
 
     pub fn with_parts(url: String, poster: Box<dyn Poster>, key: KeySource) -> HttpClient {
         HttpClient {
-            url,
+            url: Ok(url),
             poster,
             key,
             max_retries: 3,
@@ -190,6 +200,10 @@ impl Default for HttpClient {
 
 impl ModelClient for HttpClient {
     fn send(&self, req: &ApiRequest) -> Result<Value, ModelError> {
+        let url = self
+            .url
+            .as_deref()
+            .map_err(|e| ModelError::Transport(e.clone()))?;
         let key = (self.key)()?;
         let headers = HttpClient::headers(&key, &req.betas);
         let streaming = req.body["stream"] == Value::Bool(true);
@@ -197,7 +211,7 @@ impl ModelClient for HttpClient {
         loop {
             let resp = self
                 .poster
-                .post(&self.url, &headers, &req.body)
+                .post(url, &headers, &req.body)
                 .map_err(|e| ModelError::Transport(redact(&e, &key)))?;
             let retryable = matches!(resp.status, 429 | 500 | 502 | 503 | 504 | 529);
             let wait = |attempt: u32, after: Option<u64>| {

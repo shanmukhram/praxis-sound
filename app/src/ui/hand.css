@@ -123,6 +123,18 @@ input[type="range"] { accent-color: var(--text); min-width: 0; }
 .take.draft .draft-player { grid-template-columns: 40px minmax(0, 1fr); }
 .wave.seekable { cursor: pointer; }
 
+/* ---------- the conversation: the sound assistant at work, and its replies ---------- */
+.take.making.agent-work { display: block; }
+.agent-now { display: flex; align-items: center; gap: 10px; }
+.agent-said { margin: 8px 0 0; color: var(--text); font-size: 14px; line-height: 21px; }
+.agent-steps { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; line-height: 19px; }
+.agent-steps li { padding-left: 18px; position: relative; color: var(--muted); }
+.agent-steps li::before { content: ''; position: absolute; left: 4px; top: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+.agent-steps li.running { color: var(--text); }
+.agent-steps li.running::before { background: var(--accent); }
+.agent-steps li.failed { font-style: italic; }
+.msg-reply.assistant { color: var(--text); }
+
 /* ---------- phone ---------- */
 @media (max-width: 760px) {
   .set-row { grid-template-columns: minmax(0, 1fr); gap: 4px; padding: 8px 0; }

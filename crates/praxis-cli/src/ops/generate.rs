@@ -15,8 +15,83 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
-/// Overrides the Messages API URL (a proxy, or a local stand-in in tests).
+/// Overrides the Messages API URL with a local stand-in (tests). Only loopback hosts are
+/// accepted ([`claude_url_override`]).
 pub const CLAUDE_URL_ENV: &str = "PRAXIS_CLAUDE_URL";
+
+/// The Messages API address from [`CLAUDE_URL_ENV`], when set. It exists for tests (a local
+/// stand-in for the API), so it may only name this machine: `http(s)://` and a host of
+/// `localhost`, `127.0.0.1` (any `127.x.y.z`) or `[::1]`, with an optional port and path.
+/// Anything else is refused, so an environment variable can never send the API key to another
+/// server.
+pub fn claude_url_override() -> Result<Option<String>, OpError> {
+    match std::env::var(CLAUDE_URL_ENV) {
+        Ok(url) if !url.trim().is_empty() => {
+            let url = url.trim();
+            if is_loopback_url(url) {
+                Ok(Some(url.to_string()))
+            } else {
+                Err(OpError::new(
+                    ErrorCode::Error,
+                    format!(
+                        "{CLAUDE_URL_ENV} must point at this machine (localhost, 127.0.0.1 or \
+                         [::1]), not `{url}`: it is only for tests, and the API key is never \
+                         sent anywhere but the Anthropic API. Unset it to use the API"
+                    ),
+                ))
+            }
+        }
+        _ => Ok(None),
+    }
+}
+
+/// True for an `http://` or `https://` URL whose host is a loopback address or `localhost`
+/// (and no user info, percent-escapes or backslashes, which could hide another host).
+pub fn is_loopback_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    let Some(rest) = lower
+        .strip_prefix("http://")
+        .or_else(|| lower.strip_prefix("https://"))
+    else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.contains(['@', '\\', '%']) {
+        return false;
+    }
+    let port = if let Some(v6) = authority.strip_prefix('[') {
+        let Some((host, after)) = v6.split_once(']') else {
+            return false;
+        };
+        if !host
+            .parse::<std::net::Ipv6Addr>()
+            .is_ok_and(|ip| ip.is_loopback())
+        {
+            return false;
+        }
+        match after {
+            "" => None,
+            p => match p.strip_prefix(':') {
+                Some(p) => Some(p),
+                None => return false,
+            },
+        }
+    } else {
+        let (host, port) = match authority.split_once(':') {
+            Some((h, p)) => (h, Some(p)),
+            None => (authority, None),
+        };
+        let local = host == "localhost"
+            || host
+                .parse::<std::net::Ipv4Addr>()
+                .is_ok_and(|ip| ip.is_loopback());
+        if !local {
+            return false;
+        }
+        port
+    };
+    port.is_none_or(|p| !p.is_empty() && p.len() <= 5 && p.chars().all(|c| c.is_ascii_digit()))
+}
 
 /// Seed used when none is given, so the same brief gives the same project.
 pub const DEFAULT_SEED: u64 = 1;
@@ -86,21 +161,19 @@ fn plan_error(e: PlanError, direct: bool) -> OpError {
     }
 }
 
-fn claude_provider(model: Option<&str>) -> ClaudeProvider {
+fn claude_provider(model: Option<&str>) -> Result<ClaudeProvider, OpError> {
     let mut config = ClaudeConfig::default();
     if let Some(m) = model {
         config.model = m.to_string();
     }
-    if let Ok(url) = std::env::var(CLAUDE_URL_ENV)
-        && !url.trim().is_empty()
-    {
-        config.url = url.trim().to_string();
+    if let Some(url) = claude_url_override()? {
+        config.url = url;
     }
-    ClaudeProvider::with_parts(
+    Ok(ClaudeProvider::with_parts(
         config,
         Box::new(UreqTransport::default()),
         Box::new(resolve_key),
-    )
+    ))
 }
 
 /// The planner for a request: the one asked for, else Claude when a key is available, else the
@@ -131,7 +204,7 @@ pub(crate) fn choose_provider(
                     ProviderError::NoApiKey.to_string(),
                 ));
             }
-            Box::new(claude_provider(model))
+            Box::new(claude_provider(model)?)
         }
     };
     Ok((provider, note))
@@ -190,4 +263,38 @@ pub fn generate(req: &GenerateRequest) -> Result<Value, OpError> {
         v["render"] = r;
     }
     Ok(v)
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::is_loopback_url;
+
+    #[test]
+    fn only_loopback_addresses_may_stand_in_for_the_api() {
+        for ok in [
+            "http://127.0.0.1:8080/v1/messages",
+            "http://localhost/v1/messages",
+            "https://LOCALHOST:443",
+            "http://[::1]:9000/v1/messages",
+            "http://127.0.0.1",
+        ] {
+            assert!(is_loopback_url(ok), "{ok}");
+        }
+        for bad in [
+            "https://example.com",
+            "https://api.anthropic.com/v1/messages",
+            "http://localhost@example.com/",
+            "http://localhost.example.com/",
+            "http://127.0.0.1.example.com/",
+            "http://example.com/127.0.0.1",
+            "ftp://127.0.0.1/",
+            "http://[::2]/",
+            "http://localhost:80x/",
+            "http://localhost%2eexample.com/",
+            "127.0.0.1:8080",
+            "",
+        ] {
+            assert!(!is_loopback_url(bad), "{bad}");
+        }
+    }
 }

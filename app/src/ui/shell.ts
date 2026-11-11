@@ -2,7 +2,7 @@
 // Sound panel. Every request makes a take through the EngineAdapter; the thread and the panel
 // are drawn from the adapter's TakeState, so people and agents share one history.
 
-import type { AgentInfo, AskResult, BlankSound, EngineAdapter, PresetInfo, Take, TakeScope, TakeState, TransportPosition, ViewName, Who } from '../engine/EngineAdapter';
+import type { AgentInfo, AskProgress, AskResult, BlankSound, EngineAdapter, NoTake, PresetInfo, Take, TakeScope, TakeState, TransportPosition, ViewName, Who } from '../engine/EngineAdapter';
 import { patchErrorMessage } from '../engine/EngineAdapter';
 import { changedText, layerLabel } from '../engine/takes';
 import type { BarRange, ScorePatch } from '../score/types';
@@ -20,6 +20,7 @@ import { renderExport, renderMix } from './views/mixExport';
 import { defaultBlank, renderBlankForm, type BlankDraft } from './views/blankForm';
 import { addToBatch, batchAsk, batchKey, batchScope, hasUnsaved, type BatchEdit } from './handEdits';
 import { clock } from './views/overview';
+import { applyProgress, making as newMaking, type Making } from './agentWork';
 import './hand.css';
 
 export interface SoundEntry {
@@ -44,7 +45,10 @@ interface Reply {
   who: Who;
   ask: string | null;
   message: string;
+  /** Set for the sound assistant's answer to a request that made no take (a question, a refusal, an undo). */
+  noTake?: NoTake;
 }
+
 
 const PHONE = '(max-width: 760px)';
 
@@ -63,7 +67,7 @@ export class Shell {
   private view: ViewName = 'overview';
   private flash: { view: ViewName; by: string } | null = null;
   private selection: TakeScope | null = null;
-  private making: { ask: string; who: Who } | null = null;
+  private making: Making | null = null;
   private replies: Reply[] = [];
   private clip: File | null = null;
   private knobs: Record<string, number> = { ...MACRO_DEFAULTS };
@@ -264,21 +268,29 @@ export class Shell {
     const scope = this.selection ?? undefined;
     const label = scope ? ` (${scopeText(this.st, scope)})` : '';
     const clip = this.clip;
-    this.making = { ask: text + label, who: 'You' };
+    const m = newMaking(text + label, 'You');
+    this.making = m;
     this.syncSend();
     this.renderThread(true);
-    const r = await this.engine.ask({ text, scope, clipFile: clip ?? undefined });
+    const r = await this.engine.ask({ text, scope, clipFile: clip ?? undefined, onProgress: (p) => this.progress(m, p) });
     this.finish(r, text + label, 'You');
-    if (r.ok) {
+    if (r.ok && r.take) {
       this.selection = null;
       this.clip = null;
       this.renderChips();
     }
   }
 
+  /** The assistant's next step, shown under the request while it works. */
+  private progress(m: Making, p: AskProgress): void {
+    if (this.making !== m) return;
+    applyProgress(m, p);
+    this.renderThread(true);
+  }
+
   private async edit(patch: ScorePatch, ask: string, scope?: TakeScope): Promise<void> {
     if (this.making) return;
-    this.making = { ask, who: 'You' };
+    this.making = newMaking(ask, 'You');
     this.renderThread(true);
     const r = await this.engine.edit(patch, ask, scope);
     this.finish(r, ask, 'You');
@@ -287,6 +299,8 @@ export class Shell {
   private finish(r: AskResult, ask: string, who: Who): void {
     this.making = null;
     if (!r.ok) this.replies.push({ after: this.st.takes.length, who, ask, message: r.message });
+    // A reply without a take is the assistant's answer, shown like any reply (never as an error).
+    else if (!r.take) this.replies.push({ after: this.st.takes.length, who, ask, message: r.reply, noTake: r.noTake });
     this.syncSend();
     this.update();
   }
@@ -321,7 +335,7 @@ export class Shell {
     if (this.making) return;
     const first = !this.current();
     const ask = this.batch.length ? batchAsk(this.batch) : first ? 'Built by hand' : 'Hand edits';
-    this.making = { ask, who: 'You' };
+    this.making = newMaking(ask, 'You');
     this.syncSend();
     this.renderThread(true);
     this.renderPanel();
@@ -558,10 +572,24 @@ export class Shell {
       );
     }
     if (this.making) {
-      this.thread.append(
-        h('div', { class: 'msg-user' }, h('small', {}, this.making.who), this.making.ask),
-        h('div', { class: 'take making', 'data-testid': 'making' }, h('i', { 'aria-hidden': 'true' }), `Making take ${takes.length + 1}: ${this.making.ask.startsWith('By hand') || this.making.ask === 'Built by hand' || this.making.ask === 'Hand edits' ? 'rendering the live score, checking it' : 'planning the score, rendering, checking it'}…`),
-      );
+      const m = this.making;
+      this.thread.append(h('div', { class: 'msg-user' }, h('small', {}, m.who), m.ask));
+      if (m.steps.length || m.said) {
+        // The sound assistant at work: its steps in plain words, replaced by the take or reply.
+        this.thread.append(
+          h(
+            'div',
+            { class: 'take making agent-work', 'data-testid': 'making' },
+            h('div', { class: 'agent-now' }, h('i', { 'aria-hidden': 'true' }), 'Working on it…'),
+            m.said ? h('p', { class: 'agent-said', 'data-testid': 'agent-said' }, m.said) : null,
+            h('ol', { class: 'agent-steps', 'data-testid': 'agent-steps' }, ...m.steps.map((s) => h('li', { class: s.state }, s.words))),
+          ),
+        );
+      } else {
+        this.thread.append(
+          h('div', { class: 'take making', 'data-testid': 'making' }, h('i', { 'aria-hidden': 'true' }), `Making take ${takes.length + 1}: ${m.ask.startsWith('By hand') || m.ask === 'Built by hand' || m.ask === 'Hand edits' ? 'rendering the live score, checking it' : 'planning the score, rendering, checking it'}…`),
+        );
+      }
     }
     if (scrollToEnd) {
       const go = () => {
@@ -942,7 +970,9 @@ export class Shell {
 function replyEls(r: Reply): HTMLElement[] {
   const out: HTMLElement[] = [];
   if (r.ask) out.push(h('div', { class: 'msg-user' }, h('small', {}, r.who), r.ask));
-  out.push(h('div', { class: 'msg-reply', 'data-testid': 'reply' }, h('small', {}, 'Praxis'), r.message));
+  const attrs: Record<string, string> = { class: r.noTake ? 'msg-reply assistant' : 'msg-reply', 'data-testid': 'reply' };
+  if (r.noTake) attrs['data-no-take'] = r.noTake;
+  out.push(h('div', attrs, h('small', {}, r.noTake ? (r.noTake === 'live' ? 'Praxis' : 'Assistant') : 'Praxis'), r.message));
   return out;
 }
 

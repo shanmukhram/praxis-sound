@@ -1286,9 +1286,201 @@ fn ask_takes_restore_commands() {
     );
     assert_eq!(v["take"]["n"], json!(3));
     assert_eq!(v["take"]["changed"], json!({"piano": [13, 16]}));
+    let t3 = &v["take"];
+    println!(
+        "variation kept: identical {} | {}",
+        t3["identical_bars"], t3["untouched"]
+    );
+    if t3["identical_bars"] == json!([]) {
+        // The piano's reverb carries rounding-level differences into every bar: said so, with
+        // the measured residue, instead of naming no bar.
+        let u = t3["untouched"].as_str().unwrap();
+        assert!(
+            u.contains("identical note for note") && u.contains("rounding differs (at most -"),
+            "{u}"
+        );
+    }
     err(
         &run(&["--json", "keep-variation", s(&sound), "1"]),
         "keep-variation",
         "patch_rejected",
+    );
+
+    // A lock through `ask --patch` is a live-score change: committed, no render, no take.
+    let patch = dir.join("lock.json");
+    std::fs::write(
+        &patch,
+        json!({
+            "description": "Kick locked",
+            "origin": "user",
+            "ops": [{"op": "set_lock", "id": "kick", "locked": true}],
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let before = ok(&run(&["--json", "takes", s(&sound)]), "takes");
+    let r = run(&[
+        "--json",
+        "ask",
+        s(&sound),
+        "Lock the kick",
+        "--patch",
+        s(&patch),
+    ]);
+    assert_eq!(r.code, 0, "{}", r.stdout);
+    let v = ok(&r, "ask");
+    assert_eq!(v["take"], Value::Null);
+    assert_eq!(v["no_take"], json!("live"));
+    assert_eq!(v["reply"], json!("Kick locked; no take was made."));
+    assert_eq!(v["can_undo"], json!(true));
+    assert_eq!(
+        v["revision"].as_u64().unwrap(),
+        before["revision"].as_u64().unwrap() + 1
+    );
+    let after = ok(&run(&["--json", "takes", s(&sound)]), "takes");
+    assert_eq!(
+        after["takes"].as_array().map(Vec::len),
+        Some(3),
+        "no take 4"
+    );
+    assert!(!sound.join("takes").join("4").exists());
+    let kick = after["score"]["layers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["id"] == "kick")
+        .unwrap()
+        .clone();
+    assert_eq!(kick["locked"], json!(true));
+}
+
+/// Serves recorded Messages API streams on a loopback port, one per request, then stops.
+/// Returns the URL and a handle that gives back the headers of each request.
+fn replay_server(streams: Vec<String>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+    use std::io::{BufRead, BufReader, Read};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!(
+        "http://127.0.0.1:{}/v1/messages",
+        listener.local_addr().unwrap().port()
+    );
+    let handle = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        for body in streams {
+            let (mut conn, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(conn.try_clone().unwrap());
+            let mut head = String::new();
+            let mut len = 0usize;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line.trim().is_empty() {
+                    break;
+                }
+                if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    len = v.trim().parse().unwrap();
+                }
+                head.push_str(&line);
+            }
+            let mut req = vec![0u8; len];
+            reader.read_exact(&mut req).unwrap();
+            seen.push(head);
+            write!(
+                conn,
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\n\
+                 connection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+        }
+        seen
+    });
+    (url, handle)
+}
+
+fn agent_fixture(name: &str) -> String {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/agent")
+            .join(name),
+    )
+    .unwrap()
+}
+
+/// A turn of the sound assistant that ends with a question is a reply: exit 0, `ok: true`,
+/// `take: null`. The API address may only be this machine: any other is refused before a
+/// request is made or a file written.
+#[test]
+fn ask_replies_without_a_take_and_the_api_address_stays_local() {
+    const FAKE_KEY: &str = "test-placeholder-not-a-key-51c2";
+    let dir = scratch("ask_reply");
+    let sound = dir.join("logo");
+    let (url, server) = replay_server(vec![
+        agent_fixture("read_summary.sse"),
+        agent_fixture("ask_user.sse"),
+    ]);
+    let r = run_with(
+        &["--json", "ask", s(&sound), "make a sound for my app's logo"],
+        &[("PRAXIS_CLAUDE_URL", &url), ("ANTHROPIC_API_KEY", FAKE_KEY)],
+        None,
+    );
+    assert_eq!(r.code, 0, "{} {}", r.stdout, r.stderr);
+    let v = ok(&r, "ask");
+    assert_eq!(v["take"], Value::Null);
+    assert_eq!(v["no_take"], json!("question"));
+    assert_eq!(
+        v["reply"],
+        json!("Should the logo sound be a short rising sting or a soft tonal chime?")
+    );
+    assert_eq!(v["agent"]["outcome"], json!("question"));
+    assert!(r.stderr.contains("Reading the sound"), "{}", r.stderr);
+    let heads = server.join().unwrap();
+    assert_eq!(heads.len(), 2);
+    assert!(heads.iter().all(|h| h.contains(FAKE_KEY)));
+    assert!(!r.stdout.contains(FAKE_KEY));
+
+    // Not this machine: refused, nothing sent, nothing written.
+    for bad in [
+        "https://example.com",
+        "http://localhost@example.com/v1/messages",
+    ] {
+        let other = dir.join("other");
+        let r = run_with(
+            &["--json", "ask", s(&other), "a calm loop"],
+            &[("PRAXIS_CLAUDE_URL", bad), ("ANTHROPIC_API_KEY", FAKE_KEY)],
+            None,
+        );
+        let v = err(&r, "ask", "error");
+        let m = v["error"]["message"].as_str().unwrap();
+        assert!(
+            m.contains("PRAXIS_CLAUDE_URL must point at this machine"),
+            "{m}"
+        );
+        assert!(!other.exists(), "nothing written for {bad}");
+        assert!(!r.stdout.contains(FAKE_KEY) && !r.stderr.contains(FAKE_KEY));
+    }
+    // The planner's Claude provider refuses it too.
+    let r = run_with(
+        &[
+            "--json",
+            "generate",
+            "--prompt",
+            "a calm loop",
+            "--provider",
+            "claude",
+            "--out",
+            s(&dir.join("x.praxis")),
+        ],
+        &[
+            ("PRAXIS_CLAUDE_URL", "https://example.com"),
+            ("ANTHROPIC_API_KEY", FAKE_KEY),
+        ],
+        None,
+    );
+    let v = err(&r, "generate", "error");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("must point at this machine")
     );
 }

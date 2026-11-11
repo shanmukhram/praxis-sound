@@ -7,7 +7,7 @@ import type {
   AgentInfo,
   ApplyResult,
   AskRequest,
-  AskResult,
+  TakeResult,
   BlankSound,
   EngineAdapter,
   MakeTakeOptions,
@@ -185,16 +185,16 @@ export class MockEngine implements EngineAdapter {
     });
   }
 
-  async ask(request: AskRequest): Promise<AskResult> {
+  async ask(request: AskRequest): Promise<TakeResult> {
     return this.askAs('You', request);
   }
 
   /** Mock only: a connected agent makes a request (stands in for the MCP server, WP-X). */
-  async agentAsk(name: string, text: string, scope?: TakeScope, opts: { title?: string; askText?: string } = {}): Promise<AskResult> {
+  async agentAsk(name: string, text: string, scope?: TakeScope, opts: { title?: string; askText?: string } = {}): Promise<TakeResult> {
     return this.askAs(`Agent · ${name}`, { text, scope }, opts);
   }
 
-  private askAs(who: Who, request: AskRequest, opts: { title?: string; askText?: string } = {}): Promise<AskResult> {
+  private askAs(who: Who, request: AskRequest, opts: { title?: string; askText?: string } = {}): Promise<TakeResult> {
     return this.exclusive(async () => {
       const text = request.text.trim();
       const askText = opts.askText ?? (request.scope ? `${text} (${scopeLabel(this.score, request.scope)})` : text);
@@ -202,30 +202,30 @@ export class MockEngine implements EngineAdapter {
         return {
           ok: false,
           message: `Got "${request.clipFile.name}". Reading a clip needs the analyzer (WP-D), which the mock engine does not have yet; Praxis keeps a clip's character, never its melody.`,
-        } as AskResult;
+        } as TakeResult;
       }
       if (this.draft && this.takeList.length === 0) {
-        return { ok: false, message: DRAFT_ASK } as AskResult;
+        return { ok: false, message: DRAFT_ASK } as TakeResult;
       }
       if (!this.score || this.takeList.length === 0) {
-        if (!text) return { ok: false, message: 'Describe a sound to start from.' } as AskResult;
+        if (!text) return { ok: false, message: 'Describe a sound to start from.' } as TakeResult;
         const fresh = planFresh(text);
         this.resetSession();
         this.score = fresh.score;
         this.draft = false;
         const take = await this.renderTake(fresh.score, null, { who, ask: askText, title: fresh.title, say: fresh.say });
-        return { ok: true, take } as AskResult;
+        return { ok: true, take } as TakeResult;
       }
       const origin: Origin = 'model';
       const plan = planEdit(this.score, text, request.scope, origin);
-      if (!plan.ok) return { ok: false, message: plan.message } as AskResult;
+      if (!plan.ok) return { ok: false, message: plan.message } as TakeResult;
       return this.commitTake(plan.patch, { who, ask: askText, title: opts.title ?? plan.title, say: plan.say, opens: plan.opens, scope: request.scope });
     });
   }
 
-  async edit(patch: ScorePatch, ask: string, scope?: TakeScope, words?: { title?: string; say?: string }): Promise<AskResult> {
+  async edit(patch: ScorePatch, ask: string, scope?: TakeScope, words?: { title?: string; say?: string }): Promise<TakeResult> {
     return this.exclusive(async () => {
-      if (!this.score || this.takeList.length === 0) return { ok: false, message: 'Make a sound first.' } as AskResult;
+      if (!this.score || this.takeList.length === 0) return { ok: false, message: 'Make a sound first.' } as TakeResult;
       const title = words?.title ?? (scope ? `Hand edit, ${formatRange(scope.bars)}` : 'Hand edit');
       return this.commitTake(patch, {
         who: 'You',
@@ -267,19 +267,19 @@ export class MockEngine implements EngineAdapter {
     return clone(STANDARD_PRESETS);
   }
 
-  async makeTake(ask: string, options: MakeTakeOptions = {}): Promise<AskResult> {
+  async makeTake(ask: string, options: MakeTakeOptions = {}): Promise<TakeResult> {
     return this.exclusive(async () => {
       const score = this.score;
-      if (!score) return { ok: false, message: 'Start a sound first.' } as AskResult;
-      if (!score.layers.length) return { ok: false, message: 'Add a layer first: a sound with no layers has nothing to play.' } as AskResult;
+      if (!score) return { ok: false, message: 'Start a sound first.' } as TakeResult;
+      if (!score.layers.length) return { ok: false, message: 'Add a layer first: a sound with no layers has nothing to play.' } as TakeResult;
       const words = (title: string, say: string) => ({ who: 'You' as Who, ask, title: options.title ?? title, say: options.say ?? say, scope: options.scope });
       if (!this.takeList.length) {
         const names = score.layers.map((l) => (l.name || l.id).toLowerCase()).join(', ');
         const take = await this.renderTake(score, null, words('Built by hand', `Built by hand: ${names}, ${score.bars} bars at ${score.tempo.bpm} BPM in ${keyLabel(score.key)}.`));
-        return { ok: true, take } as AskResult;
+        return { ok: true, take } as TakeResult;
       }
       const prev = this.takeList.find((t) => t.n === this.currentN) ?? this.takeList.at(-1)!;
-      if (deepEqual(prev.score, score)) return { ok: false, message: `Nothing changed since take ${prev.n}: edit the sound, then make a take.` } as AskResult;
+      if (deepEqual(prev.score, score)) return { ok: false, message: `Nothing changed since take ${prev.n}: edit the sound, then make a take.` } as TakeResult;
       // The take's patch is the exact diff from the current take (crates/praxis-app/src/hand.rs).
       const patch: ScorePatch = { ...restorePatch(prev.score, score, `take ${prev.n}`), description: ask };
       const changed = changedFromPatch(prev.score, score, patch);
@@ -289,7 +289,7 @@ export class MockEngine implements EngineAdapter {
       const title = lo > 1 || hi < score.bars ? `Hand edit, ${formatRange({ start: lo, end: hi })}` : 'Hand edit';
       const say = `Changed by hand: ${ask.replace(/^By hand: /, '').replace(/\.$/, '')}.`;
       const take = await this.renderTake(score, patch, words(title, say), prev.score, prev.n, true);
-      return { ok: true, take } as AskResult;
+      return { ok: true, take } as TakeResult;
     });
   }
 
@@ -313,19 +313,19 @@ export class MockEngine implements EngineAdapter {
     };
   }
 
-  async restore(n: number): Promise<AskResult> {
+  async restore(n: number): Promise<TakeResult> {
     return this.exclusive(async () => {
       const take = this.takeList.find((t) => t.n === n);
-      if (!take || !this.score) return { ok: false, message: `There is no take ${n}.` } as AskResult;
+      if (!take || !this.score) return { ok: false, message: `There is no take ${n}.` } as TakeResult;
       const patch = { ...restorePatch(this.score, take.score, `take ${n}`), description: `Go back to take ${n}` };
       const r = applyPatch(this.score, patch);
-      if (!r.ok) return { ok: false, message: `Could not go back to take ${n}: ${patchErrorMessage(r.error)}`, error: r.error } as AskResult;
+      if (!r.ok) return { ok: false, message: `Could not go back to take ${n}: ${patchErrorMessage(r.error)}`, error: r.error } as TakeResult;
       this.undoStack.push({ kind: 'restore', patch, inverse: r.inverse, before: this.currentN, after: n });
       this.redoStack = [];
       this.score = r.score;
       this.currentN = n;
       this.emitState();
-      return { ok: true, take } as AskResult;
+      return { ok: true, take } as TakeResult;
     });
   }
 
@@ -419,7 +419,7 @@ export class MockEngine implements EngineAdapter {
   private async commitTake(
     patch: ScorePatch,
     words: { who: Who; ask: string; title: string; say: string; opens?: ViewName; scope?: TakeScope },
-  ): Promise<AskResult> {
+  ): Promise<TakeResult> {
     const before = this.score!;
     const r = applyPatch(before, patch);
     if (!r.ok) return { ok: false, message: `Could not make that take: ${patchErrorMessage(r.error)}.`, error: r.error };

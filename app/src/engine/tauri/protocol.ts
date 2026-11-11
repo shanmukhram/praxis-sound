@@ -110,11 +110,31 @@ export interface AskPayload {
   sound: string;
   revision: number;
   current: number;
-  take: TakeRecord;
+  /** Null for a turn of the sound assistant that made no take, or a lock/mute/solo patch. */
+  take: TakeRecord | null;
   can_undo: boolean;
   can_redo: boolean;
   provider_note?: string | null;
+  /** Why no take was made (`take` null): docs/contracts/cli.md, "Assistant agent". */
+  no_take?: 'question' | 'refused' | 'undo' | 'view' | 'nothing_to_change' | 'live';
+  /** The assistant's answer (with or without a take). */
+  reply?: string;
+  agent?: { outcome: string; reply: string; steps: { tool: string; words: string; ok: boolean; result: string }[] } | null;
 }
+
+/** Event the shell sends for each step of the sound assistant's turn (crates/praxis-app). */
+export const AGENT_EVENT = 'praxis://agent';
+
+/** `AgentProgress` in crates/praxis-app/src/commands.rs: the sound plus one `AgentEvent`. */
+export type AgentEventPayload = { sound: string } & (
+  | { event: 'started'; request: string }
+  | { event: 'thinking'; n: number }
+  | { event: 'said'; text: string }
+  | { event: 'step'; n: number; tool: string; words: string }
+  | { event: 'step_done'; n: number; tool: string; ok: boolean; words: string }
+  | { event: 'take_made'; n: number }
+  | { event: 'finished'; outcome: string; reply: string }
+);
 
 const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);

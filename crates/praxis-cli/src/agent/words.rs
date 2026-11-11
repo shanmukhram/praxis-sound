@@ -148,10 +148,173 @@ pub fn done_words(tool: &str, ok: bool, result: &Value, error: &str) -> String {
     }
 }
 
+/// Longest take title kept as given, in words.
+const TITLE_WORDS: usize = 8;
+
+/// The take title the assistant gave (`finish_turn`), tidied: quotes and a final full stop
+/// dropped, the first letter upper case. `None` when it is empty, starts with "I", or is too
+/// long to keep whole (a title is never clipped).
+pub fn clean_title(title: &str) -> Option<String> {
+    let t = title
+        .trim()
+        .trim_matches(|c: char| matches!(c, '"' | '\'' | '\u{201c}' | '\u{201d}' | '`'))
+        .trim()
+        .trim_end_matches('.')
+        .trim();
+    let words: Vec<&str> = t.split_whitespace().collect();
+    if words.is_empty()
+        || words.len() > TITLE_WORDS
+        || t.chars().count() > 60
+        || t.contains('\n')
+        || words[0] == "I"
+        || words[0].starts_with("I'")
+    {
+        return None;
+    }
+    let joined = words.join(" ");
+    let mut c = joined.chars();
+    c.next().map(|f| f.to_uppercase().chain(c).collect())
+}
+
+/// "Felt piano" -> "felt piano" (a name after another word).
+fn lower_first(name: &str) -> String {
+    let mut c = name.chars();
+    match c.next() {
+        Some(f) if !c.as_str().chars().next().is_some_and(char::is_uppercase) => {
+            f.to_lowercase().chain(c).collect()
+        }
+        _ => name.to_string(),
+    }
+}
+
+fn upper_first(name: &str) -> String {
+    let mut c = name.chars();
+    c.next()
+        .map(|f| f.to_uppercase().chain(c).collect())
+        .unwrap_or_default()
+}
+
+/// A short title that sums up what changed from `base` to `after` (used when the assistant gave
+/// none): "Felt piano sound", "New upright piano, bars 13–16", "Kick level", "Piano and kick
+/// changed". `base` is `None` for a new sound.
+pub fn summary_title(base: Option<&Score>, after: &Score) -> String {
+    use crate::ops::changes::{bars_label, changed_layers};
+    let Some(base) = base else {
+        let t = after.title.trim();
+        return if t.is_empty() || t.split_whitespace().count() > TITLE_WORDS {
+            "New sound".to_string()
+        } else {
+            upper_first(t)
+        };
+    };
+    let changed = changed_layers(base, after);
+    let name = |id: &str| {
+        let s = if after.layer(id).is_some() {
+            after
+        } else {
+            base
+        };
+        layer_name(Some(s), id)
+    };
+    match changed.len() {
+        0 => {
+            if base.tempo != after.tempo {
+                "New tempo".into()
+            } else if base.key != after.key {
+                "New key".into()
+            } else {
+                "Assistant edit".into()
+            }
+        }
+        1 => {
+            let (id, r) = changed.iter().next().expect("one");
+            let n = name(id);
+            let (Some(x), Some(y)) = (base.layer(id), after.layer(id)) else {
+                return if base.layer(id).is_none() {
+                    let whole = [1, after.bars];
+                    if *r == whole {
+                        format!("New {}", lower_first(&n))
+                    } else {
+                        format!("New {}, {}", lower_first(&n), bars_label(*r))
+                    }
+                } else {
+                    format!("{} removed", upper_first(&n))
+                };
+            };
+            let what = if x.instrument != y.instrument {
+                if x.instrument.preset != y.instrument.preset {
+                    "instrument"
+                } else {
+                    "sound"
+                }
+            } else if x.gain_db != y.gain_db {
+                "level"
+            } else if x.pan != y.pan {
+                "pan"
+            } else if x.effects != y.effects || x.automation != y.automation {
+                "effects"
+            } else if x.muted != y.muted || x.solo != y.solo {
+                "mute"
+            } else {
+                "notes"
+            };
+            let extent = [
+                y.clips.iter().map(|c| c.bars.start).min().unwrap_or(1),
+                y.clips
+                    .iter()
+                    .map(|c| c.bars.end)
+                    .max()
+                    .unwrap_or(after.bars),
+            ];
+            if *r == extent || *r == [1, after.bars] {
+                format!("{} {what}", upper_first(&n))
+            } else {
+                format!("{} {what}, {}", upper_first(&n), bars_label(*r))
+            }
+        }
+        2 => {
+            let ids: Vec<&String> = changed.keys().collect();
+            format!(
+                "{} and {} changed",
+                upper_first(&name(ids[0])),
+                lower_first(&name(ids[1]))
+            )
+        }
+        n => format!("{n} layers changed"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn titles_are_kept_whole_or_summarised() {
+        assert_eq!(
+            clean_title(" \"muffled felt piano.\" ").as_deref(),
+            Some("Muffled felt piano")
+        );
+        assert_eq!(clean_title("I made a 16-bar loop"), None);
+        assert_eq!(clean_title(""), None);
+        assert_eq!(clean_title(&"word ".repeat(12)), None, "never clipped");
+        let plan: Value = serde_json::from_str(include_str!(
+            "../../../praxis-planner/tests/prompts/acceptance1.plan.json"
+        ))
+        .unwrap();
+        let base = praxis_planner::compose_plan(&plan, &praxis_planner::Catalogue::standard(), 1)
+            .unwrap()
+            .score;
+        assert_eq!(summary_title(None, &base), upper_first(base.title.trim()));
+        let mut after = base.clone();
+        after.layers[0].instrument.params.insert("tone".into(), 0.2);
+        let t = summary_title(Some(&base), &after);
+        assert!(t.ends_with(" sound"), "{t}");
+        assert!(t.split_whitespace().count() <= 6, "{t}");
+        let mut louder = base.clone();
+        louder.layers[0].gain_db += 2.0;
+        assert!(summary_title(Some(&base), &louder).ends_with(" level"));
+    }
 
     #[test]
     fn words_for_people() {
