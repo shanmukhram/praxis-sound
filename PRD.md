@@ -6,7 +6,7 @@ Nov 10, 2026 · @Bunny
 
 Praxis Sound (working name) is a Rust sound-design workstation that turns a text brief or a dropped reference clip into editable, layered audio: background music, scores, tonal loops and sound effects. It renders by synthesis and sampling from a structured score, so any result can be changed bar by bar and layer by layer instead of being regenerated from scratch.
 
-It grows out of the browser prototype in [the ChatGPT thread](https://chatgpt.com/share/6af34da3-55c0-83ee-b561-598079a1648c). Four lessons from that thread drive the design:
+It grows out of an earlier browser prototype. Four lessons from that prototype drive the design:
 
 - **Mood words mislead generators.** "Cinematic" and "mystery" produced a riser that cut off abruptly. The app needs a structured score and an enforced avoid-list, not a free-text prompt handed to a black box.
 - **Rhythm comes first.** Notes sit on a fixed grid in a repeating motif, with accents (DON / din / TIN) and overlapping sustain. Isolated notes with gaps between them sound out of time.
