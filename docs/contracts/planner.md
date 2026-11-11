@@ -30,7 +30,7 @@ lands (append a section; do not change the provider types).
 - `offline::RuleProvider`: a deterministic brief parser (keys, tempo, bars, durations, emotion
   words, instruments, "no X" lists, spoken rhythm in quotes, section phrases like "bars 9-16 add
   a soft kick"). Used in CI and when no key is configured. It must pass acceptance test 1.
-- `claude::ClaudeProvider`: Claude Messages API with one strict tool call (`tool_choice: auto` plus a
+- `claude::ClaudeProvider`: Claude Messages API with one tool call (`tool_choice: auto` plus a
   check on models that reject forced tool use, such as claude-opus-5-5); model id configurable,
   default `claude-opus-5-5`; key from `ANTHROPIC_API_KEY` or the OS keychain (`keyring`).
   Recorded/replayed fixtures make its tests run offline.
@@ -108,7 +108,7 @@ pad, noise_bed texture (unpitched).
   once a layer enters it plays to the end unless a later phrase removes it ("drop", "remove",
   "without", "only in bars ...").
 - `ClaudeProvider` (`claude:<model>`): `POST /v1/messages`, `anthropic-version: 2026-10-21`,
-  one tool `plan_score` with `strict: true` and the schema rewritten for strict mode
+  one tool `plan_score` (not `strict`: the plan schemas are too large for the API's strict grammar, a live 400 found 2026-11-11; `validate_plan` and the repair loop keep answers correct) with the schema rewritten as for strict mode
   (`additionalProperties: false`, no numeric, length or format keywords). Claude Opus 5.5 (the
   default), Sonnet 5.5 and Fable/Mythos 5.1+ reject a forced `tool_choice` with a 400, so for
   them the request sends `tool_choice: auto`, names the tool in the system prompt, checks that a

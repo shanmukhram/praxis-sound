@@ -2,7 +2,11 @@
 //! schema is the ScorePlan schema (feature `claude`).
 //!
 //! - Model id is configurable; default [`DEFAULT_MODEL`] (`claude-opus-5-5`).
-//! - The tool is declared with `strict: true` so the arguments match the schema. Models that
+//! - The tool is declared without `strict`: the ScorePlan and EditPlan schemas are too large for
+//!   the API's strict grammar (a 400, "The compiled grammar is too large"; found in the first
+//!   live run, 2026-11-11). The schema is still sent (rewritten by [`strict_schema`]: closed
+//!   objects, `anyOf` for `oneOf`), and every answer goes through `validate_plan` and the repair
+//!   loop, which is what keeps plans correct. Models that
 //!   accept forced tool use get `tool_choice: {"type": "tool", "name": "plan_score"}`. Claude
 //!   Opus 5.5, Sonnet 5.5 and the Fable/Mythos 5.1+ models reject forced tool use with a 400, so
 //!   for them the request uses `tool_choice: {"type": "auto"}`, the system prompt names the tool,
@@ -184,6 +188,13 @@ pub fn strict_schema(schema: &Value) -> Value {
     fn walk(v: &mut Value) {
         match v {
             Value::Object(map) => {
+                // Strict tool schemas accept `anyOf` but not `oneOf` (the API answers 400
+                // "Schema type 'oneOf' is not supported"). The variants schemars writes for enums
+                // and tagged unions are disjoint, so `anyOf` accepts exactly the same inputs, and
+                // every plan is validated again by `validate_plan` anyway.
+                if let Some(one) = map.remove("oneOf") {
+                    map.insert("anyOf".into(), one);
+                }
                 for k in [
                     "$schema",
                     "minimum",
@@ -319,7 +330,6 @@ impl ClaudeProvider {
                 "name": req.tool_name,
                 "description": req.tool_description,
                 "input_schema": strict_schema(&req.input_schema),
-                "strict": true,
             }],
             "tool_choice": tool_choice,
         });
@@ -515,6 +525,14 @@ mod tests {
         assert!(t["properties"]["minimum"].get("format").is_none());
         assert_eq!(t["properties"]["inner"]["additionalProperties"], false);
         assert_eq!(t["$defs"]["T"]["additionalProperties"], false);
+        // `oneOf` (rejected by the API in strict tools) becomes `anyOf`, everywhere.
+        let u = strict_schema(
+            &json!({"$defs": {"E": {"oneOf": [{"const": "a"}, {"const": "b"}]}},
+            "properties": {"x": {"oneOf": [{"type": "string"}, {"type": "null"}]}}}),
+        );
+        assert!(!u.to_string().contains("oneOf"), "{u}");
+        assert_eq!(u["$defs"]["E"]["anyOf"][1]["const"], "b");
+        assert_eq!(u["properties"]["x"]["anyOf"][0]["type"], "string");
     }
 
     #[test]

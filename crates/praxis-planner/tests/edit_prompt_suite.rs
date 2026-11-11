@@ -5,6 +5,12 @@
 //! exact inverse, determinism, and the case's expectations.
 //!
 //! The base brief and its `expect` also run in `prompt_suite.rs` (which reads every prompt file).
+//!
+//! Live mode: with `PRAXIS_SUITE_PROVIDER=claude` the edit instructions go to the real Claude planner
+//! (`ClaudeProvider`, key from `ANTHROPIC_API_KEY` or the keychain; this costs money). Live runs
+//! skip the determinism check (a second paid call that need not match) and report repair rounds
+//! instead of failing on them; every other validator is the same. Without the variable the suite
+//! runs offline on `RuleProvider`, exactly as before.
 
 mod common;
 
@@ -13,7 +19,7 @@ use praxis_planner::brief::lint_context;
 use praxis_planner::catalogue::class_name;
 use praxis_planner::edit::plan_edit;
 use praxis_planner::plan::PlanContext;
-use praxis_planner::{Catalogue, EditOutcome, RuleProvider, plan_brief};
+use praxis_planner::{Catalogue, EditOutcome, Provider, RuleProvider, plan_brief};
 use praxis_score::apply::apply;
 use praxis_score::lint::lint;
 use praxis_score::timeline::{NoteEvent, expand_notes};
@@ -174,12 +180,28 @@ fn generic_checks(before: &Score, out: &EditOutcome, catalogue: &Catalogue) -> R
     Ok(())
 }
 
+/// The planner the suite runs on: the real Claude planner when `PRAXIS_SUITE_PROVIDER=claude`,
+/// otherwise the offline rule planner.
+fn suite_provider() -> (Box<dyn Provider>, bool) {
+    match std::env::var("PRAXIS_SUITE_PROVIDER").as_deref() {
+        Ok("claude") => (
+            Box::new(praxis_planner::claude::ClaudeProvider::new()),
+            true,
+        ),
+        _ => (Box::new(RuleProvider::new()), false),
+    }
+}
+
 fn check_case(case: &Value) -> Result<String, String> {
     let catalogue = Catalogue::standard();
-    let provider = RuleProvider::new();
+    // The sound being edited always comes from the offline planner, so every live edit starts
+    // from the same score; only the edit instruction goes to the suite's planner.
+    let rules = RuleProvider::new();
+    let (provider, live) = suite_provider();
+    let provider = provider.as_ref();
     let brief = case["brief"].as_str().ok_or("brief")?;
     let seed = case["seed"].as_u64().unwrap_or(0);
-    let mut before = plan_brief(brief, &provider, &catalogue, seed)
+    let mut before = plan_brief(brief, &rules, &catalogue, seed)
         .map_err(|e| e.to_string())?
         .score;
     let edit = &case["edit"];
@@ -193,15 +215,21 @@ fn check_case(case: &Value) -> Result<String, String> {
     let instruction = edit["instruction"].as_str().ok_or("instruction")?;
     let eseed = edit["seed"].as_u64().unwrap_or(0);
     let out =
-        plan_edit(&before, instruction, &provider, &catalogue, eseed).map_err(|e| e.to_string())?;
+        plan_edit(&before, instruction, provider, &catalogue, eseed).map_err(|e| e.to_string())?;
     generic_checks(&before, &out, &catalogue)?;
-    let again =
-        plan_edit(&before, instruction, &provider, &catalogue, eseed).map_err(|e| e.to_string())?;
-    if again != out {
-        return Err("not deterministic".into());
-    }
-    if out.attempts != 1 {
-        return Err(format!("not first try: {} attempts", out.attempts));
+    if live {
+        if out.attempts != 1 {
+            println!("  note: {} attempts", out.attempts);
+        }
+    } else {
+        let again = plan_edit(&before, instruction, provider, &catalogue, eseed)
+            .map_err(|e| e.to_string())?;
+        if again != out {
+            return Err("not deterministic".into());
+        }
+        if out.attempts != 1 {
+            return Err(format!("not first try: {} attempts", out.attempts));
+        }
     }
     let after = &out.score;
     let ex = &edit["expect"];

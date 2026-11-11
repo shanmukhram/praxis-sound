@@ -1,12 +1,18 @@
 //! Prompt suite: every brief in tests/prompts/*.json runs through RuleProvider + repair +
 //! arrange, and automatic validators check key, tempo, bars, grid, structure, layering and that
 //! banned elements are absent.
+//!
+//! Live mode: with `PRAXIS_SUITE_PROVIDER=claude` the briefs go to the real Claude planner
+//! (`ClaudeProvider`, key from `ANTHROPIC_API_KEY` or the keychain; this costs money). Live runs
+//! skip the determinism check (a second paid call that need not match) and report repair rounds
+//! instead of failing on them; every other validator is the same. Without the variable the suite
+//! runs offline on `RuleProvider`, exactly as before.
 
 mod common;
 
 use common::{TRAILER, active_bars, check_acceptance1};
 use praxis_planner::catalogue::class_name;
-use praxis_planner::{Catalogue, RuleProvider, plan_brief};
+use praxis_planner::{Catalogue, Provider, RuleProvider, plan_brief};
 use praxis_score::lint::lint;
 use praxis_score::validate::{unpitched_class, validate};
 use praxis_score::{GeneratorClass, Key, Mode, Score};
@@ -46,10 +52,23 @@ fn layer_by_preset<'a>(score: &'a Score, preset: &str) -> Option<&'a praxis_scor
     score.layers.iter().find(|l| l.instrument.preset == preset)
 }
 
+/// The planner the suite runs on: the real Claude planner when `PRAXIS_SUITE_PROVIDER=claude`,
+/// otherwise the offline rule planner.
+fn suite_provider() -> (Box<dyn Provider>, bool) {
+    match std::env::var("PRAXIS_SUITE_PROVIDER").as_deref() {
+        Ok("claude") => (
+            Box::new(praxis_planner::claude::ClaudeProvider::new()),
+            true,
+        ),
+        _ => (Box::new(RuleProvider::new()), false),
+    }
+}
+
 fn check_case(brief: &str, seed: u64, expect: &Value) -> Result<String, String> {
     let catalogue = Catalogue::standard();
-    let provider = RuleProvider::new();
-    let out = plan_brief(brief, &provider, &catalogue, seed).map_err(|e| e.to_string())?;
+    let (provider, live) = suite_provider();
+    let provider = provider.as_ref();
+    let out = plan_brief(brief, provider, &catalogue, seed).map_err(|e| e.to_string())?;
     let score = &out.score;
 
     // Generic validators.
@@ -58,10 +77,21 @@ fn check_case(brief: &str, seed: u64, expect: &Value) -> Result<String, String> 
         return Err(format!("score invalid: {:?}", report.errors));
     }
     if out.attempts != 1 || !out.repairs.is_empty() {
-        return Err(format!(
-            "not first try: attempts {}, repairs {:?}",
-            out.attempts, out.repairs
-        ));
+        if live {
+            println!(
+                "  note: {} attempts, repairs {:?}",
+                out.attempts,
+                out.repairs
+                    .iter()
+                    .map(|r| format!("{:?}", r.code))
+                    .collect::<Vec<_>>()
+            );
+        } else {
+            return Err(format!(
+                "not first try: attempts {}, repairs {:?}",
+                out.attempts, out.repairs
+            ));
+        }
     }
     let lint_ctx = praxis_planner::brief::lint_context(
         score,
@@ -74,9 +104,11 @@ fn check_case(brief: &str, seed: u64, expect: &Value) -> Result<String, String> 
     if !lints.is_empty() || !out.lint.is_empty() {
         return Err(format!("lint warnings: {lints:?}"));
     }
-    let again = plan_brief(brief, &provider, &catalogue, seed).map_err(|e| e.to_string())?;
-    if again.score != *score {
-        return Err("not deterministic".into());
+    if !live {
+        let again = plan_brief(brief, provider, &catalogue, seed).map_err(|e| e.to_string())?;
+        if again.score != *score {
+            return Err("not deterministic".into());
+        }
     }
     // On grid and in key.
     for p in &score.patterns {

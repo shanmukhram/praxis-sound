@@ -10,8 +10,7 @@
   "tools": [
     {
       "name": "plan_score",
-      "description": "Submit the ScorePlan for the brief: key, timing, sections, layers with spoken-rhythm motifs, chords and the avoid-list.",
-      "strict": true
+      "description": "Submit the ScorePlan for the brief: key, timing, sections, layers with spoken-rhythm motifs, chords and the avoid-list."
     }
   ],
   "tool_choice": { "type": "auto" },

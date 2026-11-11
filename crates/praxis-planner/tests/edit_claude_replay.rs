@@ -127,7 +127,8 @@ fn claude_edit_with_one_repair_round() {
     assert_eq!(reqs.len(), 3);
     let first = &reqs[0];
     assert_eq!(first["tools"][0]["name"], "edit_score");
-    assert_eq!(first["tools"][0]["strict"], true);
+    // Not strict: the EditPlan grammar is too large for the API's strict mode (live 400).
+    assert!(first["tools"][0].get("strict").is_none());
     assert_eq!(
         first["tools"][0]["input_schema"]["additionalProperties"],
         false
