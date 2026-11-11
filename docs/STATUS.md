@@ -2,7 +2,7 @@
 
 Updated after every merge. Newest first. Branch: `build/integration` (pushed to `origin`).
 
-## Current phase: 6 and 8 in progress (Phases 0-5 and 7 closed)
+## Current phase: 8 (Phases 0-7 closed). Last package: WP-Z
 
 Wave 1 (WP-A, B1, B2, C1, D1, E, F, P) runs as background agents in worktrees. From wave 2 on,
 work packages run as visible sessions (owner's choice), briefed from `docs/briefs/`. WP-X (MCP
@@ -36,6 +36,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- **Phase 6 closed.** Merged WP-M match loop (94a78b9..ee5891e): `praxis-match` (wasm-safe) turns a reference's Sound Profile into a ScorePlan (music) or an sfx patch / ambience bed, runs a deterministic analysis-by-synthesis loop (similarity per iteration, e.g. 0.538 -> 0.951 on the riser), mix and match (groove from A, timbre from B, mood from text), and an originality guard (re-generates a close melodic copy); `praxis match`, MCP `praxis_match`, the assistant's `match_reference` tool; `AskRequest.reference` (clip or library entry: the planner gets the numbers, the assistant a 1.2 kB trimmed profile, "like this" runs the match loop, takes record the reference). Exit, measured on the 10-clip self-made reference set: every result closest to its own reference (own 0.731-0.951 vs nearest other 0.554-0.722) and every result passes originality. The owner listened to the 10 blind pairs in `demos/phase-6/` and signed off ("i like them all sounds good", 2026-11-12; they did not judge which was the reference). Known weak spots: some effects are matched by another family (whoosh by glitch, impact by whoosh, drone by FM keys) because WP-D2's similarity prefers them; the classifier reads 4 of 5 music references as ambience (the matcher auditions every plausible kind). Rerun here: praxis-match, CLI, MCP and app tests, workspace clippy, wasm.
 
 - Merged WP-W browser build (589655e): `praxis-wasm` exports (validate, plan_brief, compose_plan, plan_edit, apply_patch, verify, analyse, an Engine with packs in memory, a Realtime engine for the AudioWorklet); `app/src/engine-wasm/` WasmEngine (full EngineAdapter incl. reference clips and the library in IndexedDB), worker, worklet, store; `npm run build:web` / `test:web`. Muted Chromium: acceptance-1 take 8/8 checks, wasm 3.97 MiB (1.28 MB gzip), ready in about 65 ms, worklet vs wasm offline render -169 dB, wasm vs native render -146 dB. Desktop-only: FLAC/MIDI export, agents. Orchestrator fix: `test:web` now builds the web version first (it failed on a fresh checkout). Rerun here: clippy, praxis-wasm tests, tsc, Vitest 210/210, Playwright 16/16 and the web test 1/1 (muted).
 

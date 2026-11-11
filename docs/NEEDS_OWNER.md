@@ -10,6 +10,7 @@ Only things the owner can give. Work continues on everything they do not block.
 | 4 | **Labelled reference clips** you own with known tempo/key (optional; we self-make the test set). | Nothing | optional |
 | 5 | **Licence, at release**: Tauri brings in seven MPL-2.0 crates (cssparser, cssparser-macros, dtoa-short, selectors, option-ext), unmodified, desktop shell only, none in the engine or browser crates. MPL is file-level copyleft and allows a closed-source app. Accepted provisionally (2026-11-11) as named exceptions in `deny.toml`; confirm with the final licence decision. | Nothing now | at release |
 | 6 | **Listening review, Phase 7**: `demos/phase-7/cue_hits_2min.flac` (2-minute cue with three hits). | Phase 7 exit | **done 2026-11-12**: "Sounds right" |
+| 7 | **Blind listening review, Phase 6**: the 10 pairs in `demos/phase-6/`. | Phase 6 exit | **done 2026-11-12**: "i like them all sounds good" (sound quality judged; the match itself is measured) |
 
 ## Decided by the owner (2026-11-10)
 

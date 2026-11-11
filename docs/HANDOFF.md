@@ -124,9 +124,9 @@ messages to these sessions.
 | WP-H2 realistic sfx | `local_e181048d-d661-4de8-9bd3-62cfb7c11812` | **merged** | WP-H2-sfx-realism.md | first free slot |
 | WP-P3 scoring depth + hit points | `local_26d5ea83-cf3a-4e26-9484-d34526546f88` | **merged**, Phase 7 closed | WP-P3-scoring-depth.md | after WP-P4 merges: "WP-P4 merged, slot free" |
 | WP-U6 reference clips in the app | `local_2c567f48-72fa-4ff1-8380-8e5ee1c2cc5f` | **merged**, Phase 5 closed | WP-U6-reference-clips-ui.md | after WP-D2: "WP-D2 merged, slot free" |
-| WP-M match loop | `local_c25d0d15-36a9-439c-84d9-450faee7771e` | building (+ `reference` in ask) | WP-M-match.md | after WP-D2 and WP-H2: "WP-D2 and WP-H2 merged, slot free" |
+| WP-M match loop | `local_c25d0d15-36a9-439c-84d9-450faee7771e` | **merged**, Phase 6 closed | WP-M-match.md | after WP-D2 and WP-H2: "WP-D2 and WP-H2 merged, slot free" |
 | WP-W browser build | `local_1eaf0bdd-3166-4fc0-bbf7-2f97f3dea4ba` | **merged** | WP-W-browser.md | after WP-U6: "WP-U6 merged, slot free" |
-| WP-Z performance + release | `local_8d511f36-2c98-42bf-b40e-155091985439` | queued | WP-Z-performance-release.md | last: "all packages merged, slot free" |
+| WP-Z performance + release | `local_8d511f36-2c98-42bf-b40e-155091985439` | building | WP-Z-performance-release.md | last: "all packages merged, slot free" |
 
 Rules for every review: authorship + attribution checks, owned files only, rerun the package's
 tests with `PRAXIS_KEYCHAIN=off` (the owner's paid key is in the keychain) and nothing playing
