@@ -1,4 +1,4 @@
-# Handoff: Praxis Sound build (kept current; last updated 2026-11-11 05:10 IST: paused, nothing running)
+# Handoff: Praxis Sound build (kept current; last updated 2026-11-11: wave 3 running, see section 5)
 
 Paste the block below into a new Claude Code session opened in
 `C:\Users\admin\Desktop\praxis sound`. Everything else in this file is the detail it points to.
@@ -103,38 +103,30 @@ The soft kick layer is skipped until WP-C2 lands (the test says so and tightens 
 
 Test totals at handoff: 386 Rust tests pass in release; app: 140 unit tests on the WP-U2 branch.
 
-## 5. In flight (updated 2026-11-11 05:10 IST: paused by the owner; nothing running)
+## 5. In flight (updated 2026-11-11: wave 3 running as four sessions)
 
-**Nothing is running and nothing is uncommitted.** Every package so far is merged into
-`build/integration` and pushed (HEAD `734b309` or later). Wave 2 (WP-C2 synth + drums, WP-F2 mix
-bus, WP-K CLI, WP-P2 edits + variations) and WP-X (MCP server) are all merged.
+Old merged branches and worktrees were deleted; only `build/integration` and the four wave-3
+worktrees exist. Every wave-3 package works in its own worktree under `.claude/worktrees/` on the
+branch below (the app may add a prefix/suffix: check `git branch`). Briefs are in `docs/briefs/`.
+
+| WP | Session | Branch | Brief | Notes |
+| --- | --- | --- | --- | --- |
+| WP-K2 edits, variations, takes | `local_08d46492-ce2a-48b7-8784-c8906f5e6215` (wp-k2-takes) | `wp/k2-edits-takes` | WP-K2-edits-takes.md | command layer + CLI + MCP; shared take history; frozen gain; CLI/planner tidy-ups (follow-ups 2-4) |
+| WP-D1b onset robustness | `local_c98b80e0-ef63-4d51-ab55-616e42b9e51f` (wp-d1b-onsets) | `wp/d1b-onsets` | WP-D1b-onset-robustness.md | follow-up 1 |
+| WP-R real-time engine | `local_86d87740-e7d6-4839-94ac-5a0e5ef22ca7` (wp-r-realtime) | `wp/r-realtime` | WP-R-realtime.md | Phase 3 |
+| WP-U3 Tauri app | `local_c4804bca-8078-46c7-bef7-1ff48c2a7379` (wp-u3-adapter) | `wp/u3-adapter` | WP-U3-real-adapter.md | **waits on WP-K2**: when K2 is merged, message this session to merge `build/integration` and wire the take ops |
+
+Merge order: WP-D1b and WP-R whenever they are ready; WP-K2 before finishing WP-U3. WP-U3 and
+WP-R both may touch `Cargo.lock` (and U3 the root `Cargo.toml`): resolve by keeping both
+sides' entries and letting cargo regenerate the lock.
 
 - **Phase 2 exit demo is ready**: `demos/phase-2/acceptance1_mixed_loop.flac` (+ `_x3` seam file,
   README with what to listen for). Waiting for the owner's listening sign-off
   (docs/NEEDS_OWNER.md item 2). Measured: 127.99 BPM, A minor, -16.00 LUFS, -2.72 dBTP, seamless,
-  kick adds 7.9 dB below 120 Hz from bar 9; grid 90.9% (thin margin, see below).
-- **WP-U3 real adapter + Tauri shell** was started and then stopped by the owner before it wrote
-  anything (its empty worktree was removed). Restart it from `docs/briefs/WP-U3-real-adapter.md`
-  on a new branch `wp/u3-adapter` from `build/integration`. Authorise exactly one root
-  `Cargo.toml` edit: add `crates/praxis-app` to `[workspace] members` only (not default-members),
-  plus any audited third-party deps; check Tauri versions/licences first.
+  kick adds 7.9 dB below 120 Hz from bar 9; grid 90.9% (WP-D1b is fixing the thin margin).
 
-Known follow-ups (not started):
-1. **Analyzer onset robustness**: the acceptance grid passes at 90.9% (threshold 90%). The
-   detector counts a soft felt-piano note's second swell (pitch 60, velocity 0.55), made more
-   visible by the room reverb, as an extra onset; 8 soft notes read ~12 ms late. Fix in
-   `praxis-analyze` onset detection (do not bend the reverb further). The FDN reverb's modulation
-   is off (time-invariant, exactly periodic loops); revisit only if the owner hears ringing.
-2. **Wire edits into the CLI and MCP**: `praxis edit` / `praxis variations` in `praxis_cli::ops`
-   and `praxis_edit` / `praxis_variations` tools in `praxis-mcp`, using
-   `praxis_planner::{plan_project_edit, compose_edit, variations}`.
-3. **Planner tidy-ups proposed by WP-P2**: route the edit tool inside `RuleProvider::call_tool`;
-   make `prompt_suite.rs` skip `edit_*` files; add `praxis-engine` as a planner dev-dependency for
-   render-level edit-isolation tests.
-4. **CLI**: `validate` should accept `.praxis` projects; `pack_verify_failed` error code; a
-   keychain delete helper for `key clear`.
-5. Old merged branches (`wp/*`, `worktree-agent-*`) and stale worktrees under `.claude/worktrees/`
-   can be deleted (`git worktree list`, `git worktree remove <path>`, `git branch -d <branch>`).
+Known follow-ups not yet assigned: none beyond the phases in section 6. (Follow-ups 1-5 from
+the pause are in WP-D1b, WP-K2, or done: old branches/worktrees deleted.)
 
 Test totals at pause: about 475 Rust tests in release (run the full suite with
 `PRAXIS_PACKS` pointing at `packs/` so the piano tests run), app 138 unit + 8 Playwright,
@@ -162,13 +154,14 @@ F2, K, P, P2, U1, U2, X all merged.
 
 1. **Phase 2 sign-off**: ask the owner to listen to `demos/phase-2/acceptance1_mixed_loop.flac`.
    Fix anything they hear before closing the phase; their sign-off does not block the next steps.
-2. **WP-U3 real adapter + Tauri shell** (`docs/briefs/WP-U3-real-adapter.md`): the approved app
-   plays real, checked takes on Windows.
-3. **Wire edits into the CLI and MCP** (follow-up 2 in section 5).
-4. **Analyzer onset robustness** (follow-up 1 in section 5).
-5. **Phase 3**: WP-R real-time engine (cpal output, lock-free bridge, no dropouts at 256 frames),
-   then the Phase 3 exit (build acceptance 1 by hand in the window, play, export) and the owner's
-   real-hardware check.
+2. **Wave 3 (running, section 5)**: review and merge WP-D1b, WP-R and WP-K2 as each reports;
+   after WP-K2 merges, message the WP-U3 session to merge `build/integration` and finish the
+   wiring; then review and merge WP-U3.
+3. **Phase 3 exit**: build acceptance 1 by hand in the window, play it through the real-time
+   engine (WP-R wired into the app: a small follow-up package replacing `<audio>` playback),
+   export; the owner's real-hardware check (NEEDS_OWNER item 3, `play` example from WP-R).
+4. Run the full workspace suite and CI at the Phase 3 exit.
+5. Phase 4 prerequisites are done offline (edits, variations, isolation); only the live run remains.
 6. **Phase 4 exit**: a live Claude run of the prompt and edit suites. Ask the owner for the
    Anthropic API key at that point (not before).
 7. **Phase 5** WP-D2 Sound Profile + labelled test set; **Phase 6** WP-H SFX patches + WP-M
