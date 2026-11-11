@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "title": "WP-H demo: impact at default macros",
+  "seed": 7,
+  "meta": {
+    "brief": "One impact at default macros (2 s), on A (the tonic).",
+    "tags": [
+      "sfx-demo"
+    ],
+    "provenance": {
+      "source": "hand-written WP-H demo"
+    }
+  },
+  "tempo": {
+    "bpm": 120.0
+  },
+  "time_signature": {
+    "numerator": 4,
+    "denominator": 4
+  },
+  "key": {
+    "tonic": "A",
+    "mode": "minor"
+  },
+  "bars": 2,
+  "playback": {
+    "mode": "one_shot",
+    "tail_seconds": 1.0
+  },
+  "patterns": [
+    {
+      "id": "hit",
+      "grid": "eighth",
+      "length_steps": 8,
+      "notes": [
+        {
+          "step": 0,
+          "pitch": 45,
+          "velocity": 0.8,
+          "accent": "normal",
+          "length": 1
+        }
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "id": "impact",
+      "name": "impact",
+      "class": "impact",
+      "instrument": {
+        "kind": "sfx",
+        "preset": "impact",
+        "params": {}
+      },
+      "clips": [
+        {
+          "bars": {
+            "start": 1,
+            "end": 1
+          },
+          "pattern": "hit"
+        }
+      ],
+      "gain_db": 0.0,
+      "pan": 0.0
+    }
+  ],
+  "master": {
+    "effects": [],
+    "loudness": {
+      "target_lufs": -16.0,
+      "true_peak_dbtp": -1.0,
+      "normalize": false
+    }
+  }
+}
