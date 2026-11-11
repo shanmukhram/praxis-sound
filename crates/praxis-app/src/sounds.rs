@@ -11,7 +11,7 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-/// The Praxis Sound home folder (`PRAXIS_HOME`, default `Documents\Praxis Sound`), as the
+/// The Praxis Sound home folder (`PRAXIS_HOME`, default `%USERPROFILE%\Praxis Sound`), as the
 /// command layer resolves it.
 pub fn home() -> PathBuf {
     praxis_home()

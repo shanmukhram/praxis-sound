@@ -460,7 +460,7 @@ impl VariationsArgs {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct AskArgs {
     /// The sound: a folder path, or a bare name kept under PRAXIS_HOME/sounds
-    /// (default `Documents/Praxis Sound/sounds/<name>`).
+    /// (default `%USERPROFILE%/Praxis Sound/sounds/<name>`).
     pub sound: String,
     /// The request in words. On a new sound, the brief; otherwise what to change.
     pub text: String,

@@ -17,8 +17,9 @@
 //!
 //! Where sounds live: a `sound` that names a folder (it contains a path separator, or is
 //! absolute) is used as given; a bare name resolves to `PRAXIS_HOME/sounds/<name>`, where
-//! `PRAXIS_HOME` defaults to `%USERPROFILE%\Documents\Praxis Sound` (`$HOME/Documents/Praxis
-//! Sound` elsewhere).
+//! `PRAXIS_HOME` defaults to `%USERPROFILE%\Praxis Sound` (`$HOME/Praxis Sound` elsewhere).
+//! Not `Documents`: Windows' Controlled Folder Access (ransomware protection) blocks unknown
+//! programs from writing there and reports it as "file not found" (owner's decision, 2026-11-11).
 
 use crate::error::{ErrorCode, OpError, io_error};
 use praxis_score::BarRange;
@@ -169,7 +170,7 @@ impl TakesFile {
     }
 }
 
-/// `PRAXIS_HOME`, else `<Documents>/Praxis Sound`.
+/// `PRAXIS_HOME`, else `<user profile>/Praxis Sound` (outside the folders Windows protects).
 pub fn praxis_home() -> PathBuf {
     if let Ok(h) = std::env::var(HOME_ENV)
         && !h.trim().is_empty()
@@ -180,7 +181,7 @@ pub fn praxis_home() -> PathBuf {
         .or_else(|| std::env::var_os("HOME"))
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    user.join("Documents").join("Praxis Sound")
+    user.join("Praxis Sound")
 }
 
 /// The folder of a sound: a path as given, or a bare name under `PRAXIS_HOME/sounds/`.

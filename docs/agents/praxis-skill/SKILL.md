@@ -216,7 +216,7 @@ Edits change only what you scope; everything else stays as it was, down to the s
 
 A sound is a folder the person's app shows as a conversation: `project.praxis`, `takes.json`
 and `takes/<n>/mix.wav`. A bare name (`"rain loop"`) lives in
-`PRAXIS_HOME/sounds/<name>` (default `Documents/Praxis Sound/sounds/<name>`); a path is used as
+`PRAXIS_HOME/sounds/<name>` (default `%USERPROFILE%/Praxis Sound/sounds/<name>`); a path is used as
 given. Your takes appear in the person's thread as "Agent · <your name>" (default: your MCP
 client's name; set `who` to choose).
 

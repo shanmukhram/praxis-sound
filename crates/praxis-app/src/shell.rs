@@ -280,14 +280,41 @@ fn output_opener() -> Opener {
     }
 }
 
+/// The home folder the app can write its sounds into: `preferred` when its `sounds` folder can be
+/// created, else `fallback` (the local app-data folder, which Windows never protects), else
+/// `preferred` anyway. Never fails: a folder that cannot be created must not stop the window
+/// from opening (Controlled Folder Access, for one, reports a blocked write as "file not
+/// found"); sound commands then report the error in words.
+pub fn writable_home(preferred: PathBuf, fallback: Option<PathBuf>) -> PathBuf {
+    match std::fs::create_dir_all(sounds::sounds_root(&preferred)) {
+        Ok(()) => return preferred,
+        Err(e) => eprintln!(
+            "praxis-app: cannot create {}: {e}",
+            sounds::sounds_root(&preferred).display()
+        ),
+    }
+    if let Some(f) = fallback {
+        match std::fs::create_dir_all(sounds::sounds_root(&f)) {
+            Ok(()) => {
+                eprintln!("praxis-app: keeping sounds in {} instead", f.display());
+                return f;
+            }
+            Err(e) => eprintln!(
+                "praxis-app: cannot create {} either: {e}",
+                sounds::sounds_root(&f).display()
+            ),
+        }
+    }
+    preferred
+}
+
 /// Starts the desktop app.
 pub fn run() {
-    let state = AppState::new(sounds::home());
-    let root = state.root.clone();
+    let fallback = std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Praxis Sound"));
+    let state = AppState::new(writable_home(sounds::home(), fallback));
     let result = tauri::Builder::default()
         .manage(state)
         .setup(move |app| {
-            std::fs::create_dir_all(&root)?;
             // The real-time engine on the default output, with the instruments the renders use.
             let emitter = app.handle().clone();
             let audio = AudioService::start(

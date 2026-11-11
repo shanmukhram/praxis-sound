@@ -16,7 +16,7 @@ npm run tauri -- build --no-bundle    # release exe: target/release/praxis-app.e
 ```
 
 Set `PRAXIS_PACKS` to the instrument packs folder (for the felt piano) before starting it.
-Sounds live in `PRAXIS_HOME/sounds/<name>` (default `Documents\Praxis Sound\sounds`); set
+Sounds live in `PRAXIS_HOME/sounds/<name>` (default `%USERPROFILE%\Praxis Sound\sounds`, not Documents: Windows ransomware protection blocks writes there; if the folder cannot be created the app uses `%LOCALAPPDATA%\Praxis Sound` instead of closing); set
 `ANTHROPIC_API_KEY` (or `praxis key set`) to plan with Claude, otherwise the offline rule
 planner answers. Needs the WebView2 runtime (part of Windows 11).
 

@@ -15,7 +15,7 @@ praxis key set < key.txt
 set PRAXIS_PACKS=C:\Users\admin\Desktop\praxis sound\packs
 ```
 
-Use a fresh sound folder, e.g. `C:\Users\admin\Documents\Praxis Sound\sounds\live-1`, and run
+Use a fresh sound folder, e.g. `C:\Users\admin\Praxis Sound\sounds\live-1`, and run
 each request below in order with `praxis ask live-1 "<request>" --json`. The assistant's steps
 print on stderr; the JSON on stdout has the take and `agent.steps`, `agent.reply` and
 `agent.usage`. After each request, open the sound in the app (or `praxis takes live-1`) and

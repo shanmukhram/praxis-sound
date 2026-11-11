@@ -10,8 +10,12 @@ press Play. About 10 minutes.
 In PowerShell, in the project folder:
 
 ```powershell
-cd "C:\Users\admin\Desktop\praxis sound"; $env:PRAXIS_PACKS = "$PWD\packs"; $env:PRAXIS_KEYCHAIN = "off"; .\target\release\praxis-app.exe
+cd "C:\Users\admin\Desktop\praxis sound"; $env:PRAXIS_HOME = "$env:USERPROFILE\Praxis Sound"; $env:PRAXIS_PACKS = "$PWD\packs"; $env:PRAXIS_KEYCHAIN = "off"; .\target\release\praxis-app.exe
 ```
+
+`PRAXIS_HOME` keeps sounds in `C:\Users\admin\Praxis Sound`. Without it, the current build tries
+`Documents`, which Windows' ransomware protection (Controlled Folder Access) blocks, and the app
+closes at once. The next build makes that folder the default and never closes for it.
 
 `PRAXIS_KEYCHAIN=off` keeps typed requests on the free offline planner during the check (with it
 on, typed requests use the paid Claude assistant). Building by hand never calls Claude either way.

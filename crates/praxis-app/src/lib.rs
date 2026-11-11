@@ -14,4 +14,4 @@ mod shell;
 pub mod sounds;
 pub mod watch;
 
-pub use shell::{AppState, TAKES_EVENT, run};
+pub use shell::{AppState, TAKES_EVENT, run, writable_home};

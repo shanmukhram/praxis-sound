@@ -77,7 +77,8 @@ melody) and each patch is then applied to the real score.
 
 A `sound` is a folder path (absolute, or containing a path separator), or a bare name that
 resolves to `PRAXIS_HOME/sounds/<name>`; `PRAXIS_HOME` defaults to
-`%USERPROFILE%\Documents\Praxis Sound` (`$HOME/Documents/Praxis Sound` elsewhere).
+`%USERPROFILE%\Praxis Sound` (`$HOME/Praxis Sound` elsewhere; not Documents, which Windows'
+Controlled Folder Access protects).
 
 ```text
 <sound>/project.praxis       the project; take n's score is version `take-<n>`
