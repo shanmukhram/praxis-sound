@@ -20,7 +20,8 @@ fn prompts_dir() -> PathBuf {
         .join("prompts")
 }
 
-/// Brief files (not the hand-written plan examples).
+/// Brief files: not the hand-written plan examples, and not the edit cases (`edit_*`), which
+/// `edit_prompt_suite.rs` runs with their base briefs.
 fn brief_files() -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(prompts_dir())
         .expect("prompts dir")
@@ -28,6 +29,9 @@ fn brief_files() -> Vec<PathBuf> {
         .filter(|p| {
             p.extension().is_some_and(|x| x == "json")
                 && !p.to_string_lossy().ends_with(".plan.json")
+                && !p
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with("edit_"))
         })
         .collect();
     files.sort();

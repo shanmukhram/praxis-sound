@@ -2287,6 +2287,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "keyring",
  "praxis-analyze",
  "praxis-audio-io",
  "praxis-dsp",
@@ -2371,6 +2372,7 @@ name = "praxis-planner"
 version = "0.1.0"
 dependencies = [
  "keyring",
+ "praxis-engine",
  "praxis-score",
  "schemars",
  "serde",

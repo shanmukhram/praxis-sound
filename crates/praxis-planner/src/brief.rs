@@ -40,6 +40,121 @@ pub struct PlanOutcome {
     pub lint: Vec<Issue>,
 }
 
+impl PlanOutcome {
+    /// A short plain-language description of the sound: each layer (dynamics, instrument, motif
+    /// length and grid, the bars it plays), then the timing, key and playback, and what was kept
+    /// out. It is the reply a take shows in the conversation (ADR-0011).
+    pub fn summary(&self) -> String {
+        plan_summary(&self.plan, &self.score, self.repairs.len())
+    }
+}
+
+fn grid_words(grid: praxis_score::Grid) -> &'static str {
+    use praxis_score::Grid;
+    match grid {
+        Grid::Quarter => "quarter-note",
+        Grid::Eighth => "eighth-note",
+        Grid::Sixteenth => "sixteenth-note",
+        Grid::EighthTriplet => "eighth-triplet",
+        Grid::SixteenthTriplet => "sixteenth-triplet",
+    }
+}
+
+fn number(v: f64) -> String {
+    if (v - v.round()).abs() < 0.05 {
+        format!("{}", v.round() as i64)
+    } else {
+        format!("{v:.1}")
+    }
+}
+
+fn bars_words(start: u32, end: u32) -> String {
+    if start == end {
+        format!("bar {start}")
+    } else {
+        format!("bars {start}\u{2013}{end}")
+    }
+}
+
+/// [`PlanOutcome::summary`] for a plan and the Score arranged from it.
+pub fn plan_summary(plan: &ScorePlan, score: &Score, repairs: usize) -> String {
+    use crate::plan::Dynamics;
+    let mut parts: Vec<String> = Vec::new();
+    for l in &plan.layers {
+        let Some(layer) = score.layers.iter().find(|x| x.id == l.id) else {
+            continue;
+        };
+        let (Some(start), Some(end)) = (
+            layer.clips.iter().map(|c| c.bars.start).min(),
+            layer.clips.iter().map(|c| c.bars.end).max(),
+        ) else {
+            continue;
+        };
+        let dynamics = match l.dynamics {
+            Dynamics::Soft => "soft ",
+            Dynamics::Normal => "",
+            Dynamics::Strong => "strong ",
+        };
+        let instrument = l.preset.name.replace('_', " ");
+        let dynamics = if instrument.starts_with(dynamics.trim()) && !dynamics.is_empty() {
+            ""
+        } else {
+            dynamics
+        };
+        let motif = if l.motif.length_bars <= 1 {
+            "a one-bar motif".to_string()
+        } else {
+            format!("a {}-bar motif", l.motif.length_bars)
+        };
+        let grid = grid_words(l.motif.grid);
+        let article = if grid.starts_with('e') { "an" } else { "a" };
+        parts.push(format!(
+            "{dynamics}{instrument} playing {motif} on {article} {grid} grid in {}",
+            bars_words(start, end)
+        ));
+    }
+    let mut out = String::new();
+    if !parts.is_empty() {
+        let body = parts.join(", plus ");
+        let article = if body.starts_with(['a', 'e', 'i', 'o', 'u']) {
+            "An"
+        } else {
+            "A"
+        };
+        out.push_str(&format!("{article} {body}. "));
+    }
+    let seconds = praxis_score::timeline::TimeMap::new(score, 48_000).bar_s() * score.bars as f64;
+    let playback = match score.playback {
+        praxis_score::Playback::Loop => "a seamless loop",
+        praxis_score::Playback::OneShot { .. } => "a one-shot",
+    };
+    out.push_str(&format!(
+        "{} bars of {}/{} at {} BPM in {}, {} seconds, {playback}.",
+        score.bars,
+        score.time_signature.numerator,
+        score.time_signature.denominator,
+        number(score.tempo.bpm),
+        score.key.display(),
+        number(seconds)
+    ));
+    let kept_out: Vec<String> = score
+        .constraints
+        .avoid
+        .iter()
+        .map(|c| crate::catalogue::class_name(*c).replace('_', " "))
+        .collect();
+    if !kept_out.is_empty() {
+        out.push_str(&format!(" Kept out: {}.", kept_out.join(", ")));
+    }
+    if repairs > 0 {
+        out.push_str(&format!(
+            " The planner fixed {repairs} thing{} in the plan.",
+            if repairs == 1 { "" } else { "s" }
+        ));
+    }
+    out
+}
+
 /// Trailer classes a brief explicitly asks for ("add a riser into bar 9"). Mood words never
 /// count; negated mentions ("no risers") never count.
 pub fn requested_classes(brief: &str) -> BTreeSet<GeneratorClass> {
@@ -276,5 +391,32 @@ fn fix_sustain(score: &mut Score, lint_ctx: &LintContext, repairs: &mut Vec<Repa
                 action: "lengthened notes so the sustaining instrument overlaps".into(),
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::RuleProvider;
+
+    #[test]
+    fn summary_says_what_plays_where_in_plain_words() {
+        let out = plan_brief(
+            "16 bars, 4/4, A minor, 30 seconds, seamless loop. Bars 1-8: one soft felt piano \
+             playing a repeating rhythmic motif on an eighth-note grid. Bars 9-16: the identical \
+             piano part plus a soft muted kick underneath. No risers.",
+            &RuleProvider::new(),
+            &Catalogue::standard(),
+            1,
+        )
+        .expect("plan");
+        let s = out.summary();
+        assert!(s.starts_with("A soft felt piano playing"), "{s}");
+        assert!(s.contains("eighth-note grid in bars 1\u{2013}16"), "{s}");
+        assert!(s.contains("soft kick playing"), "{s}");
+        assert!(!s.contains("soft soft"), "{s}");
+        assert!(s.contains("16 bars of 4/4 at 128 BPM"), "{s}");
+        assert!(s.contains("30 seconds, a seamless loop."), "{s}");
+        assert!(s.contains("riser"), "{s}");
     }
 }

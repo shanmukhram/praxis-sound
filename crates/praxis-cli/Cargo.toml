@@ -30,6 +30,8 @@ clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
+# `key clear` deletes the keychain entry (the planner only reads and stores it).
+keyring.workspace = true
 
 [dev-dependencies]
 praxis-testkit.workspace = true

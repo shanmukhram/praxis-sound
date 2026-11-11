@@ -12,7 +12,9 @@ use serde_json::{Value, json};
 use std::path::Path;
 
 pub mod analyze;
+pub mod changes;
 pub mod check;
+pub mod edit;
 pub mod generate;
 pub mod key;
 pub mod midi;
@@ -20,10 +22,14 @@ pub mod packs;
 pub mod presets;
 pub mod render;
 pub mod schema;
+pub mod sound;
+pub mod takes;
 pub mod validate;
+pub mod variations;
 
 pub use analyze::{AnalyzeRequest, analyze};
 pub use check::{CheckRequest, check};
+pub use edit::{EditRequest, edit};
 pub use generate::{GenerateRequest, ProviderChoice, generate};
 pub use key::{KeyAction, KeyRequest, key};
 pub use midi::{ExportMidiRequest, export_midi};
@@ -31,7 +37,13 @@ pub use packs::{PacksInstallRequest, packs_install, packs_list};
 pub use presets::presets;
 pub use render::{RenderRequest, RenderSettings, render};
 pub use schema::{SchemaRequest, schema};
+pub use sound::{TakeRecord, TakeScope, ViewName, praxis_home, resolve_sound};
+pub use takes::{
+    AskRequest, KeepVariationRequest, OpenViewRequest, RestoreRequest, TakesRequest, ask,
+    keep_variation, open_view, restore, takes,
+};
 pub use validate::{ValidateRequest, validate};
+pub use variations::{VariationsRequest, variations};
 
 /// Reads a score from a `.score.json` file or a `.praxis` project (detected by the project's
 /// `"format": "praxis-project"` field, not by extension) and validates it.

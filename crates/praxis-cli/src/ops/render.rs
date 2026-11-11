@@ -164,6 +164,15 @@ pub fn render_score(
     out: &Path,
     settings: &RenderSettings,
 ) -> Result<Value, OpError> {
+    render_score_master(score, out, settings).map(|(v, _)| v)
+}
+
+/// [`render_score`], also returning the rendered master (before encoding).
+pub(crate) fn render_score_master(
+    score: &Score,
+    out: &Path,
+    settings: &RenderSettings,
+) -> Result<(Value, praxis_dsp::StereoBuffer), OpError> {
     let mut score = score.clone();
     if let Some(s) = settings.seed {
         score.seed = s;
@@ -263,7 +272,7 @@ pub fn render_score(
             .map(|c| c.name.clone())
             .collect::<Vec<_>>()
     );
-    Ok(json!({
+    let payload = json!({
         "output": out.display().to_string(),
         "format": format_name(format),
         "stems": stem_files,
@@ -271,6 +280,9 @@ pub fn render_score(
         "frames": output.master.len(),
         "duration_s": duration_s,
         "is_loop": r.is_loop,
+        "length_samples": r.length_samples,
+        "tail_samples": r.tail_samples,
+        "warmup_cycles": r.warmup_cycles,
         "loudness_lufs": finite(r.loudness_lufs),
         "loudness_before_lufs": finite(r.loudness_before_lufs),
         "true_peak_dbtp": finite(r.true_peak_dbtp),
@@ -283,5 +295,6 @@ pub fn render_score(
         "render_seconds": render_s,
         "realtime_factor": if render_s > 0.0 { duration_s / render_s } else { 0.0 },
         "check": check,
-    }))
+    });
+    Ok((payload, output.master))
 }

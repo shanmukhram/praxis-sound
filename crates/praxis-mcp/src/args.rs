@@ -10,9 +10,9 @@ use praxis_cli::ops::{
 };
 use praxis_cli::{ErrorCode, OpError};
 use schemars::JsonSchema;
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use serde_json::{Map, Value};
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
 
 /// The seed used when none is given (the CLI's default), so the same plan gives the same project.
@@ -317,7 +317,7 @@ impl ExportArgs {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ValidateArgs {
-    /// A `.score.json` file (the Score itself, not a `.praxis` project).
+    /// A `.score.json` file or a `.praxis` project (its score is validated).
     pub input: PathBuf,
 }
 
@@ -326,6 +326,287 @@ impl ValidateArgs {
         ValidateRequest {
             input: absolute(&self.input),
         }
+    }
+}
+
+// ---------------------------------------------------------------- edits, variations, takes
+
+/// Builds a command-layer request from JSON (the requests deserialise with their defaults).
+fn request<T: DeserializeOwned>(v: Value) -> Result<T, OpError> {
+    serde_json::from_value(v)
+        .map_err(|e| OpError::new(ErrorCode::BadJson, format!("invalid arguments: {e}")))
+}
+
+/// A sound: a folder path (made absolute), or a bare name kept under PRAXIS_HOME/sounds.
+fn sound_arg(sound: &str) -> String {
+    let s = sound.trim();
+    if Path::new(s).is_absolute() || s.contains(['/', '\\']) || s == "." || s == ".." {
+        absolute(Path::new(s)).display().to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+fn provider_json(p: Option<Provider>) -> Value {
+    match p {
+        None => Value::Null,
+        Some(Provider::Offline) => json!("offline"),
+        Some(Provider::Claude) => json!("claude"),
+    }
+}
+
+/// A bar range, 1-based and inclusive.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, Serialize)]
+pub struct Bars {
+    pub start: u32,
+    pub end: u32,
+}
+
+/// Bars of one layer: the request changes nothing outside them.
+#[derive(Clone, Debug, Deserialize, JsonSchema, Serialize)]
+pub struct TakeScopeArg {
+    /// Layer id (see `score_summary.layers` or `praxis_takes`).
+    pub layer: String,
+    pub bars: Bars,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct EditArgs {
+    /// The `.praxis` project to edit; written back when the edit changes anything (undoable).
+    pub project: PathBuf,
+    /// The instruction, e.g. "change the last four bars to add a subtle melody". Give this or
+    /// `plan`.
+    #[serde(default)]
+    pub prompt: Option<String>,
+    /// An EditPlan you wrote (intent, scope {phrase|bars, keep}, layers, params). No key needed.
+    #[serde(default)]
+    pub plan: Option<Map<String, Value>>,
+    #[serde(default)]
+    pub provider: Option<Provider>,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Seed for new material (default 1).
+    #[serde(default)]
+    pub seed: Option<u64>,
+    /// Also render the edited project to this audio file and return the checks.
+    #[serde(default)]
+    pub render: Option<PathBuf>,
+    #[serde(flatten)]
+    pub audio: AudioOptions,
+}
+
+impl EditArgs {
+    pub fn request(&self) -> Result<praxis_cli::ops::EditRequest, OpError> {
+        let mut r: praxis_cli::ops::EditRequest = request(json!({
+            "project": absolute(&self.project),
+            "prompt": self.prompt,
+            "plan": self.plan.clone().map(Value::Object),
+            "provider": provider_json(self.provider),
+            "model": self.model,
+            "seed": self.seed.unwrap_or(DEFAULT_SEED),
+            "render": abs_opt(&self.render),
+        }))?;
+        r.render_settings = self.audio.settings(None);
+        Ok(r)
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VariationsArgs {
+    /// A `.praxis` project. Give exactly one of `project`, `score` and `sound`.
+    #[serde(default)]
+    pub project: Option<PathBuf>,
+    /// A `.score.json` file.
+    #[serde(default)]
+    pub score: Option<PathBuf>,
+    /// A sound folder (or bare name): varies its current take; keep one with
+    /// `praxis_keep_variation`.
+    #[serde(default)]
+    pub sound: Option<String>,
+    /// Bars to vary (default: the whole score).
+    #[serde(default)]
+    pub bars: Option<Bars>,
+    /// Layer ids to vary (default: every unlocked layer playing in the bars).
+    #[serde(default)]
+    pub layers: Vec<String>,
+    /// How many, 1 to 8 (default 3).
+    #[serde(default)]
+    pub n: Option<usize>,
+    #[serde(default)]
+    pub seed: Option<u64>,
+    /// Where the WAVs and variations.json go (default: `variations/` next to the source).
+    #[serde(default)]
+    pub out_dir: Option<PathBuf>,
+    #[serde(flatten)]
+    pub audio: AudioOptions,
+}
+
+impl VariationsArgs {
+    pub fn request(&self) -> Result<praxis_cli::ops::VariationsRequest, OpError> {
+        let mut r: praxis_cli::ops::VariationsRequest = request(json!({
+            "project": abs_opt(&self.project),
+            "score": abs_opt(&self.score),
+            "sound": self.sound.as_deref().map(sound_arg),
+            "scope": {"bars": self.bars, "layers": self.layers},
+            "n": self.n.unwrap_or(3),
+            "seed": self.seed.unwrap_or(DEFAULT_SEED),
+            "out_dir": abs_opt(&self.out_dir),
+        }))?;
+        r.render_settings = self.audio.settings(None);
+        Ok(r)
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AskArgs {
+    /// The sound: a folder path, or a bare name kept under PRAXIS_HOME/sounds
+    /// (default `Documents/Praxis Sound/sounds/<name>`).
+    pub sound: String,
+    /// The request in words. On a new sound, the brief; otherwise what to change.
+    pub text: String,
+    /// Your name as the thread shows it ("Agent · <name>"). Default: the MCP client's name.
+    #[serde(default)]
+    pub who: Option<String>,
+    /// Hold the change to these bars of this layer.
+    #[serde(default)]
+    pub scope: Option<TakeScopeArg>,
+    /// Commit this ScorePatch instead of planning one from `text` (an exact hand edit).
+    #[serde(default)]
+    pub patch: Option<Map<String, Value>>,
+    /// Overrides the take's title.
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub provider: Option<Provider>,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Planner seed (default: the new take's number).
+    #[serde(default)]
+    pub seed: Option<u64>,
+    /// Render only the layers available here and list the others.
+    #[serde(default)]
+    pub skip_missing: bool,
+    /// Also return the take's full score.
+    #[serde(default)]
+    pub include_score: bool,
+}
+
+impl AskArgs {
+    pub fn request(&self, default_who: &str) -> Result<praxis_cli::ops::AskRequest, OpError> {
+        request(json!({
+            "sound": sound_arg(&self.sound),
+            "text": self.text,
+            "who": self.who.clone().unwrap_or_else(|| default_who.to_string()),
+            "scope": self.scope,
+            "patch": self.patch.clone().map(Value::Object),
+            "title": self.title,
+            "provider": provider_json(self.provider),
+            "model": self.model,
+            "seed": self.seed,
+            "skip_missing": self.skip_missing,
+            "include_score": self.include_score,
+        }))
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TakesArgs {
+    /// The sound folder or bare name.
+    pub sound: String,
+    /// Include each take's full score (large).
+    #[serde(default)]
+    pub include_scores: bool,
+}
+
+impl TakesArgs {
+    pub fn request(&self) -> praxis_cli::ops::TakesRequest {
+        praxis_cli::ops::TakesRequest {
+            sound: sound_arg(&self.sound),
+            include_scores: self.include_scores,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RestoreArgs {
+    /// The sound folder or bare name.
+    pub sound: String,
+    /// The take to go back to.
+    pub n: u32,
+}
+
+impl RestoreArgs {
+    pub fn request(&self) -> praxis_cli::ops::RestoreRequest {
+        praxis_cli::ops::RestoreRequest {
+            sound: sound_arg(&self.sound),
+            n: self.n,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct KeepVariationArgs {
+    /// The sound folder or bare name the variations were made for.
+    pub sound: String,
+    /// The variation's number (1-based, as `praxis_variations` returned it).
+    pub index: usize,
+    /// Default: the MCP client's name.
+    #[serde(default)]
+    pub who: Option<String>,
+    /// The request as the thread shows it (default "Keep variation <index>").
+    #[serde(default)]
+    pub ask: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub skip_missing: bool,
+    #[serde(default)]
+    pub include_score: bool,
+}
+
+impl KeepVariationArgs {
+    pub fn request(&self, default_who: &str) -> praxis_cli::ops::KeepVariationRequest {
+        praxis_cli::ops::KeepVariationRequest {
+            sound: sound_arg(&self.sound),
+            index: self.index,
+            who: Some(self.who.clone().unwrap_or_else(|| default_who.to_string())),
+            ask: self.ask.clone(),
+            title: self.title.clone(),
+            skip_missing: self.skip_missing,
+            include_score: self.include_score,
+        }
+    }
+}
+
+/// A panel view of the app.
+#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum View {
+    Overview,
+    Rhythm,
+    Notes,
+    Mix,
+    Export,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct OpenViewArgs {
+    /// The sound folder or bare name.
+    pub sound: String,
+    /// overview, rhythm (step grid), notes (piano roll), mix or export.
+    pub view: View,
+    /// Default: the MCP client's name.
+    #[serde(default)]
+    pub who: Option<String>,
+}
+
+impl OpenViewArgs {
+    pub fn request(&self, default_who: &str) -> Result<praxis_cli::ops::OpenViewRequest, OpError> {
+        request(json!({
+            "sound": sound_arg(&self.sound),
+            "view": self.view,
+            "who": self.who.clone().unwrap_or_else(|| default_who.to_string()),
+        }))
     }
 }
 

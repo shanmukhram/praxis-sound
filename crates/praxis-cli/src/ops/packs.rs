@@ -64,6 +64,10 @@ pub fn packs_list() -> Result<Value, OpError> {
 fn install_error(e: InstallError) -> OpError {
     let code = match &e {
         InstallError::Io { .. } | InstallError::Download { .. } => ErrorCode::Io,
+        // The archive is not the one the index names (size or blake3), or unpacked incompletely.
+        InstallError::SizeMismatch { .. }
+        | InstallError::HashMismatch { .. }
+        | InstallError::MissingFile { .. } => ErrorCode::PackVerifyFailed,
         _ => ErrorCode::Error,
     };
     OpError::new(code, e.to_string())
