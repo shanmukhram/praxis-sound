@@ -331,7 +331,11 @@ impl CompareLevel {
             None => base_db as f32,
             Some(c) if c.muted => COMPARE_MUTE_DB,
             Some(c) => {
-                let trim = if c.gain_db.is_finite() { c.gain_db.clamp(-60.0, 0.0) } else { 0.0 };
+                let trim = if c.gain_db.is_finite() {
+                    c.gain_db.clamp(-60.0, 0.0)
+                } else {
+                    0.0
+                };
                 (base_db as f32 + trim).max(COMPARE_MUTE_DB)
             }
         }

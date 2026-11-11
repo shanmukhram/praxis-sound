@@ -204,7 +204,8 @@ export function tempoLine(p: SoundProfile): ProfileLine {
 export function keyLine(p: SoundProfile): ProfileLine {
   const k = p.key;
   if (!k || p.tonality < 0.2) {
-    return { id: 'key', label: 'Key', words: "Can't tell: mostly noise, no clear notes", detail: k ? `${keyLabel(k.key)} at confidence ${k.confidence.toFixed(2)}` : 'no tonal content', cantTell: true };
+    const words = p.tonality < 0.2 ? "Can't tell: mostly noise, no clear notes" : "Can't tell: the notes do not settle on a key";
+    return { id: 'key', label: 'Key', words, detail: k ? `${keyLabel(k.key)} at confidence ${k.confidence.toFixed(2)}` : 'no key found', cantTell: true };
   }
   if (k.confidence < KEY_SURE) {
     return { id: 'key', label: 'Key', words: "Can't tell: the notes do not settle on a key", detail: `${keyLabel(k.key)} at confidence ${k.confidence.toFixed(2)}`, cantTell: true };

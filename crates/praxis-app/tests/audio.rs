@@ -320,13 +320,21 @@ fn the_ab_trim_turns_the_take_down_mutes_it_and_survives_a_swap() {
     }));
     r.wait_frames(bar);
     let muted = level_db(&r, bar, 2);
-    assert!(muted - base < -55.0, "muted only {:.1} dB down", muted - base);
+    assert!(
+        muted - base < -55.0,
+        "muted only {:.1} dB down",
+        muted - base
+    );
 
     // Back to the take's own level.
     r.service.set_compare(None);
     r.wait_frames(bar);
     let back = level_db(&r, bar, 2);
-    assert!((back - base).abs() < 0.5, "back at {:.2} dB from its level", back - base);
+    assert!(
+        (back - base).abs() < 0.5,
+        "back at {:.2} dB from its level",
+        back - base
+    );
     assert_eq!(r.service.status().compare, None);
 }
 

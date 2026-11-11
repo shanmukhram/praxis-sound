@@ -70,6 +70,9 @@
 .chips button.ref-chip:hover { color: var(--text); }
 
 @media (max-width: 760px) {
+  /* Six tabs fit a 390 phone once the Reference tab joins them. */
+  .tabs { gap: 0; padding: 0 12px; }
+  .tabs button { padding: 10px 6px 9px; }
   .ref-lines { grid-template-columns: 80px minmax(0, 1fr); }
   .lib-list li { grid-template-columns: minmax(0, 1fr); }
   .lib-actions { flex-direction: row; align-items: center; justify-content: flex-start; }

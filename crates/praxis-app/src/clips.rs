@@ -1,5 +1,4 @@
-//! R        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()) && e.path() != current)
-ference clips in the desktop app (WP-U6; FR-11, FR-12, FR-19).
+//! Reference clips in the desktop app (WP-U6; FR-11, FR-12, FR-19).
 //!
 //! The window sends a dropped clip's bytes (`clip_analyze`). They are kept under
 //! `<home>/clips/` so the sound assistant can measure the file in full with its `analyze_clip`
@@ -110,7 +109,10 @@ fn refuse(name: &str) -> CmdError {
 pub fn store_clip(home: &Path, name: &str, bytes: &[u8]) -> CmdResult<PathBuf> {
     let safe = safe_clip_name(name).ok_or_else(|| refuse(name))?;
     if bytes.is_empty() {
-        return Err(CmdError::new(ErrorCode::BadFormat, format!("{name} is empty")));
+        return Err(CmdError::new(
+            ErrorCode::BadFormat,
+            format!("{name} is empty"),
+        ));
     }
     if bytes.len() > MAX_CLIP_BYTES {
         return Err(CmdError::new(
@@ -228,11 +230,18 @@ fn entry_of(e: &Value, profile: Option<Value>, already: bool) -> LibraryEntry {
     let s = |k: &str| e[k].as_str().unwrap_or("").to_string();
     let id = s("id");
     LibraryEntry {
-        name: e["name"].as_str().map(str::to_string).unwrap_or_else(|| id.clone()),
+        name: e["name"]
+            .as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| id.clone()),
         id,
         tags: e["tags"]
             .as_array()
-            .map(|t| t.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .map(|t| {
+                t.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_default(),
         kind: s("kind"),
         duration_s: e["duration_s"].as_f64().unwrap_or(0.0),
@@ -290,7 +299,10 @@ pub fn library_add(
 ) -> CmdResult<LibraryEntry> {
     let name = name.trim();
     if name.is_empty() {
-        return Err(CmdError::new(ErrorCode::BadJson, "give the reference a name"));
+        return Err(CmdError::new(
+            ErrorCode::BadJson,
+            "give the reference a name",
+        ));
     }
     let kept = clip.and_then(|c| kept_clip(home, c));
     let mut temp = None;
@@ -341,7 +353,11 @@ pub fn library_add(
 /// Sets an entry's tags to exactly `tags` (the library's `tag` adds and removes).
 pub fn library_tag(home: &Path, id: &str, tags: &[String]) -> CmdResult<LibraryEntry> {
     let now = library_show(home, id)?.tags;
-    let want: Vec<String> = tags.iter().map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect();
+    let want: Vec<String> = tags
+        .iter()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .collect();
     let add = want.iter().filter(|t| !now.contains(t)).cloned().collect();
     let remove = now.iter().filter(|t| !want.contains(t)).cloned().collect();
     let v = lib(
@@ -366,9 +382,18 @@ mod tests {
 
     #[test]
     fn names_are_made_safe_and_checked() {
-        assert_eq!(safe_clip_name("Rain loop.WAV").as_deref(), Some("Rain loop.wav"));
-        assert_eq!(safe_clip_name(r"C:\x\..\hit.mp4").as_deref(), Some("hit.mp4"));
-        assert_eq!(safe_clip_name("../../evil.wav").as_deref(), Some("evil.wav"));
+        assert_eq!(
+            safe_clip_name("Rain loop.WAV").as_deref(),
+            Some("Rain loop.wav")
+        );
+        assert_eq!(
+            safe_clip_name(r"C:\x\..\hit.mp4").as_deref(),
+            Some("hit.mp4")
+        );
+        assert_eq!(
+            safe_clip_name("../../evil.wav").as_deref(),
+            Some("evil.wav")
+        );
         assert_eq!(safe_clip_name("a/b:c?.flac").as_deref(), Some("b-c.flac"));
         assert_eq!(safe_clip_name("notes.txt"), None);
         assert_eq!(safe_clip_name("noext"), None);
@@ -377,7 +402,10 @@ mod tests {
 
     #[test]
     fn percent_escapes_decode() {
-        assert_eq!(percent_decode("rain%20loop%20%C3%A9.wav"), "rain loop é.wav");
+        assert_eq!(
+            percent_decode("rain%20loop%20%C3%A9.wav"),
+            "rain loop é.wav"
+        );
         assert_eq!(percent_decode("100%"), "100%");
         assert_eq!(percent_decode("%zz.wav"), "%zz.wav");
     }
@@ -394,7 +422,12 @@ mod tests {
         assert_eq!(n, KEEP_CLIPS);
         assert!(last.is_file());
         // The same bytes under the same name are kept once.
-        let again = store_clip(&home, &format!("c{}.wav", KEEP_CLIPS + 2), &[(KEEP_CLIPS + 3) as u8; 8]).unwrap();
+        let again = store_clip(
+            &home,
+            &format!("c{}.wav", KEEP_CLIPS + 2),
+            &[(KEEP_CLIPS + 3) as u8; 8],
+        )
+        .unwrap();
         assert_eq!(again, last);
         let _ = std::fs::remove_dir_all(&home);
     }
@@ -402,8 +435,14 @@ mod tests {
     #[test]
     fn refuses_other_files_and_empty_clips() {
         let home = std::env::temp_dir().join(format!("praxis-clips-refuse-{}", std::process::id()));
-        assert_eq!(store_clip(&home, "a.txt", b"x").unwrap_err().code, "bad_format");
-        assert_eq!(store_clip(&home, "a.wav", b"").unwrap_err().code, "bad_format");
+        assert_eq!(
+            store_clip(&home, "a.txt", b"x").unwrap_err().code,
+            "bad_format"
+        );
+        assert_eq!(
+            store_clip(&home, "a.wav", b"").unwrap_err().code,
+            "bad_format"
+        );
         let _ = std::fs::remove_dir_all(&home);
     }
 }

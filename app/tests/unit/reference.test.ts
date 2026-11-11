@@ -76,6 +76,8 @@ describe('a profile in plain words', () => {
     // Between the threshold and 0.6 it is said, with "not sure".
     expect(keyLine(profile({ key: { key: { tonic: 'A', mode: 'major' }, confidence: 0.58, chroma: [] } })).words).toBe('A major (not sure)');
     expect(tempoLine(profile({ tempo: null })).words).toBe("Can't tell: the beat is not clear");
+    // No key found in a tonal clip is not "noise".
+    expect(keyLine(profile({ key: null })).words).toBe("Can't tell: the notes do not settle on a key");
     // A noise bed can carry a confident but spurious pulse (WP-D2): no beat without a groove.
     const bed = { ...rain(), tempo: { bpm: 96, confidence: 0.75, beats_s: [], downbeat_s: 0, beats_per_bar: 4 } };
     expect(tempoLine(bed)).toMatchObject({ words: "Can't tell: no steady beat", cantTell: true });

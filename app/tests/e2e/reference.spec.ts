@@ -107,6 +107,7 @@ test.describe('desktop 1440', () => {
     await view.getByTestId('ref-numbers').click();
     // No take yet: nothing to compare by ear.
     await expect(view.getByTestId('ab')).toContainText('Make a take, then compare it with the clip here');
+    await page.getByTestId('panel-body').evaluate((b) => (b.scrollTop = 0));
     await page.waitForTimeout(150);
     await page.screenshot({ path: shot('reference-profile-1440.png') });
 
@@ -125,13 +126,13 @@ test.describe('desktop 1440', () => {
   test('loudness-matched A/B against the current take: the louder one is turned down, A and B swap', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByTestId('take-current')).toHaveAttribute('data-take', '3');
-    await dropFile(page, 'click loop.wav', clickLoop());
+    await dropFile(page, 'beat loop.wav', clickLoop());
     const view = page.getByTestId('reference-view');
     await expect(view.getByTestId('ref-kind')).toHaveText('Music');
     await expect(view.locator('[data-line=tempo]')).toContainText('120 BPM');
     const ab = view.getByTestId('ab');
     await expect(ab.getByTestId('ab-a')).toContainText('Take 3');
-    await expect(ab.getByTestId('ab-b')).toContainText('click loop.wav');
+    await expect(ab.getByTestId('ab-b')).toContainText('beat loop.wav');
     await expect(ab.getByTestId('ab-a')).toHaveAttribute('aria-checked', 'true');
     const words = (await ab.getByTestId('ab-levels').textContent()) ?? '';
     expect(words).toMatch(/^Levels matched at -?\d+\.\d LUFS: the (take|reference) plays \d+\.\d dB quieter so the louder one does not win\.$/);
@@ -145,6 +146,7 @@ test.describe('desktop 1440', () => {
     await ab.getByTestId('ab-b').click();
     await expect(ab.getByTestId('ab-b')).toHaveAttribute('aria-checked', 'true');
     expect(await compareLevel(page)).toEqual({ gainDb: a.gainDb, muted: true });
+    await ab.scrollIntoViewIfNeeded();
     await page.waitForTimeout(150);
     await page.screenshot({ path: shot('reference-ab-1440.png') });
     await ab.getByTestId('ab-a').click();
@@ -218,7 +220,7 @@ test.describe('phone 390', () => {
   test('"Add a clip" opens the Sound sheet on the profile; the A/B and the library fit the width', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByTestId('take-current')).toHaveAttribute('data-take', '3');
-    await page.getByTestId('clip-input').setInputFiles({ name: 'click loop.wav', mimeType: 'audio/wav', buffer: clickLoop() });
+    await page.getByTestId('clip-input').setInputFiles({ name: 'beat loop.wav', mimeType: 'audio/wav', buffer: clickLoop() });
     await expect(page.getByTestId('panel')).toHaveClass(/open/);
     const view = page.getByTestId('reference-view');
     await expect(view.getByTestId('ref-kind')).toHaveText('Music');
@@ -239,7 +241,7 @@ test.describe('phone 390', () => {
     // Back in the conversation the reference waits in the composer; its chip opens the profile.
     await page.getByRole('button', { name: 'Close the Sound panel' }).click();
     await expect(page.getByTestId('panel')).not.toHaveClass(/open/);
-    await expect(page.getByTestId('clip-chip')).toHaveText('Reference: click loop.wav · Music, 8.0 s');
+    await expect(page.getByTestId('clip-chip')).toHaveText('Reference: beat loop.wav · Music, 8.0 s');
     await page.getByTestId('clip-chip').click();
     await expect(page.getByTestId('panel')).toHaveClass(/open/);
   });

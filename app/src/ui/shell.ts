@@ -340,10 +340,6 @@ export class Shell {
     if (!profile) return null;
     e.profile = profile;
     return { name: e.name, profile, audioUrl: null, path: null, libraryId: e.id };
-  }| null {
-    const id = libraryMention(text, this.libraryList);
-    const e = id ? this.libraryList.find((x) => x.id === id) : null;
-    return e ? { name: e.name, profile: e.profile, audioUrl: null, path: null, libraryId: e.id } : null;
   }
 
   // ------------------------------------------------------------ reference clips
@@ -388,6 +384,7 @@ export class Shell {
     this.flash = null;
     if (matchMedia(PHONE).matches) this.toggleSheet(true);
     this.renderPanel();
+    this.body.scrollTop = 0;
   }
 
   private clearReference(): void {
