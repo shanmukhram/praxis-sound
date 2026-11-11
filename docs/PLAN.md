@@ -156,6 +156,12 @@ only). Depends: WP-R, WP-U3. Brief: `docs/briefs/WP-U4-realtime-in-app.md`. Done
 meters and live swaps through the real-time engine; acceptance 1 built by hand in the window,
 played 60 s with 0 xruns, exported and checked.
 
+### WP-U5 build a sound by hand (closes Phase 3)
+FR-28, FR-29, FR-31. Owns: `app/src/ui/**`, `app/src/engine/**`, `app/tests/**`,
+`crates/praxis-app/**`. Depends: WP-U4. Brief: `docs/briefs/WP-U5-hand-building.md`. Done:
+blank sound, sound settings, layers by hand, batched note entry, seek and loop range; acceptance 1
+built by hand in the release app, played (muted or fake output) with 0 xruns, exported, checked.
+
 ## Phase 4: Planner (exit: acceptance 1 from one prompt; "change the last four bars" leaves bars 1-12 sample-identical; prompt suite passes)
 
 ### WP-P2 edits + variations
