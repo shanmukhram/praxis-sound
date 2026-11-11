@@ -87,7 +87,8 @@ pub fn sound_info(dir: &Path) -> Option<SoundInfo> {
     let id = dir.file_name()?.to_string_lossy().into_owned();
     let project = dir.join(PROJECT_FILE);
     let takes_file = dir.join(TAKES_FILE);
-    if !project.is_file() && !takes_file.is_file() {
+    // Only folders the take ops made (and the app may open) are sounds.
+    if !takes_file.is_file() {
         return None;
     }
     let (title, sub) = describe(&project).unwrap_or_default();

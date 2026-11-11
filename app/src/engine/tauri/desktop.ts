@@ -7,7 +7,17 @@ import type { SoundInfo } from './protocol';
 import { TauriEngine } from './TauriEngine';
 
 function entry(engine: TauriEngine, s: SoundInfo): SoundEntry {
-  return { id: s.id, name: s.name, sub: s.sub, open: () => engine.openSound(s.path) };
+  return {
+    id: s.id,
+    name: s.name,
+    sub: s.sub,
+    // A folder that is no longer a sound is refused: say why and start a new sound instead.
+    open: () =>
+      engine.openSound(s.path).catch((e: unknown) => {
+        console.error(e instanceof Error ? e.message : e);
+        return engine.openSound(null);
+      }),
+  };
 }
 
 /** Builds the workstation on the real engine and opens the newest sound (or a new one). */

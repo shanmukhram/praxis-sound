@@ -145,9 +145,15 @@ export class TauriEngine implements EngineAdapter {
         return;
       }
       this.reset();
-      this.sound = path;
       if (path) {
-        this.revision = await this.bridge.invoke<number>('watch_sound', { sound: path });
+        try {
+          // Refused unless the folder is a sound; only then may the WebView load its audio.
+          this.revision = await this.bridge.invoke<number>('watch_sound', { sound: path });
+        } catch (e) {
+          this.emitState();
+          throw new Error(`Could not open ${path}: ${message(e)}`);
+        }
+        this.sound = path;
         await this.refresh(true);
       } else {
         this.emitState();
@@ -262,8 +268,8 @@ export class TauriEngine implements EngineAdapter {
           req: { sound, text: request.text, who: 'You', scope: request.scope ?? null },
         });
         if (this.sound !== sound) {
-          this.sound = sound;
           this.revision = await this.bridge.invoke<number>('watch_sound', { sound });
+          this.sound = sound;
           created = await this.soundInfo(sound);
         }
         await this.refresh(true);

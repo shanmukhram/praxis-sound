@@ -7,7 +7,7 @@
 //! undo, redo, render the live score, export) work on the sound's `project.praxis` through
 //! `praxis_score::Project`, under the sound's `.lock` like every other writer.
 
-use crate::sounds::{PROJECT_FILE, SoundInfo, list_sounds};
+use crate::sounds::{PROJECT_FILE, SoundInfo, TAKES_FILE, list_sounds};
 use praxis_cli::ops::render::{RenderSettings, render_score};
 use praxis_cli::ops::sound::{Sound, SoundLock, load_project, save_project};
 use praxis_cli::ops::{self, ExportMidiRequest, export_midi, resolve_sound};
@@ -108,6 +108,47 @@ fn rejected(e: &PatchError) -> CmdError {
 /// `new_sound_path`; a bare name resolves under `PRAXIS_HOME/sounds`).
 fn dir_of(sound: &str) -> CmdResult<PathBuf> {
     Ok(resolve_sound(sound)?)
+}
+
+/// The subfolders of a sound that hold audio the WebView plays: take renders, variations and
+/// the live render.
+pub const AUDIO_DIRS: [&str; 3] = ["takes", "variations", "live"];
+
+/// `\\?\C:\x` -> `C:\x`: `canonicalize` gives verbatim paths on Windows, but the WebView asks
+/// for plain ones (the take paths the ops return), and the asset scope compares them as given.
+/// UNC verbatim paths (`\\?\UNC\...`) are kept as they are.
+fn plain(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    match s.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
+fn not_a_sound(sound: &str) -> CmdError {
+    CmdError::new(
+        ErrorCode::Error,
+        format!(
+            "{sound} is not a Praxis sound folder (it has no takes.json of format praxis-takes)"
+        ),
+    )
+}
+
+/// The only folders the WebView may load files from for `sound`: its [`AUDIO_DIRS`], and only
+/// when the folder is a real sound (a `takes.json` the take ops can read, format
+/// `praxis-takes`). The path is canonicalized first, so `..` or a link cannot point the grant
+/// somewhere else. Take titles and replies can come from agents, so the WebView never gets a
+/// wider grant than this.
+pub fn audio_dirs(sound: &str) -> CmdResult<Vec<PathBuf>> {
+    let dir = dir_of(sound)?;
+    let dir = std::fs::canonicalize(&dir).map_err(|_| not_a_sound(sound))?;
+    let dir = plain(dir);
+    if !dir.is_dir() || !dir.join(TAKES_FILE).is_file() {
+        return Err(not_a_sound(sound));
+    }
+    // `Sound::open` checks `format` and `version` and that the project the takes need exists.
+    Sound::open(&dir).map_err(|_| not_a_sound(sound))?;
+    Ok(AUDIO_DIRS.iter().map(|d| dir.join(d)).collect())
 }
 
 /// The folder of a sound that has a project (its first take), checked before taking the lock,

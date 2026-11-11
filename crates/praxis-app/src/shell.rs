@@ -83,10 +83,22 @@ fn new_sound_path(state: tauri::State<'_, AppState>, text: String) -> String {
 }
 
 /// Watches `sound` (and stops watching the previous one); returns its current revision.
+/// Refuses a folder that is not a sound; the WebView may then load only the sound's audio
+/// subfolders (`commands::audio_dirs`), never the folder itself or anything above it.
 #[tauri::command]
-fn watch_sound(app: tauri::AppHandle, state: tauri::State<'_, AppState>, sound: String) -> u64 {
+fn watch_sound(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    sound: String,
+) -> CmdResult<u64> {
+    let dirs = commands::audio_dirs(&sound)?;
+    let scope = app.asset_protocol_scope();
+    for d in &dirs {
+        scope
+            .allow_directory(d, true)
+            .map_err(|e| CmdError::new(praxis_cli::ErrorCode::Error, e.to_string()))?;
+    }
     let path = PathBuf::from(&sound);
-    let _ = app.asset_protocol_scope().allow_directory(&path, true);
     let from = read_revision(&path);
     let emitter = app.clone();
     let name = sound.clone();
@@ -102,7 +114,7 @@ fn watch_sound(app: tauri::AppHandle, state: tauri::State<'_, AppState>, sound: 
     if let Ok(mut w) = state.watching.lock() {
         *w = Some(handle);
     }
-    from
+    Ok(from)
 }
 
 // ---------------------------------------------------------------- takes (praxis_cli::ops)
@@ -175,10 +187,10 @@ pub fn run() {
     let root = state.root.clone();
     let result = tauri::Builder::default()
         .manage(state)
-        .setup(move |app| {
+        .setup(move |_app| {
             std::fs::create_dir_all(&root)?;
-            // Takes play from their files through the asset protocol (<audio>, fetch).
-            app.asset_protocol_scope().allow_directory(&root, true)?;
+            // The asset protocol starts with an empty scope: `watch_sound` grants each opened
+            // sound's audio folders, and nothing else, so takes play in <audio> and fetch.
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

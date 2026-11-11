@@ -146,6 +146,26 @@ fn a_sound_from_first_take_to_export() {
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].path, sound);
     assert_eq!(list[0].takes, 1);
+
+    // The WebView may load only this sound's audio folders, canonicalized; a `..` path that
+    // climbs out of the sound is refused.
+    let grant = commands::audio_dirs(&sound).unwrap();
+    let canon = std::fs::canonicalize(&dir).unwrap();
+    let canon = canon.to_string_lossy();
+    let canon = canon.strip_prefix(r"\\?\").unwrap_or(&canon).to_string();
+    let want: Vec<PathBuf> = commands::AUDIO_DIRS
+        .iter()
+        .map(|d| Path::new(&canon).join(d))
+        .collect();
+    assert_eq!(grant, want);
+    assert!(
+        grant
+            .iter()
+            .all(|d| !d.to_string_lossy().starts_with(r"\\?\"))
+    );
+    assert!(grant[0].join("1").join("mix.wav").is_file());
+    let climb = format!(r"{sound}\takes\..\..");
+    assert!(commands::audio_dirs(&climb).is_err());
     assert!(list[0].sub.starts_with("A minor · "), "{}", list[0].sub);
     assert!(list[0].sub.ends_with("loop"), "{}", list[0].sub);
 
@@ -290,4 +310,52 @@ fn project_calls_on_a_sound_without_takes_say_so() {
     let bad = commands::apply_patch(&sound, json!({"ops": "not a list"})).unwrap_err();
     assert_eq!(bad.code, "bad_json");
     assert!(list_sounds(&root).is_empty());
+}
+
+#[test]
+fn only_a_real_sound_folder_gets_its_audio_served() {
+    let root = scratch("scope");
+    let refused = |p: &Path| {
+        let e = commands::audio_dirs(&s(p)).unwrap_err();
+        assert_eq!(e.code, "error", "{}", e.message);
+        assert!(
+            e.message.contains("not a Praxis sound folder"),
+            "{}",
+            e.message
+        );
+    };
+    // Any folder with files in it, the drive root, and a folder that does not exist.
+    let plain = root.join("documents");
+    std::fs::create_dir_all(&plain).unwrap();
+    std::fs::write(plain.join("notes.txt"), "private").unwrap();
+    refused(&plain);
+    refused(Path::new("C:\\"));
+    refused(&root.join("missing"));
+    // A takes.json of another format, or one that is not JSON.
+    let other = root.join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::write(
+        other.join("takes.json"),
+        r#"{"format":"something-else","version":1,"revision":1,"current":0,"takes":[]}"#,
+    )
+    .unwrap();
+    refused(&other);
+    std::fs::write(other.join("takes.json"), "not json").unwrap();
+    refused(&other);
+    // A real (empty) take history is a sound: its audio folders only.
+    let sound = root.join("sound");
+    std::fs::create_dir_all(&sound).unwrap();
+    std::fs::write(
+        sound.join("takes.json"),
+        r#"{"format":"praxis-takes","version":1,"revision":1,"current":0,"takes":[],"views":[]}"#,
+    )
+    .unwrap();
+    let grant = commands::audio_dirs(&s(&sound)).unwrap();
+    assert_eq!(grant.len(), 3);
+    for (d, name) in grant.iter().zip(commands::AUDIO_DIRS) {
+        assert_eq!(d.file_name().unwrap(), name);
+        assert!(d.parent().unwrap().ends_with("sound"));
+    }
+    // Reaching the plain folder through the sound with `..` is still refused.
+    refused(&sound.join("..").join("documents"));
 }

@@ -152,9 +152,13 @@ class FakeBridge implements Bridge {
           .map((s): SoundInfo => ({ id: s.path.split('\\').at(-1)!, name: s.takes[0].title, path: s.path, sub: 'A minor · 0:30 loop', takes: s.takes.length, modified_ms: 1 })) as T;
       case 'new_sound_path':
         return `${this.root}\\calm-30-second-felt-piano-loop` as T;
-      case 'watch_sound':
-        this.watched = args!.sound as string;
-        return this.sound(this.watched).revision as T;
+      case 'watch_sound': {
+        // Like commands::audio_dirs: only a folder with a take history is a sound.
+        const path = args!.sound as string;
+        if (!this.sounds.get(path)?.revision) throw { code: 'error', message: `${path} is not a Praxis sound folder (it has no takes.json of format praxis-takes)` };
+        this.watched = path;
+        return this.sound(path).revision as T;
+      }
       case 'takes':
         return this.sound(args!.sound as string).payload() as T;
       case 'ask': {
@@ -422,6 +426,16 @@ describe('TauriEngine over a fake Tauri bridge', () => {
     expect(ex.files.map((f) => f.kind)).toEqual(['wav24', 'midi']);
     expect(bridge.calls.find((c) => c.cmd === 'export')!.args).toEqual({ args: { sound: s.path, take: 1, kinds: ['wav24', 'midi'], destination: 'exports', base_name: 'calm-take-1' } });
     expect(await engine.suggestions()).toContain('Change the last four bars');
+  });
+
+  it('refuses to open a folder that is not a sound, and stays on an empty sound', async () => {
+    const { bridge, engine } = setup();
+    await expect(engine.openSound('C:\\')).rejects.toThrow('Could not open C:\\: C:\\ is not a Praxis sound folder');
+    expect(engine.soundPath()).toBeNull();
+    expect(engine.state().takes).toEqual([]);
+    expect(bridge.watched).toBeNull();
+    // Nothing was asked of the folder after the refusal.
+    expect(bridge.calls.map((c) => c.cmd)).toEqual(['watch_sound']);
   });
 
   it('maps a contract take record onto the TypeScript Take field for field', () => {
