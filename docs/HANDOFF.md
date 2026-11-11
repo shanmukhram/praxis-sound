@@ -135,7 +135,10 @@ Waiting for a slot: WP-P2b tone and space edits (`local_0bb0fb8b-9b03-4896-a09b-
 brief `docs/briefs/WP-P2b-tone-space-edits.md`): it reads and writes code but must not build
 until messaged "slot free"; send that when WP-H or WP-U4 finishes. Also waiting, same rule:
 WP-AG sound assistant agent (`local_a5e4c36f-0854-402a-ae61-2d057494b210`, brief
-`docs/briefs/WP-AG-in-app-agent.md`). Release order: WP-P2b first (small), then WP-AG. After
+`docs/briefs/WP-AG-in-app-agent.md`) and WP-U5 build a sound by hand
+(`local_ef4aaa95-5591-45a4-976b-056f5cfe01de`, `docs/briefs/WP-U5-hand-building.md`, closes
+Phase 3). Release order: WP-P2b (building now), then WP-AG, then WP-U5. Never play audio on the
+owner's speakers without asking (owner was upset once; see memory and the briefs). After
 WP-AG merges, ask the owner for the API key (`praxis key set`, typed by the owner, stored in the
 Windows credential store) and run `docs/agents/live-run.md`.
 
