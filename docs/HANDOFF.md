@@ -111,10 +111,10 @@ branch below (the app may add a prefix/suffix: check `git branch`). Briefs are i
 
 | WP | Session | Branch | Brief | Notes |
 | --- | --- | --- | --- | --- |
-| WP-K2 edits, variations, takes | `local_08d46492-ce2a-48b7-8784-c8906f5e6215` (wp-k2-takes) | `wp/k2-edits-takes` | WP-K2-edits-takes.md | command layer + CLI + MCP; shared take history; frozen gain; CLI/planner tidy-ups (follow-ups 2-4) |
+| WP-K2 edits, variations, takes | `local_08d46492-ce2a-48b7-8784-c8906f5e6215` (wp-k2-takes) | **merged** (c84b212) | WP-K2-edits-takes.md | command layer + CLI + MCP; shared take history; frozen gain; CLI/planner tidy-ups (follow-ups 2-4) |
 | WP-D1b onset robustness | `local_c98b80e0-ef63-4d51-ab55-616e42b9e51f` (wp-d1b-onsets) | `claude/d1b-onsets-39c1f1` | WP-D1b-onset-robustness.md | **merged** (6b744c9): grid 100% |
-| WP-R real-time engine | `local_86d87740-e7d6-4839-94ac-5a0e5ef22ca7` (wp-r-realtime) | `wp/r-realtime` | WP-R-realtime.md | Phase 3 |
-| WP-U3 Tauri app | `local_c4804bca-8078-46c7-bef7-1ff48c2a7379` (wp-u3-adapter) | `wp/u3-adapter` | WP-U3-real-adapter.md | **waits on WP-K2**: when K2 is merged, message this session to merge `build/integration` and wire the take ops |
+| WP-R real-time engine | `local_86d87740-e7d6-4839-94ac-5a0e5ef22ca7` (wp-r-realtime) | **merged** (1261d59) | WP-R-realtime.md | Phase 3 |
+| WP-U3 Tauri app | `local_c4804bca-8078-46c7-bef7-1ff48c2a7379` (wp-u3-adapter) | `claude/u3-adapter-373a4e` (running) | WP-U3-real-adapter.md | **waits on WP-K2**: when K2 is merged, message this session to merge `build/integration` and wire the take ops |
 
 **Build limit (owner, 2026-11-11): at most 10 of 20 threads for builds in total.** Four parallel
 full builds made the PC lag, so all sessions were stopped once. Now only two sessions compile at
@@ -127,8 +127,8 @@ Build speed-ups (local, not committed): sccache 0.19 (winget `Mozilla.sccache`, 
 WP-R and WP-U3; WP-K2 and WP-D1b were mid-build and kept the defaults). Once a package builds
 cleanly with them, move both settings into `.claude/worktrees/.cargo/config.toml` for all.
 Dev Drive is the owner's call (not set up); Cranelift was rejected (tests run optimised). Running now:
-WP-K2 and WP-R (WP-D1b merged). Paused (stopped, idle, 6 files uncommitted in its worktree):
-WP-U3; resume it with a message to its session once WP-K2 is merged.
+WP-U3 only (WP-D1b, WP-R and WP-K2 merged; U3 was told to merge `build/integration` and wire
+the take ops). The second slot is free for the orchestrator's reviews or the next package.
 
 Merge order: WP-D1b and WP-R whenever they are ready; WP-K2 before finishing WP-U3. WP-U3 and
 WP-R both may touch `Cargo.lock` (and U3 the root `Cargo.toml`): resolve by keeping both
