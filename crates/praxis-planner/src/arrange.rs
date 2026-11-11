@@ -48,6 +48,15 @@ pub enum ArrangeError {
 
 /// Expands a plan (validate and repair it first) into a Score.
 pub fn arrange(plan: &ScorePlan, ctx: &ArrangeContext) -> Result<Score, ArrangeError> {
+    // Scored plans (form, hits, progression) first become ordinary plan fields.
+    let realised;
+    let plan = if plan.is_scored() {
+        realised = crate::scoring::realise(plan, ctx.seed);
+        &realised
+    } else {
+        plan
+    };
+    let scored = plan.is_scored();
     let timing = resolve_timing(plan).map_err(ArrangeError::Plan)?;
     let bars = timing.bars;
     let ts = plan.time_signature;
@@ -96,6 +105,7 @@ pub fn arrange(plan: &ScorePlan, ctx: &ArrangeContext) -> Result<Score, ArrangeE
     }
 
     // Layers.
+    let mut infos: Vec<crate::scoring::develop::LayerInfo> = Vec::new();
     let mut layer_ids = BTreeSet::new();
     let mut pattern_ids = BTreeSet::new();
     for pl in &plan.layers {
@@ -124,12 +134,33 @@ pub fn arrange(plan: &ScorePlan, ctx: &ArrangeContext) -> Result<Score, ArrangeE
         }
         let layer_id = unique_id(&slug(&pl.id, "layer"), &mut layer_ids);
         let pattern_id = unique_id(&format!("{layer_id}_motif"), &mut pattern_ids);
-        let pattern = build_pattern(pl, preset, class, &key, ts, &chord_bars, &pattern_id)?;
+        let pattern = build_pattern(
+            pl,
+            preset,
+            class,
+            &key,
+            ts,
+            &chord_bars,
+            &pattern_id,
+            scored,
+        )?;
         let spb = ts
             .steps_per_bar(pattern.grid)
             .ok_or_else(|| ArrangeError::Plan("grid does not divide the bar".into()))?;
         let clips = clips_for(&active, &pattern, spb);
         score.patterns.push(pattern);
+        if scored {
+            infos.push(crate::scoring::develop::LayerInfo {
+                layer: score.layers.len(),
+                plan_id: pl.id.clone(),
+                preset: preset.clone(),
+                class,
+                octave: pl
+                    .motif
+                    .octave
+                    .unwrap_or_else(|| register_octave(class, pl.register)),
+            });
+        }
         score.layers.push(Layer {
             id: layer_id,
             name: if pl.name.trim().is_empty() {
@@ -156,6 +187,11 @@ pub fn arrange(plan: &ScorePlan, ctx: &ArrangeContext) -> Result<Score, ArrangeE
             automation: vec![],
             seed_offset: 0,
         });
+    }
+
+    if scored {
+        let roots: Vec<i32> = chord_bars.iter().map(|(d, _)| *d).collect();
+        crate::scoring::develop::develop(&mut score, plan, &infos, &roots);
     }
 
     let intensity = if score.sections.is_empty() {
@@ -337,6 +373,7 @@ fn build_pattern(
     ts: praxis_score::TimeSignature,
     chord_bars: &[(i32, String)],
     id: &str,
+    scored: bool,
 ) -> Result<Pattern, ArrangeError> {
     let m = &pl.motif;
     let spb = ts
@@ -371,6 +408,47 @@ fn build_pattern(
         } else {
             0
         }
+    };
+
+    // Scored chord layers: one voice-led triad per bar of the pattern.
+    let voicings: Vec<Vec<i32>> = if scored && follow && stacks_triads(class) {
+        let center = key.degree_to_midi(0, octave) + 4;
+        let lo = (preset.range.0 as i32).max(center - 10);
+        let hi = (preset.range.1 as i32).min(center + 14);
+        // Two passes: the second starts from the period's last voicing, so the pattern's wrap
+        // back to its first bar is voice-led too.
+        let mut prev: Option<Vec<i32>> = None;
+        let mut pass = Vec::new();
+        for _ in 0..2 {
+            pass = (0..period_bars)
+                .map(|b| {
+                    let r = near_root(chord_bars[b as usize % chord_bars.len()].0, n_scale);
+                    let v = crate::scoring::harmony::voice_lead(
+                        &crate::scoring::harmony::triad_pcs(key, r),
+                        prev.as_deref(),
+                        center,
+                        lo,
+                        hi,
+                    );
+                    prev = Some(v.clone());
+                    v
+                })
+                .collect::<Vec<_>>();
+        }
+        pass
+    } else {
+        vec![]
+    };
+    // The voicing for a hit on degree `d` in pattern bar `bar`, when `d` is the chord root (in
+    // any octave).
+    let voicing_at = |bar: u32, d: i32| -> Option<Vec<i32>> {
+        let v = voicings.get(bar as usize)?;
+        let r = near_root(chord_bars[bar as usize % chord_bars.len()].0, n_scale);
+        let off = d - r;
+        if off.rem_euclid(n_scale) != 0 {
+            return None;
+        }
+        Some(v.iter().map(|p| p + 12 * off.div_euclid(n_scale)).collect())
     };
 
     if !m.notes.is_empty() {
@@ -449,13 +527,24 @@ fn build_pattern(
                         });
                     } else {
                         let d = degrees[hit_index % degrees.len()] + root_at(abs);
+                        let led = if scored && follow && stacks_triads(class) {
+                            voicing_at(abs / spb, d)
+                        } else {
+                            None
+                        };
                         let chord: Vec<i32> = if follow && stacks_triads(class) {
                             vec![d, d + 2, d + 4]
                         } else {
                             vec![d]
                         };
-                        for deg in chord {
-                            let pitch = fit_pitch(key.degree_to_midi(deg, octave), preset, key);
+                        let pitches: Vec<u8> = match led {
+                            Some(v) => v.iter().map(|p| fit_pitch(*p, preset, key)).collect(),
+                            None => chord
+                                .iter()
+                                .map(|deg| fit_pitch(key.degree_to_midi(*deg, octave), preset, key))
+                                .collect(),
+                        };
+                        for pitch in pitches {
                             if notes[start..].iter().any(|n| n.pitch == pitch) {
                                 continue;
                             }
@@ -481,6 +570,21 @@ fn build_pattern(
             }
         }
     }
+    if scored && follow && class == GeneratorClass::Bass && m.notes.is_empty() {
+        bass_passing_tones(
+            &mut notes,
+            &PassingCtx {
+                key,
+                preset,
+                ts,
+                spb,
+                period_bars,
+                chord_bars,
+                octave,
+                velocity: round3((VELOCITY_SOFT * dyn_scale).clamp(0.05, 1.0)),
+            },
+        );
+    }
     notes.sort_by_key(|a| (a.step, a.pitch));
     notes.dedup_by(|a, b| a.step == b.step && a.pitch == b.pitch);
     Ok(Pattern {
@@ -494,6 +598,65 @@ fn build_pattern(
             Some(m.spoken.trim().to_string())
         },
     })
+}
+
+struct PassingCtx<'a> {
+    key: &'a Key,
+    preset: &'a PresetSpec,
+    ts: praxis_score::TimeSignature,
+    spb: u32,
+    period_bars: u32,
+    chord_bars: &'a [(i32, String)],
+    octave: i32,
+    velocity: f32,
+}
+
+/// Scored bass lines: where the next bar's root is a third or more away, the last beat of the
+/// bar plays the scale step next to it (approached from the current root's side), and the note
+/// before it stops there.
+fn bass_passing_tones(notes: &mut Vec<Note>, c: &PassingCtx) {
+    let n_scale = c.key.mode.intervals().len() as i32;
+    let beat = crate::scoring::develop::beat_steps(c.ts, c.spb);
+    if c.chord_bars.is_empty() || n_scale < 5 || beat == 0 || c.spb <= beat {
+        return;
+    }
+    let len = c.chord_bars.len();
+    for b in 0..c.period_bars {
+        let cur = near_root(c.chord_bars[b as usize % len].0, n_scale);
+        let next = near_root(c.chord_bars[(b as usize + 1) % len].0, n_scale);
+        let mut diff = (next - cur).rem_euclid(n_scale);
+        if diff > n_scale / 2 {
+            diff -= n_scale;
+        }
+        if diff.abs() < 2 {
+            continue;
+        }
+        let bar_start = b * c.spb;
+        let bar_end = bar_start + c.spb;
+        let pos = bar_end - beat;
+        if !notes.iter().any(|n| n.step == bar_start) {
+            continue;
+        }
+        let pass = cur + diff - diff.signum();
+        notes.retain(|n| !(n.step >= pos && n.step < bar_end));
+        for n in notes.iter_mut() {
+            if n.step >= bar_start && n.step < pos && n.step as f32 + n.length > pos as f32 {
+                n.length = (pos - n.step) as f32 + if c.preset.sustaining { 0.3 } else { 0.0 };
+            }
+        }
+        notes.push(Note {
+            step: pos,
+            pitch: fit_pitch(c.key.degree_to_midi(pass, c.octave), c.preset, c.key),
+            velocity: c.velocity,
+            accent: Accent::Soft,
+            length: if c.preset.sustaining {
+                beat as f32 + 0.5
+            } else {
+                beat as f32
+            },
+            offset: 0.0,
+        });
+    }
 }
 
 fn default_gain(class: GeneratorClass, dynamics: Dynamics) -> f32 {

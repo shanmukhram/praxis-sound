@@ -1,0 +1,48 @@
+{
+  "brief": "A melancholy 90-second evolving cue.",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "E",
+      "mode": "minor"
+    },
+    "emotion": "melancholy",
+    "layer_count": 3,
+    "layers": [
+      {
+        "preset": "felt_piano"
+      },
+      {
+        "preset": "soft_keys"
+      },
+      {
+        "preset": "warm_bass"
+      }
+    ],
+    "section_roles": [
+      "intro",
+      "main",
+      "peak",
+      "release"
+    ],
+    "layers_enter_in_order": true,
+    "voice_leading_max": 5,
+    "duration_within": [
+      90,
+      2.0
+    ],
+    "bpm_range": [
+      66,
+      86
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}

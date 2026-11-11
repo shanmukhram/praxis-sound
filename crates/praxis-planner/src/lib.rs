@@ -20,6 +20,7 @@ pub mod motifs;
 pub mod offline;
 pub mod plan;
 pub mod repair;
+pub mod scoring;
 pub mod variations;
 
 pub use provider::{Message, Provider, ProviderError, Role, ToolRequest};

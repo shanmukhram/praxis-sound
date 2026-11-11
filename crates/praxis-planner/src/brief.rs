@@ -147,6 +147,11 @@ pub fn plan_summary(plan: &ScorePlan, score: &Score, repairs: usize) -> String {
     if !kept_out.is_empty() {
         out.push_str(&format!(" Kept out: {}.", kept_out.join(", ")));
     }
+    let scoring = crate::scoring::summary(plan, score);
+    if !scoring.is_empty() {
+        out.push(' ');
+        out.push_str(&scoring);
+    }
     if repairs > 0 {
         out.push_str(&format!(
             " The planner fixed {repairs} thing{} in the plan.",
@@ -199,8 +204,29 @@ empty.\n\
 9. Use only presets from this catalogue (name, kind, class):\n\
 {}\n\
 An instrument the brief names that the catalogue lacks goes in `notes` (\"strings are not in the \
-catalogue\"); never replace it with other layers.",
-        catalogue.prompt_listing()
+catalogue\"); never replace it with other layers.\n\
+\n\
+Scoring a cue (only when the brief asks for a cue, a form, sections such as intro / build / \
+peak / release or verse / chorus, a chord progression, or hit points):\n\
+10. Form: give `form` parts in order (role intro, verse, main, build, peak, breakdown, release, \
+transition or outro; `weight` = relative length; optional `intensity` 0..1) and leave \
+`sections` empty: the planner solves each part's bars to the length. Leave a part's `layers` \
+empty so the layers enter by intensity in the order you list them (the first layer alone in the \
+quietest part, all of them in the loudest); list them only when the brief says what plays \
+where. `transition` is auto (a drop into a peak, a pickup when a layer enters, a held chord into \
+a release), none, pickup, drop or hold; never a riser unless the brief asks for one.\n\
+11. Hit points: \"hits at 0:42, 1:05 and 1:38\" -> `hits` [{{\"time_s\": 42}}, \
+{{\"time_s\": 65}}, {{\"time_s\": 98}}]. Give `duration_s` (and `tempo_bpm`, or a \
+`tempo_range` when the brief gives no tempo); the planner picks the exact tempo so every hit \
+lands on the beat grid, accents it and starts a form part there.\n\
+12. Harmony: a `progression` (chord symbols in the key or Roman numerals such as i VI III VII, \
+`bars_per_chord` 1 or 2) repeats from each part's start; leave `chords` empty with it. Every \
+chord must be in the key (no borrowed chords). Melodic and chord layers set `follow_chords`.\n\
+13. Emotion presets for cues (mode, tempo range, register, instruments in entry order, form \
+shape); use the preset's instruments only when the brief names none:\n\
+{}",
+        catalogue.prompt_listing(),
+        crate::scoring::emotion::prompt_listing()
     )
 }
 
@@ -321,6 +347,9 @@ fn finish(
         seed,
         brief,
     };
+    // Scoring fields (form, hits, progression) become sections, tempo and chords; the outcome's
+    // plan is the realised one, which arranges to the same Score again.
+    let plan = crate::scoring::realise(&plan, seed);
     let mut score = arrange(&plan, &actx).map_err(|e| PlanError::Arrange(e.to_string()))?;
 
     // Lints drive arranger fixes (ADR-0006 step 4).
@@ -431,8 +460,8 @@ pub fn quality_issues(
         }
     }
 
-    // Every layer plays throughout unless the brief says when.
-    if !named.timed {
+    // Every layer plays throughout unless the brief says when (a form says when).
+    if !named.timed && plan.form.is_empty() {
         for l in &score.layers {
             let bars: BTreeSet<u32> = l
                 .clips

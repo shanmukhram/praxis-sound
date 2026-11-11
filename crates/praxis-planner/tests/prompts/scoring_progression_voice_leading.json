@@ -1,0 +1,36 @@
+{
+  "brief": "A calm cue in C major at 84 BPM, 32 bars, with the chord progression I V vi IV on warm keys and a warm bass.",
+  "seed": 0,
+  "expect": {
+    "key": {
+      "tonic": "C",
+      "mode": "major"
+    },
+    "bpm": 84,
+    "bars": 32,
+    "emotion": "calm",
+    "progression_start": [
+      "C",
+      "G",
+      "Am",
+      "F"
+    ],
+    "voice_leading_max": 5,
+    "bass_passing_tones": true,
+    "section_roles": [
+      "intro",
+      "main",
+      "peak",
+      "release"
+    ],
+    "absent_classes": [
+      "riser",
+      "sweep",
+      "impact",
+      "boom",
+      "pad",
+      "whoosh",
+      "fill"
+    ]
+  }
+}
