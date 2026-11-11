@@ -103,6 +103,44 @@ fn claude_provider(model: Option<&str>) -> ClaudeProvider {
     )
 }
 
+/// The planner for a request: the one asked for, else Claude when a key is available, else the
+/// offline rules (with a note saying so).
+pub(crate) fn choose_provider(
+    choice: Option<ProviderChoice>,
+    model: Option<&str>,
+) -> Result<(Box<dyn Provider>, Option<String>), OpError> {
+    let mut note = None;
+    let choice = match choice {
+        Some(c) => c,
+        None if resolve_key().is_ok() => ProviderChoice::Claude,
+        None => {
+            note = Some(
+                "no Anthropic API key found (ANTHROPIC_API_KEY or `praxis key set`), so the \
+                 offline rule planner was used"
+                    .into(),
+            );
+            ProviderChoice::Offline
+        }
+    };
+    let provider: Box<dyn Provider> = match choice {
+        ProviderChoice::Offline => Box::new(RuleProvider::new()),
+        ProviderChoice::Claude => {
+            if resolve_key().is_err() {
+                return Err(OpError::new(
+                    ErrorCode::NoApiKey,
+                    ProviderError::NoApiKey.to_string(),
+                ));
+            }
+            Box::new(claude_provider(model))
+        }
+    };
+    Ok((provider, note))
+}
+
+pub(crate) fn plan_error_of(e: PlanError) -> OpError {
+    plan_error(e, false)
+}
+
 pub fn generate(req: &GenerateRequest) -> Result<Value, OpError> {
     let catalogue = Catalogue::standard();
     let mut note: Option<String> = None;
@@ -123,30 +161,8 @@ pub fn generate(req: &GenerateRequest) -> Result<Value, OpError> {
             compose_plan(plan, &catalogue, req.seed).map_err(|e| plan_error(e, true))?
         }
         (Some(prompt), None) => {
-            let choice = match req.provider {
-                Some(c) => c,
-                None if resolve_key().is_ok() => ProviderChoice::Claude,
-                None => {
-                    note = Some(
-                        "no Anthropic API key found (ANTHROPIC_API_KEY or `praxis key set`), so \
-                         the offline rule planner was used"
-                            .into(),
-                    );
-                    ProviderChoice::Offline
-                }
-            };
-            let provider: Box<dyn Provider> = match choice {
-                ProviderChoice::Offline => Box::new(RuleProvider::new()),
-                ProviderChoice::Claude => {
-                    if resolve_key().is_err() {
-                        return Err(OpError::new(
-                            ErrorCode::NoApiKey,
-                            ProviderError::NoApiKey.to_string(),
-                        ));
-                    }
-                    Box::new(claude_provider(req.model.as_deref()))
-                }
-            };
+            let (provider, provider_note) = choose_provider(req.provider, req.model.as_deref())?;
+            note = provider_note;
             plan_brief(prompt, provider.as_ref(), &catalogue, req.seed)
                 .map_err(|e| plan_error(e, false))?
         }

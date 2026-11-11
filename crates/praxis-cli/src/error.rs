@@ -18,6 +18,7 @@ pub enum ErrorCode {
     PackMissing,
     DecodeFailed,
     PatchRejected,
+    PackVerifyFailed,
     Error,
 }
 
@@ -35,6 +36,7 @@ impl ErrorCode {
             ErrorCode::PackMissing => "pack_missing",
             ErrorCode::DecodeFailed => "decode_failed",
             ErrorCode::PatchRejected => "patch_rejected",
+            ErrorCode::PackVerifyFailed => "pack_verify_failed",
             ErrorCode::Error => "error",
         }
     }

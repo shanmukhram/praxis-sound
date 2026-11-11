@@ -227,6 +227,30 @@ fn validate_success_and_errors() {
         "validate",
         "io",
     );
+
+    // A .praxis project is validated through its score.
+    let project = dir.join("p.praxis");
+    let good: Value =
+        serde_json::from_str(&std::fs::read_to_string(fixture("acceptance1.score.json")).unwrap())
+            .unwrap();
+    std::fs::write(
+        &project,
+        json!({"format": "praxis-project", "version": 1, "score": good}).to_string(),
+    )
+    .unwrap();
+    let v = ok(&run(&["--json", "validate", s(&project)]), "validate");
+    assert_eq!(v["valid"], json!(true));
+    assert_eq!(v["input_kind"], json!("project"));
+    std::fs::write(
+        &project,
+        json!({"format": "praxis-project", "version": 1, "score": score}).to_string(),
+    )
+    .unwrap();
+    err(
+        &run(&["--json", "validate", s(&project)]),
+        "validate",
+        "invalid_score",
+    );
 }
 
 // ---------------------------------------------------------------- schema
@@ -969,6 +993,7 @@ fn packs_shapes() {
     );
     let v = r.json();
     assert_eq!(v["ok"], json!(false), "{v}");
+    assert_eq!(v["error"]["code"], json!("pack_verify_failed"), "{v}");
     assert_eq!(r.code, 1);
     println!("packs install with a bad archive: {}", v["error"]);
     assert!(!store.join(PACK).join("manifest.json").exists());
@@ -1050,4 +1075,220 @@ fn key_never_echoes_the_key() {
     let v = ok(&r, "key");
     assert_eq!(v["source"], json!("env"));
     assert_hidden(&r, SECRET);
+}
+
+// ---------------------------------------------------------------- edit, variations, takes
+
+const TAKES_BRIEF: &str = "16 bars, 4/4, A minor, 30 seconds, seamless loop. Bars 1-8: one soft felt \
+piano playing a repeating rhythmic motif on an eighth-note grid with accents and overlapping \
+sustain. Bars 9-16: the identical piano part plus a soft muted kick underneath. No new melody, \
+no fills, no risers, sweeps, impacts or pads.";
+
+#[test]
+fn edit_and_variations_commands() {
+    let dir = scratch("edit_cmd");
+    let project = dir.join("song.praxis");
+    ok(
+        &run(&[
+            "--json",
+            "generate",
+            "--provider",
+            "offline",
+            "--prompt",
+            TAKES_BRIEF,
+            "-o",
+            s(&project),
+        ]),
+        "generate",
+    );
+    let v = ok(
+        &run(&[
+            "--json",
+            "edit",
+            s(&project),
+            "--prompt",
+            "change the last four bars to add a subtle melody",
+            "--provider",
+            "offline",
+        ]),
+        "edit",
+    );
+    has_fields(
+        &v,
+        &[
+            "project",
+            "patch",
+            "scope",
+            "changed_bars",
+            "changed_layers",
+            "summary",
+            "refused",
+        ],
+    );
+    assert_eq!(v["changed_bars"], json!([13, 16]));
+    assert_eq!(v["changed_layers"].as_array().map(Vec::len), Some(1));
+    // An EditPlan on stdin, no provider.
+    let plan = std::fs::read_to_string(
+        repo().join("crates/praxis-planner/tests/prompts/edit_last_four_melody.plan.json"),
+    )
+    .unwrap();
+    let v = ok(
+        &run_with(
+            &["--json", "edit", s(&project), "--plan", "-", "--seed", "3"],
+            &[],
+            Some(&plan),
+        ),
+        "edit",
+    );
+    assert_eq!(v["provider"], json!("direct-plan"));
+    err(&run(&["--json", "edit", s(&project)]), "edit", "error");
+    err(
+        &run(&[
+            "--json",
+            "edit",
+            s(&dir.join("missing.praxis")),
+            "--prompt",
+            "x",
+        ]),
+        "edit",
+        "io",
+    );
+    err(
+        &run_with(
+            &["--json", "edit", s(&project), "--plan", "-"],
+            &[],
+            Some(r#"{"intent": "explode"}"#),
+        ),
+        "edit",
+        "bad_json",
+    );
+    err(
+        &run(&["--json", "variations", s(&project), "--bars", "x-y"]),
+        "variations",
+        "error",
+    );
+    err(
+        &run(&["--json", "variations", s(&project), "-n", "9"]),
+        "variations",
+        "error",
+    );
+    if !have_piano("edit_and_variations_commands") {
+        return;
+    }
+    let v = ok(
+        &run(&[
+            "--json",
+            "variations",
+            s(&project),
+            "--bars",
+            "5-8",
+            "--layer",
+            "piano",
+            "-n",
+            "2",
+        ]),
+        "variations",
+    );
+    let vs = v["variations"].as_array().unwrap();
+    assert_eq!(vs.len(), 2);
+    for x in vs {
+        assert_eq!(x["changed_layers"], json!(["piano"]));
+        assert!(Path::new(x["render"]["output"].as_str().unwrap()).is_file());
+    }
+    assert!(dir.join("variations/variations.json").is_file());
+}
+
+#[test]
+fn ask_takes_restore_commands() {
+    let dir = scratch("ask_cmd");
+    let sound = dir.join("loop");
+    let v = ok(&run(&["--json", "takes", s(&sound)]), "takes");
+    assert_eq!(v["takes"], json!([]));
+    err(
+        &run(&["--json", "restore", s(&sound), "1"]),
+        "restore",
+        "error",
+    );
+    err(
+        &run(&["--json", "open-view", s(&sound), "piano-roll"]),
+        "open-view",
+        "error",
+    );
+    if !have_piano("ask_takes_restore_commands") {
+        return;
+    }
+    let one = ok(
+        &run(&[
+            "--json",
+            "ask",
+            s(&sound),
+            TAKES_BRIEF,
+            "--provider",
+            "offline",
+        ]),
+        "ask",
+    );
+    assert_eq!(one["take"]["n"], json!(1));
+    assert_eq!(one["take"]["who"], json!("You"));
+    let two = ok(
+        &run(&[
+            "--json",
+            "ask",
+            s(&sound),
+            "make it a little softer",
+            "--bars",
+            "9-16",
+            "--layer",
+            "kick",
+            "--who",
+            "mixer",
+            "--provider",
+            "offline",
+        ]),
+        "ask",
+    );
+    let t2 = &two["take"];
+    assert_eq!(t2["who"], json!("Agent · mixer"));
+    assert_eq!(t2["changed"], json!({"kick": [9, 16]}), "{t2:#}");
+    assert_eq!(t2["scope"]["layer"], json!("kick"));
+    println!("kick softer: {} | {}", t2["say"], t2["untouched"]);
+    let v = ok(
+        &run(&["--json", "open-view", s(&sound), "mix", "--who", "mixer"]),
+        "open-view",
+    );
+    assert_eq!(v["by"], json!("mixer"));
+    let v = ok(&run(&["--json", "restore", s(&sound), "1"]), "restore");
+    assert_eq!(v["current"], json!(1));
+    assert_eq!(v["restored"], json!(true));
+    let v = ok(&run(&["--json", "takes", s(&sound)]), "takes");
+    assert_eq!(v["takes"].as_array().map(Vec::len), Some(2));
+    assert_eq!(v["current"], json!(1));
+    assert_eq!(v["takes"][1]["opens"], json!("mix"));
+    let v = ok(
+        &run(&[
+            "--json",
+            "variations",
+            "--sound",
+            s(&sound),
+            "--bars",
+            "13-16",
+            "--layer",
+            "piano",
+            "-n",
+            "2",
+        ]),
+        "variations",
+    );
+    assert_eq!(v["base_take"], json!(1));
+    let v = ok(
+        &run(&["--json", "keep-variation", s(&sound), "2"]),
+        "keep-variation",
+    );
+    assert_eq!(v["take"]["n"], json!(3));
+    assert_eq!(v["take"]["changed"], json!({"piano": [13, 16]}));
+    err(
+        &run(&["--json", "keep-variation", s(&sound), "1"]),
+        "keep-variation",
+        "patch_rejected",
+    );
 }

@@ -51,6 +51,11 @@ impl Provider for RuleProvider {
     }
 
     fn call_tool(&self, req: &ToolRequest) -> Result<serde_json::Value, ProviderError> {
+        // Edit requests (`edit_score`) go to the offline edit reader, so a RuleProvider answers
+        // both tools wherever it is used (not only inside `plan_edit`).
+        if req.tool_name == crate::edit::EDIT_TOOL_NAME {
+            return crate::edit::EditRules::with_catalogue(&self.catalogue).call_tool(req);
+        }
         let brief = req
             .messages
             .iter()
@@ -1971,6 +1976,27 @@ mod tests {
 
     fn plan(brief: &str) -> ScorePlan {
         parse_brief(brief, &Catalogue::standard(), 0)
+    }
+
+    #[test]
+    fn answers_the_edit_tool_too() {
+        let score = crate::plan_brief(
+            "16 bars, A minor, soft felt piano on an eighth grid, seamless loop",
+            &RuleProvider::new(),
+            &Catalogue::standard(),
+            1,
+        )
+        .expect("plan")
+        .score;
+        let req = crate::edit::edit_request(
+            "change the last four bars to add a subtle melody",
+            &score,
+            &Catalogue::standard(),
+            1,
+        );
+        let v = RuleProvider::new().call_tool(&req).expect("edit plan");
+        let plan: crate::edit::EditPlan = serde_json::from_value(v).expect("an EditPlan");
+        assert_eq!(plan.intent, crate::edit::EditIntent::AddMelody);
     }
 
     #[test]

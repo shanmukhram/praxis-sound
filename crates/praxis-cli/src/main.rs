@@ -5,12 +5,12 @@
 //! This file only parses arguments. Every command is implemented once in `praxis_cli::ops`,
 //! which the MCP server (WP-X) calls too.
 //!
-//! Not here yet: `edit` (needs WP-P2's scoped edits) and `match` (WP-M).
+//! Not here yet: `match` (WP-M).
 
 #![forbid(unsafe_code)]
 
 use clap::{Parser, Subcommand};
-use praxis_cli::ops::{self, KeyAction, ProviderChoice, RenderSettings};
+use praxis_cli::ops::{self, KeyAction, ProviderChoice, RenderSettings, TakeScope, ViewName};
 use praxis_cli::{ErrorCode, OpError, emit};
 use serde_json::Value;
 use std::io::Read;
@@ -105,6 +105,114 @@ enum Command {
         #[command(flatten)]
         render: RenderArgs,
     },
+    /// Apply a scoped edit to a project (FR-7): an instruction, or an EditPlan you wrote.
+    Edit {
+        /// The project (.praxis); written back when the edit changes anything.
+        project: PathBuf,
+        /// The instruction, e.g. "change the last four bars to add a subtle melody".
+        #[arg(long, conflicts_with = "plan")]
+        prompt: Option<String>,
+        /// An EditPlan JSON file (`-` reads stdin). No provider or key needed.
+        #[arg(long)]
+        plan: Option<PathBuf>,
+        /// offline or claude. Default: claude when a key is available, else offline.
+        #[arg(long)]
+        provider: Option<String>,
+        #[arg(long)]
+        model: Option<String>,
+        #[arg(long, default_value_t = ops::generate::DEFAULT_SEED)]
+        seed: u64,
+        /// Also render the edited score to this file and check it.
+        #[arg(long = "render")]
+        render_out: Option<PathBuf>,
+        #[command(flatten)]
+        render: RenderArgs,
+    },
+    /// Make N alternates of a selection (FR-8), each rendered to variations/<i>.wav and checked.
+    /// Nothing is committed (keep one of a sound's with `keep-variation`).
+    Variations {
+        /// A project (.praxis) or score (.score.json). Or give --sound instead.
+        input: Option<PathBuf>,
+        /// A sound folder (or bare name): varies its current take.
+        #[arg(long, conflicts_with = "input")]
+        sound: Option<String>,
+        /// Bars to vary, e.g. 13-16 (default: the whole score).
+        #[arg(long)]
+        bars: Option<String>,
+        /// Layer ids to vary (repeatable; default: every unlocked layer playing there).
+        #[arg(long = "layer")]
+        layers: Vec<String>,
+        /// How many (1 to 8).
+        #[arg(short, default_value_t = 3)]
+        n: usize,
+        #[arg(long, default_value_t = ops::generate::DEFAULT_SEED)]
+        seed: u64,
+        /// Output folder (default: variations/ next to the input).
+        #[arg(long)]
+        out_dir: Option<PathBuf>,
+        #[command(flatten)]
+        render: RenderArgs,
+    },
+    /// Make a take in a sound folder: a brief for a new sound, else a scoped edit of the current
+    /// take. Renders takes/<n>/mix.wav, checks it and records it in takes.json.
+    Ask {
+        /// The sound folder, or a bare name under PRAXIS_HOME/sounds.
+        sound: String,
+        /// The request in words.
+        text: String,
+        /// "You" (default) or an agent's name.
+        #[arg(long)]
+        who: Option<String>,
+        /// Hold the edit to these bars of --layer, e.g. 13-16.
+        #[arg(long, requires = "layer")]
+        bars: Option<String>,
+        /// The layer the scope is on (with --bars).
+        #[arg(long, requires = "bars")]
+        layer: Option<String>,
+        /// A hand edit: commit this ScorePatch JSON file (`-` reads stdin) instead of planning.
+        #[arg(long)]
+        patch: Option<PathBuf>,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        provider: Option<String>,
+        #[arg(long)]
+        model: Option<String>,
+        /// Default: the new take's number.
+        #[arg(long)]
+        seed: Option<u64>,
+        #[arg(long)]
+        skip_missing: bool,
+        /// Include the take's full score in the output.
+        #[arg(long)]
+        include_score: bool,
+    },
+    /// List a sound's takes, the current take and the live score.
+    Takes {
+        sound: String,
+        /// Include each take's score.
+        #[arg(long)]
+        include_scores: bool,
+    },
+    /// Go back to take N (an undoable patch); it becomes the current take.
+    Restore { sound: String, n: u32 },
+    /// Commit a variation made with `variations --sound` as a new take.
+    KeepVariation {
+        sound: String,
+        /// 1-based variation number.
+        index: usize,
+        #[arg(long)]
+        who: Option<String>,
+        #[arg(long)]
+        skip_missing: bool,
+    },
+    /// Ask the app to show a panel view of a sound (overview, rhythm, notes, mix, export).
+    OpenView {
+        sound: String,
+        view: String,
+        #[arg(long)]
+        who: Option<String>,
+    },
     /// Measure a render against its Score. Exits 1 if any check fails.
     Check {
         /// Rendered audio (WAV or FLAC).
@@ -172,6 +280,13 @@ fn name(c: &Command) -> &'static str {
         Command::Schema { .. } => "schema",
         Command::Generate { .. } => "generate",
         Command::Check { .. } => "check",
+        Command::Edit { .. } => "edit",
+        Command::Variations { .. } => "variations",
+        Command::Ask { .. } => "ask",
+        Command::Takes { .. } => "takes",
+        Command::Restore { .. } => "restore",
+        Command::KeepVariation { .. } => "keep-variation",
+        Command::OpenView { .. } => "open-view",
         Command::Analyze { .. } => "analyze",
         Command::ExportMidi { .. } => "export-midi",
         Command::Packs { .. } => "packs",
@@ -186,6 +301,40 @@ fn read_stdin() -> Result<String, OpError> {
         .read_to_string(&mut s)
         .map_err(|e| OpError::new(ErrorCode::Io, format!("stdin: {e}")))?;
     Ok(s)
+}
+
+fn parse_provider(p: Option<&str>) -> Result<Option<ProviderChoice>, OpError> {
+    match p {
+        None => Ok(None),
+        Some(p) => ProviderChoice::parse(p).map(Some).ok_or_else(|| {
+            OpError::new(
+                ErrorCode::Error,
+                format!("unknown provider `{p}`; use offline or claude"),
+            )
+        }),
+    }
+}
+
+/// `13-16` or `13` -> a bar range.
+fn parse_bars(s: &str) -> Result<praxis_score::BarRange, OpError> {
+    let bad = || {
+        OpError::new(
+            ErrorCode::Error,
+            format!("bars `{s}`: give a range like 13-16 or one bar like 9"),
+        )
+    };
+    let (a, b) = s.split_once(['-', '\u{2013}']).unwrap_or((s, s));
+    let start: u32 = a.trim().parse().map_err(|_| bad())?;
+    let end: u32 = b.trim().parse().map_err(|_| bad())?;
+    if start == 0 || end < start {
+        return Err(bad());
+    }
+    Ok(praxis_score::BarRange { start, end })
+}
+
+/// Whether a file is a `.praxis` project (by its `format` field).
+fn is_project(path: &Path) -> Result<bool, OpError> {
+    Ok(read_plan(path)?.get("format").and_then(Value::as_str) == Some("praxis-project"))
 }
 
 fn read_plan(path: &Path) -> Result<Value, OpError> {
@@ -223,15 +372,7 @@ fn run(command: Command) -> Result<Value, OpError> {
             render_out,
             render,
         } => {
-            let provider = match provider.as_deref() {
-                None => None,
-                Some(p) => Some(ProviderChoice::parse(p).ok_or_else(|| {
-                    OpError::new(
-                        ErrorCode::Error,
-                        format!("unknown provider `{p}`; use offline or claude"),
-                    )
-                })?),
-            };
+            let provider = parse_provider(provider.as_deref())?;
             let plan = plan.as_deref().map(read_plan).transpose()?;
             ops::generate(&ops::GenerateRequest {
                 prompt,
@@ -245,6 +386,132 @@ fn run(command: Command) -> Result<Value, OpError> {
             })
         }
         Command::Check { audio, score } => ops::check(&ops::CheckRequest { audio, score }),
+        Command::Edit {
+            project,
+            prompt,
+            plan,
+            provider,
+            model,
+            seed,
+            render_out,
+            render,
+        } => ops::edit(&ops::EditRequest {
+            project,
+            prompt,
+            plan: plan.as_deref().map(read_plan).transpose()?,
+            provider: parse_provider(provider.as_deref())?,
+            model,
+            seed,
+            render: render_out,
+            render_settings: render.settings(None),
+        }),
+        Command::Variations {
+            input,
+            sound,
+            bars,
+            layers,
+            n,
+            seed,
+            out_dir,
+            render,
+        } => {
+            let (project, score) = match &input {
+                Some(p) if is_project(p)? => (Some(p.clone()), None),
+                Some(p) => (None, Some(p.clone())),
+                None => (None, None),
+            };
+            ops::variations(&ops::VariationsRequest {
+                project,
+                score,
+                sound,
+                scope: praxis_score::patch::Scope {
+                    bars: bars.as_deref().map(parse_bars).transpose()?,
+                    layers,
+                },
+                n,
+                seed,
+                out_dir,
+                render_settings: render.settings(None),
+            })
+        }
+        Command::Ask {
+            sound,
+            text,
+            who,
+            bars,
+            layer,
+            patch,
+            title,
+            provider,
+            model,
+            seed,
+            skip_missing,
+            include_score,
+        } => {
+            let scope = match (bars, layer) {
+                (Some(b), Some(layer)) => Some(TakeScope {
+                    layer,
+                    bars: parse_bars(&b)?,
+                }),
+                _ => None,
+            };
+            let patch = match patch.as_deref().map(read_plan).transpose()? {
+                Some(v) => Some(serde_json::from_value(v).map_err(|e| {
+                    OpError::new(
+                        ErrorCode::BadJson,
+                        format!("the patch is not a ScorePatch: {e}"),
+                    )
+                })?),
+                None => None,
+            };
+            ops::ask(&ops::AskRequest {
+                sound,
+                text,
+                who,
+                scope,
+                patch,
+                title,
+                provider: parse_provider(provider.as_deref())?,
+                model,
+                seed,
+                skip_missing,
+                include_score,
+            })
+        }
+        Command::Takes {
+            sound,
+            include_scores,
+        } => ops::takes(&ops::TakesRequest {
+            sound,
+            include_scores,
+        }),
+        Command::Restore { sound, n } => ops::restore(&ops::RestoreRequest { sound, n }),
+        Command::KeepVariation {
+            sound,
+            index,
+            who,
+            skip_missing,
+        } => ops::keep_variation(&ops::KeepVariationRequest {
+            sound,
+            index,
+            who,
+            ask: None,
+            title: None,
+            skip_missing,
+            include_score: false,
+        }),
+        Command::OpenView { sound, view, who } => {
+            let view: ViewName =
+                serde_json::from_value(Value::String(view.clone())).map_err(|_| {
+                    OpError::new(
+                        ErrorCode::Error,
+                        format!(
+                            "unknown view `{view}`; use overview, rhythm, notes, mix or export"
+                        ),
+                    )
+                })?;
+            ops::open_view(&ops::OpenViewRequest { sound, view, who })
+        }
         Command::Analyze {
             clip,
             out,
