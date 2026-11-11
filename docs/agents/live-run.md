@@ -96,6 +96,10 @@ listen.
 - **Every turn without a take** (requests 4, 7, 8, 10) exits 0 with `ok: true`, `take: null`,
   `reply` and `no_take`; in the app it shows as the assistant's reply (labelled "Assistant"),
   never as an error.
+- **Replies on takes**: every take's `say` (and `agent.reply`) is one or two plain sentences
+  from `finish_turn.reply` (what changed, the measured effect, what stayed the same), never
+  "Changed: piano: tone 0.5 -> 0.25 ..." or "Made take 6.". A kept variation (request 9) has
+  the assistant's title and words, not "Variation 1, bars 13-16".
 - **Titles** (`praxis takes live-1`): 3-6 words saying what changed ("Muffled felt piano"),
   never a clipped sentence ("I made a 16-bar"). The assistant gives them through `finish_turn`;
   check that most turns end with it (in `agent.steps` it is not listed; in `conversation.json`

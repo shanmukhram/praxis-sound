@@ -220,8 +220,9 @@ EditPlan), `apply_patch` (any ScorePatch op; locks and scope enforced by `apply`
 (instrument parameters of one layer), `render_check` (the checks plus loudness, true peak, onsets
 on the grid, per-layer spectral centroid, low-band and high-band energy and RMS, each against the current
 take, and the bars bit-identical to it), `make_variations`, `keep_variation`, `restore_take`,
-`undo_redo`, `open_view`, `analyze_clip`, `ask_user`, `discard_changes`, `finish_turn {title,
-no_take}` (ends the turn with the take's title; called alone, after the other results). A sound
+`undo_redo`, `open_view`, `analyze_clip`, `ask_user`, `discard_changes`, `finish_turn {reply,
+title, no_take}` (ends the turn with the reply and the take's title; called alone, after the
+other results). A sound
 change held to the scope's bars by automation (a lane at the old value outside them, or a new
 effect at zero mix there) passes the scope check, which reads `changed` above. Changes collect in a
 draft of the score; with a `scope` every change is checked against it (another existing layer,
@@ -233,11 +234,13 @@ tables generated from code.
 
 **The take.** One request makes at most one take: the draft, committed as one patch (`origin:
 model`) through the same take path as above, with `who` `"Agent · Assistant"`, `provider`
-`"agent:<model>"`, `say` the assistant's reply and `title` the one it gave with `finish_turn` (3-6 words,
+`"agent:<model>"`, `say` and `agent.reply` the assistant's reply (`finish_turn.reply`, else the text of
+its final message, else a summary of the change) and `title` the one it gave with `finish_turn` (3-6 words,
 tidied; one that is empty, starts with "I" or runs past 8 words is not used), else a summary of
 what changed ("Felt piano sound", "New upright piano, bars 13–16", "Kick level"); never the
 reply clipped. `keep_variation`
-inside a turn is that turn's take. `restore_take` and `undo_redo` move the history at once and
+inside a turn is that turn's take; `finish_turn`'s title and reply then replace the variation's
+default title ("Variation 2, bars 13–16") and `say` (a new `takes.json` revision). `restore_take` and `undo_redo` move the history at once and
 make no take.
 
 **Payload.** As `ask`, plus `agent {outcome, reply, question, model, turn, steps[{tool, words,

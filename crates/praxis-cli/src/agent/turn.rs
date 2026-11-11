@@ -85,6 +85,17 @@ impl NoTake {
 struct Finish {
     title: String,
     no_take: String,
+    /// The reply to the person (the take's `say`); empty when it was written as text instead.
+    reply: String,
+}
+
+/// The turn's reply: `finish_turn`'s `reply`, else the text of the final message (`said`).
+/// When both are empty the caller falls back to a summary of the change.
+fn finish_reply(finish: Option<&Finish>, said: String) -> String {
+    match finish {
+        Some(f) if !f.reply.is_empty() => f.reply.clone(),
+        _ => said,
+    }
 }
 
 /// The sound's state as the model reads it at the top of a request.
@@ -399,6 +410,7 @@ pub fn run_ask(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
                     finish = Some(Finish {
                         title: input["title"].as_str().unwrap_or("").to_string(),
                         no_take: input["no_take"].as_str().unwrap_or("").to_string(),
+                        reply: input["reply"].as_str().unwrap_or("").trim().to_string(),
                     });
                     results.push(tool_result(id, "Turn finished.".into(), false));
                     finished = true;
@@ -473,7 +485,7 @@ pub fn run_ask(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
             } else {
                 Outcome::NoChange
             };
-            break (outcome, said);
+            break (outcome, finish_reply(finish.as_ref(), said));
         }
         if ended {
             // Not sent: the person's answer is added to this message next time.
@@ -566,13 +578,32 @@ pub fn run_ask(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
             }
         }
     }
+    // A variation kept in this turn was recorded with its default words ("Variation 1, bars
+    // 13–16" and the variation's summary): the assistant's title and reply replace them.
+    if made.is_none()
+        && let Some(n) = draft.take_made
+    {
+        let title = req
+            .title
+            .clone()
+            .or_else(|| finish.as_ref().and_then(|f| words::clean_title(&f.title)));
+        let say = Some(reply.trim().to_string()).filter(|r| !r.is_empty());
+        if title.is_some() || say.is_some() {
+            crate::ops::takes::reword_take(&dir, n, title, say)?;
+        }
+    }
     let take_n = made.as_ref().map(|(t, _)| t.n).or(draft.take_made);
     if take_n.is_some() && outcome == Outcome::NoChange {
         outcome = Outcome::Take;
     }
     if reply.trim().is_empty() {
         reply = match (outcome, take_n) {
-            (_, Some(n)) => format!("Made take {n}."),
+            // A kept variation's own summary, else the take's number.
+            (_, Some(n)) => Sound::open(&dir)
+                .ok()
+                .and_then(|s| s.takes.take(n).map(|t| t.say.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| format!("Made take {n}.")),
             (Outcome::OutOfSteps, None) => {
                 "I ran out of steps for this request before changing anything.".to_string()
             }
