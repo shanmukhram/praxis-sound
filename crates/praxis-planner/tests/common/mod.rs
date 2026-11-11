@@ -304,7 +304,8 @@ fn chord_root(symbol: &str) -> Option<u8> {
 }
 
 /// Scoring-depth expectations of a prompt case (each optional):
-/// `section_roles` [roles], `section_names` [names], `hits` (marker count), `hits_within_ms`
+/// `section_roles` [roles], `section_names` [names], `section_letters` (an A/B form: the same
+/// name has the same role, different names different roles), `hits` (marker count), `hits_within_ms`
 /// (a strong accent within this of every hit marker), `duration_within` [seconds, tolerance],
 /// `bpm_range` [lo, hi], `layers_enter_in_order`, `voice_leading_max` (semitones any voice of a
 /// chord layer moves between consecutive bars), `progression_start` [symbols of the first bars],
@@ -327,6 +328,22 @@ pub fn check_scoring(score: &Score, expect: &serde_json::Value) -> Result<(), St
         let want: Vec<&str> = names.iter().filter_map(Value::as_str).collect();
         if got != want {
             return Err(format!("section names {got:?} != {want:?}"));
+        }
+    }
+    // An A/B form: parts with the same name share a role, parts with different names differ.
+    if expect.get("section_letters").and_then(Value::as_bool) == Some(true) {
+        for a in &score.sections {
+            for b in &score.sections {
+                if (a.name == b.name) != (a.role == b.role) {
+                    return Err(format!(
+                        "sections `{}` ({}) and `{}` ({}): the same letter needs the same role, different letters different roles",
+                        a.name,
+                        role_name(a.role),
+                        b.name,
+                        role_name(b.role)
+                    ));
+                }
+            }
         }
     }
     let hit_markers: Vec<f64> = score

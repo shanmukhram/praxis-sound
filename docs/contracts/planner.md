@@ -258,7 +258,7 @@ pad, noise_bed texture (unpitched).
   read from the prompt cache. Each 200 response's `usage` is added to `ClaudeProvider::usage()`
   (`claude::Usage`: requests, input, output, cache write and cache read tokens; `cost_usd(model)`
   at list price, `since(earlier)` for one call's share); the live suites print it per case.
-  A tool input wrapped as `{"parameters": {...}}` (also `input` or `arguments`; seen live in
+  A tool input wrapped as `{"parameters": {...}}` (also `input`, `arguments` or `args`; seen live in
   about one brief in six) is unwrapped before validation (`claude::unwrap_tool_input`) when that
   key is the only one, is not a property of the tool's schema, and the wrapped object (or JSON
   string) has at least one of the schema's properties; anything else reaches validation as sent.
@@ -307,7 +307,7 @@ banned classes and isolation are compared exactly. `edit_not_understood` ("make 
 and clip, the one reading of "pop" that is safe and that the edit tools can express.
 `PRAXIS_SUITE_FILTER=<text>` runs only the brief cases whose file name contains it (a live run of
 just the `scoring_` cases). Scoring cases add `check_scoring` expectations: `section_roles`,
-`section_names`, `hits`, `hits_within_ms`, `duration_within`, `bpm_range`,
+`section_names`, `section_letters`, `hits`, `hits_within_ms`, `duration_within`, `bpm_range`,
 `layers_enter_in_order`, `voice_leading_max`, `progression_start`, `bass_passing_tones`,
 `drop_before`, `hold_before`. The on-grid check allows a nudge (`offset`) only on the strong
 accents of `_hit` patterns.

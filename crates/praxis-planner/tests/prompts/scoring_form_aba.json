@@ -16,11 +16,6 @@
         "preset": "soft_keys"
       }
     ],
-    "section_roles": [
-      "verse",
-      "main",
-      "verse"
-    ],
     "section_names": [
       "A",
       "B",
@@ -39,6 +34,7 @@
       "pad",
       "whoosh",
       "fill"
-    ]
+    ],
+    "section_letters": true
   }
 }

@@ -210,7 +210,9 @@ Scoring a cue (only when the brief asks for a cue, a form, sections such as intr
 peak / release or verse / chorus, a chord progression, or hit points):\n\
 10. Form: give `form` parts in order (role intro, verse, main, build, peak, breakdown, release, \
 transition or outro; `weight` = relative length; optional `intensity` 0..1) and leave \
-`sections` empty: the planner solves each part's bars to the length. Leave a part's `layers` \
+`sections` empty: the planner solves each part's bars to the length. An A/B form (A/B/A, \
+verse-chorus) is parts named \"A\" with role verse and \"B\" with role main. Leave a part's \
+`layers` \
 empty so the layers enter by intensity in the order you list them (the first layer alone in the \
 quietest part, all of them in the loudest); list them only when the brief says what plays \
 where. `transition` is auto (a drop into a peak, a pickup when a layer enters, a held chord into \
