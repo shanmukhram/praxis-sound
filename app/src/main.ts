@@ -1,9 +1,12 @@
 // Entry: inside the Tauri shell the workstation runs on the real engine (TauriEngine, sound
-// folders on disk); in a plain browser it runs against the mock engine for UI development.
+// folders on disk); the browser build (`npm run build:web`) runs the same engine compiled to
+// WebAssembly (WasmEngine, sounds kept in the browser); the dev server the UI tests drive runs
+// the mock engine. `?engine=wasm|mock` overrides the browser default (engine-wasm/choose.ts).
 
 import './styles.css';
 import { MockEngine } from './engine/MockEngine';
 import { inTauri } from './engine/tauri/bridge';
+import { chooseEngine } from './engine-wasm/choose';
 import { normalizeScore, type Score } from './score/types';
 import { keyLabel } from './score/theory';
 import { scoreSeconds } from './score/timeline';
@@ -51,7 +54,14 @@ function startMock(root: HTMLElement): { shell: Shell; engine: MockEngine } {
 
 async function start(): Promise<void> {
   const root = document.getElementById('app')!;
-  const app = inTauri() ? await (await import('./engine/tauri/desktop')).startDesktop(root) : startMock(root);
+  const which = chooseEngine({ tauri: inTauri(), mode: import.meta.env.MODE, param: new URLSearchParams(location.search).get('engine') });
+  const app =
+    which === 'tauri'
+      ? await (await import('./engine/tauri/desktop')).startDesktop(root)
+      : // Only the web build (and the dev server) bundle the wasm engine; the desktop bundle stays without it.
+        which === 'wasm' && (import.meta.env.MODE === 'web' || import.meta.env.DEV)
+        ? await (await import('./engine-wasm/browser')).startBrowser(root)
+        : startMock(root);
   // Handy in the devtools console and for UI tests (e.g. praxis.engine.agentAsk(...)); not an API.
   (window as unknown as { praxis: unknown }).praxis = app;
 }
