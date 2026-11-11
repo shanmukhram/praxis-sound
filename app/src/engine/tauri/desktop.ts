@@ -1,9 +1,11 @@
 // Desktop entry (inside the Tauri shell): the sounds list comes from the sound folders under
-// PRAXIS_HOME/sounds, and every request goes through TauriEngine to the real engine.
+// PRAXIS_HOME/sounds, and every request goes through TauriEngine to the real engine; playback
+// goes through the real-time engine (crates/praxis-app/src/audio.rs).
 
 import { Shell, type SoundEntry } from '../../ui/shell';
 import { tauriBridge, type Bridge } from './bridge';
 import type { SoundInfo } from './protocol';
+import { mountPlaybackLine } from './playbackLine';
 import { TauriEngine } from './TauriEngine';
 
 function entry(engine: TauriEngine, s: SoundInfo): SoundEntry {
@@ -27,6 +29,8 @@ export async function startDesktop(root: HTMLElement, bridge?: Bridge): Promise<
   const sounds: SoundEntry[] = list.map((s) => entry(engine, s));
   sounds.push({ id: 'new', name: 'Untitled sound', sub: 'New', open: () => engine.openSound(null) });
   const shell = new Shell(root, engine, sounds);
+  // Which engine plays, the device, xruns and the level meters, under the Sound panel's title.
+  mountPlaybackLine(root, engine);
   // A new sound gets its folder with its first take: list it and switch to it (the shell keeps
   // the same array, so the new row shows on its next render).
   engine.onSoundCreated((s) => {

@@ -1,14 +1,17 @@
 //! The Tauri wiring: one `#[tauri::command]` per front-end call, each a thin wrapper over
-//! [`crate::commands`] run off the UI thread, plus the take watcher's event.
+//! [`crate::commands`] run off the UI thread, plus the take watcher's event, and the transport
+//! commands over the real-time [`AudioService`].
 
+use crate::audio::{AudioService, LayerLive, TRANSPORT_EVENT, TransportStatus, cpal_opener};
 use crate::commands::{self, CmdError, CmdResult, ExportArgs};
 use crate::sounds::{self, SoundInfo};
 use crate::watch::{WatchHandle, read_revision, watch};
 use praxis_cli::ops;
+use praxis_score::BarRange;
 use serde::Serialize;
 use serde_json::Value;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{Emitter, Manager};
 
@@ -181,14 +184,75 @@ async fn export(args: ExportArgs) -> CmdResult<commands::Exported> {
     blocking(move || commands::export(&args)).await
 }
 
+// ---------------------------------------------------------------- transport (real time)
+
+/// The live score of `sound` changed (or `None`: no sound is open). Plays it from now on: a
+/// mute / solo / gain change goes in live, anything else is rebuilt and swapped in.
+#[tauri::command]
+async fn transport_sync(
+    audio: tauri::State<'_, AudioService>,
+    sound: Option<String>,
+) -> CmdResult<TransportStatus> {
+    match sound {
+        None => audio.clear(),
+        Some(sound) => {
+            let (score, gain) = blocking(move || commands::playback_score(&sound)).await?;
+            audio.load(score, gain);
+        }
+    }
+    Ok(audio.status())
+}
+
+#[tauri::command]
+fn transport_play(audio: tauri::State<'_, AudioService>) -> TransportStatus {
+    audio.play();
+    audio.status()
+}
+
+#[tauri::command]
+fn transport_stop(audio: tauri::State<'_, AudioService>) {
+    audio.stop();
+}
+
+#[tauri::command]
+fn transport_seek(audio: tauri::State<'_, AudioService>, seconds: f64) {
+    audio.seek(seconds);
+}
+
+#[tauri::command]
+fn transport_set_loop(audio: tauri::State<'_, AudioService>, range: Option<BarRange>) {
+    audio.set_loop(range);
+}
+
+/// A live layer override (trim dB, mute, solo) that is heard at once and not saved.
+#[tauri::command]
+fn transport_layer(audio: tauri::State<'_, AudioService>, layer: String, live: LayerLive) {
+    audio.set_layer(&layer, live);
+}
+
+#[tauri::command]
+fn transport_status(audio: tauri::State<'_, AudioService>) -> TransportStatus {
+    audio.status()
+}
+
 /// Starts the desktop app.
 pub fn run() {
     let state = AppState::new(sounds::home());
     let root = state.root.clone();
     let result = tauri::Builder::default()
         .manage(state)
-        .setup(move |_app| {
+        .setup(move |app| {
             std::fs::create_dir_all(&root)?;
+            // The real-time engine on the default output, with the instruments the renders use.
+            let emitter = app.handle().clone();
+            let audio = AudioService::start(
+                cpal_opener(),
+                Arc::new(praxis_instruments::Registry::with_default_packs()),
+                Box::new(move |ev| {
+                    let _ = emitter.emit(TRANSPORT_EVENT, ev);
+                }),
+            );
+            app.manage(audio);
             // The asset protocol starts with an empty scope: `watch_sound` grants each opened
             // sound's audio folders, and nothing else, so takes play in <audio> and fetch.
             Ok(())
@@ -210,6 +274,13 @@ pub fn run() {
             redo,
             render_live,
             export,
+            transport_sync,
+            transport_play,
+            transport_stop,
+            transport_seek,
+            transport_set_loop,
+            transport_layer,
+            transport_status,
         ])
         .run(tauri::generate_context!());
     if let Err(e) = result {

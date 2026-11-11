@@ -3699,7 +3699,9 @@ dependencies = [
 name = "praxis-app"
 version = "0.1.0"
 dependencies = [
+ "praxis-audio-io",
  "praxis-cli",
+ "praxis-engine",
  "praxis-instruments",
  "praxis-score",
  "serde",

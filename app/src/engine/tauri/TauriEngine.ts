@@ -1,8 +1,13 @@
 // The desktop adapter: every call goes over Tauri IPC to crates/praxis-app, whose commands wrap
 // the shared command layer (praxis_cli::ops). A sound is a folder; its takes live in the folder's
 // takes.json, which agents write too (MCP server), so the app re-reads the history whenever the
-// file's revision moves and shows their takes live. Playback is an <audio> element on the take's
-// rendered file until the real-time engine (WP-R) takes over the transport.
+// file's revision moves and shows their takes live.
+//
+// Playback goes through the real-time engine in crates/praxis-app (audio.rs): every change of the
+// live score (a take, a restore, a hand edit, undo, redo, a mute) is sent with `transport_sync`
+// and swapped in while playing; position and meters come back as `praxis://transport` events.
+// When no output device opens (or the sound cannot be built for playback), the transport falls
+// back to an <audio> element on the current take's rendered file and says why.
 
 import type { BarRange, NScore, Score, ScorePatch } from '../../score/types';
 import { normalizeScore } from '../../score/types';
@@ -33,6 +38,7 @@ import {
   agentName,
   type AppliedPayload,
   type AskPayload,
+  type LayerLive,
   type LivePayload,
   type RenderPayload,
   type SoundInfo,
@@ -41,11 +47,33 @@ import {
   type TakesPayload,
   toRenderReport,
   toTake,
+  type TransportEventPayload,
+  type TransportStatusPayload,
   type ViewRequest,
+  METER_FLOOR_DB,
 } from './protocol';
 
 /** Event crates/praxis-app sends when the open sound's takes.json gets a new revision. */
 export const TAKES_EVENT = 'praxis://takes';
+
+/** Event crates/praxis-app's audio service sends with position, meters and device counters. */
+export const TRANSPORT_EVENT = 'praxis://transport';
+
+/** How the app is playing: the real-time engine, or the <audio> fallback (and why). */
+export interface PlaybackInfo {
+  mode: 'engine' | 'audio';
+  /** Plain words for the person when the engine cannot play; null when it can. */
+  message: string | null;
+  device: string | null;
+  sampleRate: number;
+  xruns: number;
+  lateWakeups: number;
+  deviceErrors: number;
+  /** Callback sizes the device used, in frames ([0, 0] before the first callback). */
+  callbackFrames: [number, number];
+  preparing: boolean;
+  stalled: boolean;
+}
 
 /** An agent that made a take this recently counts as connected. */
 const AGENT_ACTIVE_MS = 15 * 60 * 1000;
@@ -102,6 +130,17 @@ export class TauriEngine implements EngineAdapter {
   private soundSubs = new Set<(s: SoundInfo) => void>();
   private posSubs = new Set<(p: TransportPosition) => void>();
   private meterSubs = new Set<(m: Meters) => void>();
+  private playbackSubs = new Set<(p: PlaybackInfo) => void>();
+
+  /** 'engine' unless the real-time engine said it cannot play ('audio'), or has no commands ('none'). */
+  private rtMode: 'engine' | 'audio' | 'none' = 'engine';
+  private rtMessage: string | null = null;
+  private rt: TransportEventPayload | null = null;
+  /** Sound and live score last sent to the engine ('' = nothing open). */
+  private syncedKey = '';
+  /** Play was sent to the engine and no stop since. */
+  private enginePlaying = false;
+  private unlistenTransport: (() => void) | null = null;
 
   private audio: AudioLike | null = null;
   private loopRange: BarRange | null = null;
@@ -174,14 +213,22 @@ export class TauriEngine implements EngineAdapter {
   }
 
   private ensureListening(): Promise<void> {
-    this.listening ??= this.bridge
-      .listen<{ sound: string; revision: number }>(TAKES_EVENT, (e) => {
-        if (e.sound !== this.sound || e.revision === this.revision) return;
-        void this.exclusive(() => this.refresh());
-      })
-      .then((u) => {
-        this.unlisten = u;
-      });
+    this.listening ??= Promise.all([
+      this.bridge
+        .listen<{ sound: string; revision: number }>(TAKES_EVENT, (e) => {
+          if (e.sound !== this.sound || e.revision === this.revision) return;
+          void this.exclusive(() => this.refresh());
+        })
+        .then((u) => {
+          this.unlisten = u;
+        }),
+      this.bridge
+        .listen<TransportEventPayload>(TRANSPORT_EVENT, (e) => this.onTransport(e))
+        .then((u) => {
+          this.unlistenTransport = u;
+        })
+        .catch(() => undefined),
+    ]).then(() => undefined);
     return this.listening;
   }
 
@@ -406,6 +453,22 @@ export class TauriEngine implements EngineAdapter {
   private emitState(): void {
     const s = this.state();
     this.stateSubs.forEach((cb) => cb(s));
+    this.syncTransport();
+  }
+
+  /**
+   * Sends the live score to the real-time engine when it changed (a new take, a restore, a hand
+   * edit, undo, redo, a mute): the engine swaps it in while playing, or applies a mute / solo /
+   * gain change live. The engine reads the score from the sound folder itself.
+   */
+  private syncTransport(): void {
+    const key = this.sound && this.score ? `${this.sound}\n${JSON.stringify(this.score)}` : '';
+    if (key === this.syncedKey || this.rtMode === 'none') return;
+    this.syncedKey = key;
+    this.bridge
+      .invoke<TransportStatusPayload>('transport_sync', { sound: key ? this.sound : null })
+      .then((s) => this.onRtStatus(s))
+      .catch((e: unknown) => this.rtUnavailable(e));
   }
 
   async render(_options?: RenderOptions): Promise<RenderResult> {
@@ -414,7 +477,7 @@ export class TauriEngine implements EngineAdapter {
     return { audioUrl: this.bridge.fileUrl(r.output ?? ''), report: toRenderReport(r) };
   }
 
-  // ------------------------------------------------------------ transport (<audio> on the take's file)
+  // ------------------------------------------------------------ transport
 
   private currentTake(): Take | null {
     return this.takeList.find((t) => t.n === this.currentN) ?? null;
@@ -426,9 +489,97 @@ export class TauriEngine implements EngineAdapter {
     return (60 / s.tempo.bpm) * s.time_signature.numerator * (4 / s.time_signature.denominator);
   }
 
+  /** How the app plays right now, and anything the person should know about it. */
+  playback(): PlaybackInfo {
+    const e = this.rt;
+    return {
+      mode: this.rtMode === 'engine' ? 'engine' : 'audio',
+      message: this.rtMessage,
+      device: e?.device ?? null,
+      sampleRate: e?.sample_rate ?? 0,
+      xruns: e?.xruns ?? 0,
+      lateWakeups: e?.late_wakeups ?? 0,
+      deviceErrors: e?.device_errors ?? 0,
+      callbackFrames: [e?.min_callback_frames ?? 0, e?.max_callback_frames ?? 0],
+      preparing: e?.preparing ?? false,
+      stalled: e?.stalled ?? false,
+    };
+  }
+
+  /** Playback mode, device and counters: now, on every change and with every transport event. */
+  onPlayback(cb: (p: PlaybackInfo) => void): Unsubscribe {
+    this.playbackSubs.add(cb);
+    cb(this.playback());
+    return () => this.playbackSubs.delete(cb);
+  }
+
+  private emitPlayback(): void {
+    const p = this.playback();
+    this.playbackSubs.forEach((cb) => cb(p));
+  }
+
+  /** A status from the engine: it plays, or why it cannot (then <audio> plays the take's file). */
+  private onRtStatus(s: TransportEventPayload): void {
+    this.rt = { ...s };
+    if (s.available && !s.error) {
+      this.rtMode = 'engine';
+      this.rtMessage = null;
+    } else {
+      this.rtMode = 'audio';
+      this.rtMessage = `${(s.error ?? 'No audio output.').replace(/\.?$/, '.')} Playing the take's own file instead.`;
+    }
+    this.emitPlayback();
+  }
+
+  /** The commands are missing (an older shell, or a test bridge): <audio> for good. */
+  private rtUnavailable(e: unknown): void {
+    if (isCmdError(e) && e.message.startsWith('unknown command')) {
+      this.rtMode = 'none';
+      this.rtMessage = null;
+    } else {
+      this.rtMode = 'audio';
+      this.rtMessage = `Real-time playback is unavailable (${message(e)}). Playing the take's own file instead.`;
+    }
+    this.emitPlayback();
+  }
+
+  private onTransport(e: TransportEventPayload): void {
+    if (this.rtMode === 'none') return;
+    const ok = e.available && !e.error;
+    if (ok !== (this.rtMode === 'engine')) this.onRtStatus(e);
+    else this.rt = e;
+    if (e.ended) this.enginePlaying = false;
+    if (this.rtMode === 'engine') {
+      this.emitPosition();
+      const db = (v: number) => (v <= METER_FLOOR_DB ? -Infinity : v);
+      const m: Meters = { peakL: db(e.peak_db[0]), peakR: db(e.peak_db[1]), rmsL: db(e.rms_db[0]), rmsR: db(e.rms_db[1]) };
+      this.meterSubs.forEach((cb) => cb(m));
+    }
+    this.emitPlayback();
+  }
+
+  private engineOn(): boolean {
+    return this.rtMode === 'engine';
+  }
+
   async play(): Promise<void> {
     const take = this.currentTake();
     if (!take) return;
+    if (this.rtMode !== 'none') {
+      try {
+        // Opens the device again if it was missing, and plays the live score.
+        const s = await this.bridge.invoke<TransportStatusPayload>('transport_play');
+        this.onRtStatus(s);
+        if (this.engineOn()) {
+          this.enginePlaying = true;
+          this.pauseAudio();
+          this.emitPosition();
+          return;
+        }
+      } catch (e) {
+        this.rtUnavailable(e);
+      }
+    }
     this.audio ??= this.makeAudio();
     const a = this.audio;
     if (!a) return;
@@ -442,22 +593,41 @@ export class TauriEngine implements EngineAdapter {
     await this.stopAudio();
   }
 
-  private async stopAudio(): Promise<void> {
+  private pauseAudio(): void {
     this.audio?.pause();
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  /** Stops the engine (5 ms fade) and the <audio> fallback. */
+  private async stopAudio(): Promise<void> {
+    this.pauseAudio();
+    if (this.rtMode !== 'none' && (this.enginePlaying || this.rt?.playing)) {
+      this.enginePlaying = false;
+      await this.bridge.invoke('transport_stop').catch(() => undefined);
+      if (this.rt) this.rt = { ...this.rt, playing: false };
+    }
     this.emitPosition();
   }
 
   async seek(seconds: number): Promise<void> {
-    if (this.audio) this.audio.currentTime = Math.max(0, seconds);
+    const at = Math.max(0, seconds);
+    if (this.engineOn()) await this.bridge.invoke('transport_seek', { seconds: at }).catch(() => undefined);
+    if (this.audio) this.audio.currentTime = at;
     this.emitPosition();
   }
 
   async setLoop(range: BarRange | null): Promise<void> {
     this.loopRange = range;
+    if (this.rtMode !== 'none') await this.bridge.invoke('transport_set_loop', { range }).catch(() => undefined);
     if (this.audio) this.audio.loop = !range && (this.currentTake()?.render.report.is_loop ?? false);
     this.emitPosition();
+  }
+
+  /** A live layer override in the engine (trim dB, mute, solo): heard at once, not saved. */
+  async setLayerLive(layer: string, live: LayerLive): Promise<void> {
+    if (this.rtMode === 'none') return;
+    await this.bridge.invoke('transport_layer', { layer, live }).catch(() => undefined);
   }
 
   private startTimer(): void {
@@ -477,10 +647,18 @@ export class TauriEngine implements EngineAdapter {
     }, 50);
   }
 
-  private emitPosition(): void {
+  /** The engine's position while it plays; the <audio> element's in the fallback. */
+  private position(): TransportPosition {
     const a = this.audio;
-    const seconds = a?.currentTime ?? 0;
-    const p: TransportPosition = { playing: !!a && !a.paused, seconds, bar: 1 + seconds / this.barSeconds(), loop: this.loopRange };
+    const audioOn = !!a && !a.paused;
+    const e = this.engineOn() && !audioOn ? this.rt : null;
+    const seconds = e ? e.seconds : (a?.currentTime ?? 0);
+    const playing = e ? e.playing : audioOn;
+    return { playing, seconds, bar: 1 + seconds / this.barSeconds(), loop: this.loopRange };
+  }
+
+  private emitPosition(): void {
+    const p = this.position();
     this.posSubs.forEach((cb) => cb(p));
   }
 
@@ -489,7 +667,7 @@ export class TauriEngine implements EngineAdapter {
     return () => this.posSubs.delete(cb);
   }
 
-  /** No meters until the real-time engine (WP-R); the <audio> element has none. */
+  /** Output meters from the real-time engine (none in the <audio> fallback). */
   onMeters(cb: (m: Meters) => void): Unsubscribe {
     this.meterSubs.add(cb);
     return () => this.meterSubs.delete(cb);
@@ -516,6 +694,8 @@ export class TauriEngine implements EngineAdapter {
     void this.stopAudio();
     this.unlisten?.();
     this.unlisten = null;
+    this.unlistenTransport?.();
+    this.unlistenTransport = null;
     this.listening = null;
     this.takeSubs.clear();
     this.stateSubs.clear();
@@ -523,6 +703,7 @@ export class TauriEngine implements EngineAdapter {
     this.soundSubs.clear();
     this.posSubs.clear();
     this.meterSubs.clear();
+    this.playbackSubs.clear();
   }
 
   private exclusive<T>(fn: () => Promise<T>): Promise<T> {

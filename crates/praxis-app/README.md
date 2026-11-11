@@ -36,14 +36,35 @@ planner answers. Needs the WebView2 runtime (part of Windows 11).
 | `undo {sound}`, `redo {sound}` | one step of the project's history; a step that lands on another take's score makes it current |
 | `render_live {sound}` | renders and checks the live score to `<sound>/live/mix.wav` |
 | `export {args}` | WAV 16/24/32f, FLAC, stems, MIDI or a `.praxis` copy of a take into a folder |
+| `transport_sync {sound}` | the live score changed: plays it from now on (mute / solo / gain live, anything else rebuilt and swapped in); `null` closes |
+| `transport_play`, `transport_stop`, `transport_seek {seconds}`, `transport_set_loop {range}` | the real-time transport (loop bars `start..=end`) |
+| `transport_layer {layer, live}` | a live layer override (`gain_db` trim, `muted`, `solo`), heard at once, not saved |
+| `transport_status` | device, rate, buffer, xruns and the last graph build (`TransportStatus`) |
 
-Project writes take the sound's `.lock` like every other writer. Takes play through the WebView's
-`<audio>` element from `takes/<n>/mix.wav` (asset protocol, scoped to the sounds folder and the
-open sound); the real-time engine replaces that later.
+Project writes take the sound's `.lock` like every other writer.
+
+## Playback (real time)
+
+`audio.rs` runs the real-time engine (`praxis_engine::realtime`) on the default output device
+(`praxis_audio_io::device`: cpal, WASAPI shared mode, a 256-frame buffer asked for; Windows calls
+back every 10 ms, 480 frames). A service thread owns the stream and the engine's control side; a
+preparer thread builds each live score at the device's rate with the instrument registry the
+renders use (`PRAXIS_PACKS`) and the master gain the current take's render applied. Every change
+of the live score is synced: a change in layer mute, solo or gain alone goes in live (10 ms
+ramp); anything else is built and cross-faded in over 30 ms while playing. Position, peak / RMS
+meters, callback sizes, xruns and device errors arrive as `praxis://transport` about 30 times a
+second; the Sound panel shows them in one line with a level meter.
+
+The current take plays through the engine; earlier takes play their own render through
+`<audio>` (asset protocol, scoped to the open sound's audio folders). When no output device
+opens, or the score cannot be built for playback, the current take falls back to `<audio>` and
+the line says why; the next Play tries the device again. cpal's `realtime` feature (thread
+priority through an MPL-2.0 crate) stays off.
 
 ## Tests
 
 ```bash
-PRAXIS_PACKS="C:\path\to\packs" cargo test -p praxis-app     # every command on a real sound folder
+PRAXIS_PACKS="C:\path\to\packs" cargo test -p praxis-app     # every command, and the audio service on a fake output
+PRAXIS_DEVICE_TEST=1 cargo test -p praxis-app --test audio device -- --nocapture   # the speakers
 cd app && npx vitest run tests/unit/tauriEngine.test.ts      # the adapter through a fake bridge
 ```

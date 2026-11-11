@@ -190,3 +190,51 @@ export function toTake(r: TakeRecord, fileUrl: (path: string) => string, fallbac
   if (r.scope) take.scope = r.scope;
   return take;
 }
+
+/** `TransportEvent` in crates/praxis-app/src/audio.rs, sent as `praxis://transport` ~30 times a second. */
+export interface TransportEventPayload {
+  /** An output device is open and running the real-time engine. */
+  available: boolean;
+  device: string | null;
+  sample_rate: number;
+  /** Why there is no device, or why the sound could not be built for playback. */
+  error: string | null;
+  playing: boolean;
+  ended: boolean;
+  position: number;
+  seconds: number;
+  /** dBFS, floored at -120 (silence). */
+  peak_db: [number, number];
+  rms_db: [number, number];
+  xruns: number;
+  late_wakeups: number;
+  device_errors: number;
+  min_callback_frames: number;
+  max_callback_frames: number;
+  callbacks: number;
+  swaps: number;
+  preparing: boolean;
+  stalled: boolean;
+}
+
+/** `TransportStatus` (the event's fields plus what the last graph build said). */
+export interface TransportStatusPayload extends TransportEventPayload {
+  requested_buffer_frames: number | null;
+  loaded: boolean;
+  prepare_ms: number | null;
+  warnings: string[];
+  max_render_ms: number;
+  p99_render_ms: number;
+  layers: Record<string, LayerLive>;
+  loop_range: { start: number; end: number } | null;
+}
+
+/** A live layer override (`LayerLive`): heard at once, not saved. Left-out fields keep their value. */
+export interface LayerLive {
+  gain_db?: number;
+  muted?: boolean;
+  solo?: boolean;
+}
+
+/** Meter floor the engine sends for silence. */
+export const METER_FLOOR_DB = -120;

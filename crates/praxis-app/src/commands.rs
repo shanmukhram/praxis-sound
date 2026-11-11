@@ -337,6 +337,22 @@ pub fn take_score(dir: &Path, n: Option<u32>) -> CmdResult<Score> {
     }
 }
 
+/// What the real-time engine plays for `sound`: the live score, and the master gain the current
+/// take's offline render applied (used when the score has no frozen gain; real time never
+/// measures loudness).
+pub fn playback_score(sound: &str) -> CmdResult<(Score, Option<f64>)> {
+    let dir = made_sound(sound)?;
+    let s = Sound::open(&dir)?;
+    let project = s.project.ok_or_else(|| no_take_yet(&dir))?;
+    let gain = s
+        .takes
+        .take(s.takes.current)
+        .and_then(|t| t.render.report.get("applied_gain_db"))
+        .and_then(Value::as_f64)
+        .filter(|g| g.is_finite());
+    Ok((project.score, gain))
+}
+
 /// Renders the live score (with any mute / solo since the take) to `<sound>/live/mix.wav` and
 /// checks it. The payload is the CLI `render` payload.
 pub fn render_live(sound: &str) -> CmdResult<Value> {
