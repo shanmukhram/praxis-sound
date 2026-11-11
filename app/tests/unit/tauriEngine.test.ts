@@ -12,6 +12,9 @@ import { applyPatch } from '../../src/engine/mock/apply';
 import { muteLayer } from '../../src/score/patchBuilder';
 import type { NScore, ScorePatch } from '../../src/score/types';
 import { fixture } from './fixtures';
+import { blankScore, DRAFT_ASK } from '../../src/engine/blank';
+import { addLayerPatch } from '../../src/ui/handEdits';
+import { STANDARD_PRESETS } from '../../src/engine/presets';
 
 const clone = <T>(v: T): T => (v === undefined ? v : (JSON.parse(JSON.stringify(v)) as T));
 
@@ -184,6 +187,32 @@ class FakeBridge implements Bridge {
         const out: AskPayload = { sound: s.path, revision: s.revision, current: s.current, take: rec, can_undo: s.undo.length > 0, can_redo: false };
         return out as T;
       }
+      case 'new_sound': {
+        // crates/praxis-app/src/hand.rs `new_sound`: a folder with a blank project, no take.
+        const a = args!.args as { title: string | null; key: NScore['key']; bpm?: number; seconds?: number; time_signature: NScore['time_signature']; bars: number; playback: NScore['playback'] };
+        const slug = (a.title ?? 'untitled sound').toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const s = this.sound(`${this.root}\\${slug}`);
+        s.live = blankScore({ title: a.title ?? undefined, key: a.key, bpm: a.bpm, seconds: a.seconds, timeSignature: a.time_signature, bars: a.bars, loop: a.playback.mode === 'loop' });
+        s.revision = 1;
+        return { sound: s.path, revision: 1, live: { score: s.live, can_undo: false, can_redo: false, current: 0 } } as T;
+      }
+      case 'make_take': {
+        const s = this.sound(req.sound as string);
+        if (!s.live?.layers.length) throw { code: 'error', message: 'add a layer first: a sound with no layers has nothing to play' };
+        const prev = s.takes.find((t) => t.n === s.current);
+        if (prev && JSON.stringify(prev.score) === JSON.stringify(s.live)) throw { code: 'patch_rejected', message: `nothing changed since take ${s.current}: edit the sound, then make a take` };
+        const patch = s.takes.length ? ({ description: req.ask, origin: 'user', scope: { layers: [] }, ops: [{ op: 'set_tempo', bpm: s.live.tempo.bpm }] } as ScorePatch) : null;
+        const rec = s.addTake('You', req.ask as string, s.live, patch, patch ? { felt_piano: [1, 16] } : {});
+        rec.title = patch ? 'Hand edit' : 'Built by hand';
+        rec.provider = 'hand';
+        if (req.scope) rec.scope = req.scope as TakeRecord['scope'];
+        return { sound: s.path, revision: s.revision, current: s.current, take: rec, can_undo: true, can_redo: false } as T;
+      }
+      case 'presets':
+        return {
+          presets: STANDARD_PRESETS.map((p) => ({ ...p, available: p.name !== 'upright_piano', reason: p.name === 'upright_piano' ? 'pack missing' : null })),
+          engine_only: [{ name: 'tape_hiss', kind: 'synth', class: 'texture', source: 'synth' }],
+        } as T;
       case 'restore': {
         const s = this.sound(req.sound as string);
         const t = s.takes.find((x) => x.n === req.n);
@@ -609,5 +638,81 @@ describe('TauriEngine over a fake Tauri bridge', () => {
     // The sound cannot be built for playback: the take's file plays instead, and the reason shows.
     bridge.emit(TRANSPORT_EVENT, bridge.event({ error: 'Could not build the sound to play: missing pack' }));
     expect(info.at(-1)).toMatchObject({ mode: 'audio', message: "Could not build the sound to play: missing pack. Playing the take's own file instead." });
+  });
+});
+
+describe('TauriEngine: building by hand (WP-U5)', () => {
+  it('starts a blank sound in its own folder, edits it live and makes its first take', async () => {
+    const { bridge, engine, takes } = setup();
+    bridge.transport = { available: true, error: null };
+    await engine.openSound(null);
+    const created: SoundInfo[] = [];
+    engine.onSoundCreated((s) => created.push(s));
+
+    expect(await engine.startBlank({ key: { tonic: 'A', mode: 'minor' }, bpm: 1000, timeSignature: { numerator: 4, denominator: 4 }, bars: 16, loop: true })).toEqual({
+      ok: false,
+      message: 'That makes 1000 BPM; the tempo must be between 20 and 400.',
+    });
+    expect(bridge.calls.some((c) => c.cmd === 'new_sound')).toBe(false);
+
+    const r = await engine.startBlank({ title: 'Calm piano by hand', key: { tonic: 'A', mode: 'minor' }, seconds: 30, timeSignature: { numerator: 4, denominator: 4 }, bars: 16, loop: true });
+    expect(r).toEqual({ ok: true });
+    const call = bridge.calls.find((c) => c.cmd === 'new_sound')!;
+    expect(call.args).toEqual({
+      args: { title: 'Calm piano by hand', key: { tonic: 'A', mode: 'minor' }, seconds: 30, time_signature: { numerator: 4, denominator: 4 }, bars: 16, playback: { mode: 'loop' } },
+    });
+    const path = `${bridge.root}\\calm-piano-by-hand`;
+    expect(engine.soundPath()).toBe(path);
+    expect(bridge.watched).toBe(path);
+    expect(created.map((s) => s.path)).toEqual([path]);
+    let st = engine.state();
+    expect(st.draft).toBe(true);
+    expect(st.takes).toEqual([]);
+    expect(st.score!.tempo.bpm).toBe(128);
+
+    // The live score is synced to the real-time engine before any take, and plays.
+    await tick();
+    expect(bridge.calls.some((c) => c.cmd === 'transport_sync' && c.args?.sound === path)).toBe(true);
+    await engine.play();
+    expect(bridge.calls.at(-1)!.cmd).toBe('transport_play');
+
+    // A request in words waits for the first take; it never reaches the planner.
+    const asked = await engine.ask({ text: 'make it darker' });
+    expect(asked).toEqual({ ok: false, message: DRAFT_ASK });
+    expect(bridge.calls.some((c) => c.cmd === 'ask')).toBe(false);
+
+    // Hand edits are plain patches (no take); then one take for the batch.
+    const piano = (await engine.presets()).find((p) => p.name === 'felt_piano')!;
+    const applied = await engine.applyPatch(addLayerPatch(st.score!, piano));
+    expect(applied.ok).toBe(true);
+    expect(engine.state().score!.layers.map((l) => l.id)).toEqual(['felt_piano']);
+    const t = await engine.makeTake('By hand: added Felt piano', { scope: { layer: 'felt_piano', bars: { start: 1, end: 16 } } });
+    expect(t.ok).toBe(true);
+    if (!t.ok) return;
+    expect(t.take.n).toBe(1);
+    expect(t.take.patch).toBeNull();
+    expect(bridge.calls.find((c) => c.cmd === 'make_take')!.args).toEqual({
+      req: { sound: path, ask: 'By hand: added Felt piano', who: 'You', title: null, say: null, scope: { layer: 'felt_piano', bars: { start: 1, end: 16 } } },
+    });
+    st = engine.state();
+    expect(st.draft).toBe(false);
+    expect(st.current).toBe(1);
+    expect(takes.map((x) => x.n)).toEqual([1]);
+
+    // Nothing changed since take 1: refused in words, with no take.
+    const again = await engine.makeTake('again');
+    expect(again).toMatchObject({ ok: false, message: 'nothing changed since take 1: edit the sound, then make a take' });
+    engine.dispose();
+  });
+
+  it('reads the presets once, with what is not installed and engine-only presets', async () => {
+    const { bridge, engine } = setup();
+    const a = await engine.presets();
+    const b = await engine.presets();
+    expect(bridge.calls.filter((c) => c.cmd === 'presets')).toHaveLength(1);
+    expect(a).toEqual(b);
+    expect(a.find((p) => p.name === 'upright_piano')).toMatchObject({ available: false, reason: 'pack missing' });
+    expect(a.find((p) => p.name === 'felt_piano')).toMatchObject({ available: true, kind: 'sampler' });
+    expect(a.at(-1)).toEqual({ name: 'tape_hiss', kind: 'synth', class: 'texture', pitched: true, description: '', available: true });
   });
 });

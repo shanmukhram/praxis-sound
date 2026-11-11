@@ -2,8 +2,11 @@
 //! [`crate::commands`] run off the UI thread, plus the take watcher's event, and the transport
 //! commands over the real-time [`AudioService`].
 
-use crate::audio::{AudioService, LayerLive, TRANSPORT_EVENT, TransportStatus, cpal_opener};
+use crate::audio::{
+    AudioService, FakeOutput, LayerLive, Opener, TRANSPORT_EVENT, TransportStatus, cpal_opener,
+};
 use crate::commands::{self, CmdError, CmdResult, ExportArgs};
+use crate::hand::{self, MakeTakeArgs, NewSound, NewSoundArgs};
 use crate::sounds::{self, SoundInfo};
 use crate::watch::{WatchHandle, read_revision, watch};
 use praxis_cli::ops;
@@ -157,6 +160,28 @@ async fn open_view(req: ops::OpenViewRequest) -> CmdResult<Value> {
     blocking(move || commands::open_view(&req)).await
 }
 
+// ---------------------------------------------------------------- building by hand
+
+/// A blank sound (key, tempo or length, metre, bars, loop or one-shot) with no take yet, in a new
+/// folder under the sounds root.
+#[tauri::command]
+async fn new_sound(state: tauri::State<'_, AppState>, args: NewSoundArgs) -> CmdResult<NewSound> {
+    let root = state.root.clone();
+    blocking(move || hand::new_sound(&root, &args)).await
+}
+
+/// Renders, checks and records the live score as one take (the hand edits since the last take).
+#[tauri::command]
+async fn make_take(req: MakeTakeArgs) -> CmdResult<Value> {
+    blocking(move || hand::make_take(&req)).await
+}
+
+/// The instrument presets a layer can use, and whether each renders here.
+#[tauri::command]
+async fn presets() -> CmdResult<Value> {
+    blocking(hand::presets).await
+}
+
 // ---------------------------------------------------------------- the project (no take)
 
 #[tauri::command]
@@ -235,6 +260,26 @@ fn transport_status(audio: tauri::State<'_, AudioService>) -> TransportStatus {
     audio.status()
 }
 
+/// Environment switch for a silent run: `PRAXIS_AUDIO_OUTPUT=fake` plays through the fake output
+/// (the same real-time engine and command path, paced by the clock, 48 kHz in 480-frame
+/// callbacks like the Windows device) instead of the speakers.
+const OUTPUT_ENV: &str = "PRAXIS_AUDIO_OUTPUT";
+
+/// The output the audio service opens: the default device, or the fake output when asked.
+fn output_opener() -> Opener {
+    match std::env::var(OUTPUT_ENV) {
+        Ok(v) if v.trim().eq_ignore_ascii_case("fake") => FakeOutput {
+            sample_rate: 48_000,
+            callback_frames: 480,
+            speed: 1.0,
+            tap: None,
+            xruns: None,
+        }
+        .opener(),
+        _ => cpal_opener(),
+    }
+}
+
 /// Starts the desktop app.
 pub fn run() {
     let state = AppState::new(sounds::home());
@@ -246,7 +291,7 @@ pub fn run() {
             // The real-time engine on the default output, with the instruments the renders use.
             let emitter = app.handle().clone();
             let audio = AudioService::start(
-                cpal_opener(),
+                output_opener(),
                 Arc::new(praxis_instruments::Registry::with_default_packs()),
                 Box::new(move |ev| {
                     let _ = emitter.emit(TRANSPORT_EVENT, ev);
@@ -269,6 +314,9 @@ pub fn run() {
             variations,
             keep_variation,
             open_view,
+            new_sound,
+            make_take,
+            presets,
             apply_patch,
             undo,
             redo,

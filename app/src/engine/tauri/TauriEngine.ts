@@ -17,7 +17,11 @@ import type {
   ApplyResult,
   AskRequest,
   AskResult,
+  BlankSound,
   EngineAdapter,
+  MakeTakeOptions,
+  PresetInfo,
+  StartResult,
   ExportRequest,
   ExportResult,
   LoadResult,
@@ -40,6 +44,7 @@ import {
   type AskPayload,
   type LayerLive,
   type LivePayload,
+  type NewSoundPayload,
   type RenderPayload,
   type SoundInfo,
   type SteppedPayload,
@@ -52,6 +57,8 @@ import {
   type ViewRequest,
   METER_FLOOR_DB,
 } from './protocol';
+import { blankProblem, DRAFT_ASK } from '../blank';
+import { presetsFromPayload } from '../presets';
 
 /** Event crates/praxis-app sends when the open sound's takes.json gets a new revision. */
 export const TAKES_EVENT = 'praxis://takes';
@@ -306,6 +313,7 @@ export class TauriEngine implements EngineAdapter {
   async ask(request: AskRequest): Promise<AskResult> {
     let created: SoundInfo | null = null;
     const r = await this.exclusive(async () => {
+      if (this.isDraft()) return { ok: false, message: DRAFT_ASK } as AskResult;
       let sound = this.sound;
       if (!sound) {
         sound = await this.bridge.invoke<string>('new_sound_path', { text: request.text });
@@ -365,6 +373,74 @@ export class TauriEngine implements EngineAdapter {
     return [...this.takeList];
   }
 
+  // ------------------------------------------------------------ building by hand
+
+  /** A sound folder with a project and no take yet. */
+  private isDraft(): boolean {
+    return !!this.sound && !!this.score && this.takeList.length === 0;
+  }
+
+  async startBlank(settings: BlankSound): Promise<StartResult> {
+    const problem = blankProblem(settings);
+    if (problem) return { ok: false, message: problem };
+    let created: SoundInfo | null = null;
+    const r = await this.exclusive(async (): Promise<StartResult> => {
+      try {
+        const args: Record<string, unknown> = {
+          title: settings.title?.trim() || null,
+          key: settings.key,
+          time_signature: settings.timeSignature,
+          bars: settings.bars,
+          playback: settings.loop ? { mode: 'loop' } : { mode: 'one_shot', tail_seconds: 4 },
+        };
+        if (settings.bpm !== undefined) args.bpm = settings.bpm;
+        else args.seconds = settings.seconds;
+        const made = await this.bridge.invoke<NewSoundPayload>('new_sound', { args });
+        await this.stopAudio();
+        this.reset();
+        this.revision = await this.bridge.invoke<number>('watch_sound', { sound: made.sound });
+        this.sound = made.sound;
+        await this.refresh(true);
+        created = await this.soundInfo(made.sound);
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, message: `Could not start the sound: ${message(e)}` };
+      }
+    });
+    if (created) {
+      const info: SoundInfo = created;
+      this.soundSubs.forEach((cb) => cb(info));
+    }
+    return r;
+  }
+
+  private presetCache: PresetInfo[] | null = null;
+
+  async presets(): Promise<PresetInfo[]> {
+    if (this.presetCache) return this.presetCache.map((p) => ({ ...p }));
+    const p = await this.bridge.invoke<Parameters<typeof presetsFromPayload>[0]>('presets');
+    this.presetCache = presetsFromPayload(p);
+    return this.presetCache.map((x) => ({ ...x }));
+  }
+
+  async makeTake(ask: string, options: MakeTakeOptions = {}): Promise<AskResult> {
+    return this.exclusive(async () => {
+      if (!this.sound) return { ok: false, message: 'Start a sound first.' } as AskResult;
+      try {
+        const { take: record } = await this.bridge.invoke<AskPayload>('make_take', {
+          req: { sound: this.sound, ask, who: 'You', title: options.title ?? null, say: options.say ?? null, scope: options.scope ?? null },
+        });
+        await this.refresh(true);
+        const take = this.takeList.find((t) => t.n === record.n);
+        if (!take) return { ok: false, message: `Take ${record.n} was made but could not be read back.` } as AskResult;
+        this.takeSubs.forEach((cb) => cb(take));
+        return { ok: true, take } as AskResult;
+      } catch (e) {
+        return { ok: false, message: message(e), error: patchError(e) } as AskResult;
+      }
+    });
+  }
+
   state(): TakeState {
     return {
       takes: [...this.takeList],
@@ -372,6 +448,7 @@ export class TauriEngine implements EngineAdapter {
       score: this.score,
       canUndo: this.canUndo,
       canRedo: this.canRedo,
+      draft: this.isDraft(),
     };
   }
 
@@ -564,7 +641,8 @@ export class TauriEngine implements EngineAdapter {
 
   async play(): Promise<void> {
     const take = this.currentTake();
-    if (!take) return;
+    // A draft has no take (no file for <audio>), but the real-time engine plays its live score.
+    if (!take && !this.isDraft()) return;
     if (this.rtMode !== 'none') {
       try {
         // Opens the device again if it was missing, and plays the live score.
@@ -580,6 +658,7 @@ export class TauriEngine implements EngineAdapter {
         this.rtUnavailable(e);
       }
     }
+    if (!take) return;
     this.audio ??= this.makeAudio();
     const a = this.audio;
     if (!a) return;

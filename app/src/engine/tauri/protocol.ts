@@ -29,6 +29,13 @@ export interface AppliedPayload {
   inverse: ScorePatch;
 }
 
+/** `NewSound` in crates/praxis-app/src/hand.rs: the blank sound's folder and live score. */
+export interface NewSoundPayload {
+  sound: string;
+  revision: number;
+  live: LivePayload;
+}
+
 export interface SteppedPayload {
   moved: boolean;
   live: LivePayload;

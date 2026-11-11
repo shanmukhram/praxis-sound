@@ -4,7 +4,7 @@
 //   WasmEngine     - browser build: praxis-wasm in an AudioWorklet (later package)
 // Every call is async so IPC and worker-backed adapters fit without changes.
 
-import type { BarRange, NScore, Score, ScorePatch } from '../score/types';
+import type { BarRange, GeneratorClass, InstrumentKind, Key, NScore, Score, ScorePatch, TimeSignature } from '../score/types';
 
 /** Why a patch was rejected. Mirrors `PatchError` in crates/praxis-score/src/patch.rs. */
 export type PatchError =
@@ -193,11 +193,50 @@ export interface TakeState {
   takes: Take[];
   /** Number of the take that is playing now. */
   current: number;
-  /** The live score: the current take plus mute/solo/lock changes made since. */
+  /** The live score: the current take plus mute/solo/lock changes and hand edits made since. */
   score: NScore | null;
   canUndo: boolean;
   canRedo: boolean;
+  /**
+   * True for a sound started blank by hand that has no take yet: the live score can be edited,
+   * played and made into its first take, but not asked about in words.
+   */
+  draft?: boolean;
 }
+
+// ---------------------------------------------------------------- building by hand (WP-U5)
+
+/** What a blank sound starts as. Give `bpm`, or `seconds` and the duration solver picks the tempo. */
+export interface BlankSound {
+  title?: string;
+  key: Key;
+  bpm?: number;
+  seconds?: number;
+  timeSignature: TimeSignature;
+  bars: number;
+  loop: boolean;
+}
+
+/** An instrument preset a layer can use (`praxis presets`: the planner catalogue plus engine-only presets). */
+export interface PresetInfo {
+  name: string;
+  kind: InstrumentKind;
+  class: GeneratorClass;
+  pitched: boolean;
+  description: string;
+  /** False when it cannot render here (a pack not installed); `reason` says why. */
+  available: boolean;
+  reason?: string;
+}
+
+export interface MakeTakeOptions {
+  title?: string;
+  say?: string;
+  /** Bars of one layer, when every edit in the batch was there. */
+  scope?: TakeScope;
+}
+
+export type StartResult = { ok: true } | { ok: false; message: string };
 
 export interface OpenViewEvent {
   view: ViewName;
@@ -229,6 +268,18 @@ export interface EngineAdapter {
   ask(request: AskRequest): Promise<AskResult>;
   /** A hand edit from a panel view (Rhythm, Notes) as an explicit patch -> a take. */
   edit(patch: ScorePatch, ask: string, scope?: TakeScope): Promise<AskResult>;
+
+  // Building by hand (WP-U5). Hand edits are `applyPatch` calls (heard at once, no take);
+  // `makeTake` records the live score as one take.
+  /** Starts a new, blank sound (no layers, no take yet) and makes it the open sound. */
+  startBlank(settings: BlankSound): Promise<StartResult>;
+  /** Instrument presets for the layer picker. */
+  presets(): Promise<PresetInfo[]>;
+  /**
+   * Renders, checks and records the live score as one take: the first take of a blank sound, or
+   * every hand edit since the current take. Refused when nothing changed or there is no layer.
+   */
+  makeTake(ask: string, options?: MakeTakeOptions): Promise<AskResult>;
   takes(): Promise<Take[]>;
   state(): TakeState;
   /** Goes back to take n through a patch, so it can be undone. */
