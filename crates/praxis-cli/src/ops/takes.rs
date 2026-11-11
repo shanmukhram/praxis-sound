@@ -611,6 +611,31 @@ fn ask_planner(req: &AskRequest) -> Result<Value, OpError> {
     Ok(v)
 }
 
+/// Replaces the title and/or `say` of take `n` (the assistant's words for a variation it kept
+/// in the same turn). A new `takes.json` revision, so watchers redraw the take.
+pub(crate) fn reword_take(
+    dir: &std::path::Path,
+    n: u32,
+    title: Option<String>,
+    say: Option<String>,
+) -> Result<(), OpError> {
+    let _lock = SoundLock::acquire(dir)?;
+    let mut sound = Sound::open(dir)?;
+    let Some(take) = sound.takes.takes.iter_mut().find(|t| t.n == n) else {
+        return Err(OpError::new(
+            ErrorCode::Error,
+            format!("take {n} is not in takes.json"),
+        ));
+    };
+    if let Some(t) = title {
+        take.title = t;
+    }
+    if let Some(s) = say {
+        take.say = s;
+    }
+    sound.save()
+}
+
 /// True for a patch that only locks, unlocks, mutes or solos layers: a change to how the live
 /// score plays, not to the sound, so it makes no take (as in the app).
 pub(crate) fn live_only(patch: &ScorePatch) -> bool {

@@ -241,16 +241,27 @@ pub fn definitions() -> Vec<Value> {
         ),
         tool(
             FINISH_TURN,
-            "End your turn. Write your reply to the person as text in the same message, then \
-             call this as the only tool in that message. Your changes become the take; its \
-             title is `title`.",
+            "End your turn, as the only tool in its message. `reply` is your answer to the \
+             person (it becomes the take's description); your changes become the take, titled \
+             `title`.",
             object(&[
+                (
+                    "reply",
+                    string(
+                        "Your answer to the person, in one or two plain sentences: what changed \
+                         in sound terms, its measured effect (\"the piano's brightness dropped \
+                         from 560 to 515 Hz\"), and what stayed the same (\"every note is as it \
+                         was\"). With no change: what you did instead or why not (a question \
+                         goes through ask_user). No lists, tool names or JSON.",
+                    ),
+                ),
                 (
                     "title",
                     string(
                         "The take's title: 3 to 6 words in sentence case saying what changed in \
                          sound terms, without \"I\" (\"Muffled felt piano\", \"Softer kick in \
-                         the second half\"). \"\" when nothing changed.",
+                         the second half\"); it also replaces the default title of a variation \
+                         you kept. \"\" when nothing changed.",
                     ),
                 ),
                 (

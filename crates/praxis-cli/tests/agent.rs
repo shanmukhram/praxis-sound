@@ -1143,3 +1143,94 @@ fn a_bar_limited_tone_edit_passes_the_scope_and_keeps_the_other_bars() {
         );
     }
 }
+
+/// The live run's model ends a take with `finish_turn` and no text: its `reply` is the take's
+/// `say` and the turn's reply (not the change summary), and its `title` replaces a kept
+/// variation's default words.
+#[test]
+fn the_reply_comes_through_finish_turn() {
+    if !have_piano("the_reply_comes_through_finish_turn") {
+        return;
+    }
+    let sound = scratch("finish-reply").join("loop");
+    new_sound(&sound);
+
+    let reply = "The piano is muffled: its brightness dropped by about a tenth and the highs by \
+                 3 dB; every note is as it was.";
+    let model = ScriptedModel::new(vec![
+        message(
+            vec![tool_use(
+                "p1",
+                "set_params",
+                json!({"layer": "piano", "params": [{"name": "tone", "value": 0.25}]}),
+            )],
+            "tool_use",
+        ),
+        message(vec![tool_use("p2", "render_check", json!({}))], "tool_use"),
+        // Only the tool call, no text: the shape the real model used in the live run.
+        message(
+            vec![
+                thinking("sig-f"),
+                tool_use(
+                    "p3",
+                    "finish_turn",
+                    json!({"reply": reply, "title": "Muffled felt piano", "no_take": ""}),
+                ),
+            ],
+            "tool_use",
+        ),
+    ]);
+    let ev = events();
+    let two = ops::ask_with(&ask(&sound, "make the piano muffled"), &options(model, &ev))
+        .expect("take 2");
+    assert_eq!(two["take"]["n"], 2);
+    assert_eq!(two["take"]["say"], reply);
+    assert_eq!(two["take"]["title"], "Muffled felt piano");
+    assert_eq!(two["agent"]["reply"], reply);
+    assert!(ev.lock().unwrap().iter().any(|e| matches!(
+        e,
+        AgentEvent::Finished { reply: r, .. } if r == reply
+    )));
+
+    // A kept variation takes the assistant's title and words instead of "Variation 1, ...".
+    let kept = "Kept the second of two new endings for the piano in bars 13-16; bars 3-12 are \
+                identical note for note.";
+    let model = ScriptedModel::new(vec![
+        message(
+            vec![tool_use(
+                "v1",
+                "make_variations",
+                json!({"layers": ["piano"], "start_bar": 13, "end_bar": 16, "count": 2}),
+            )],
+            "tool_use",
+        ),
+        message(
+            vec![tool_use("v2", "keep_variation", json!({"index": 2}))],
+            "tool_use",
+        ),
+        message(
+            vec![tool_use(
+                "v3",
+                "finish_turn",
+                json!({"reply": kept, "title": "New piano ending", "no_take": ""}),
+            )],
+            "tool_use",
+        ),
+    ]);
+    let three = ops::ask_with(
+        &ask(
+            &sound,
+            "two alternatives for the last four bars; keep the better one",
+        ),
+        &options(model, &events()),
+    )
+    .expect("take 3");
+    assert_eq!(three["take"]["n"], 3);
+    assert_eq!(three["take"]["title"], "New piano ending");
+    assert_eq!(three["take"]["say"], kept);
+    assert_eq!(three["agent"]["reply"], kept);
+    let stored = read_json(&sound.join("takes.json"))["takes"][2].clone();
+    assert_eq!(stored["title"], "New piano ending");
+    assert_eq!(stored["say"], kept);
+    assert_eq!(stored["provider"], "variation");
+}
