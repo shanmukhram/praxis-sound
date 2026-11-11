@@ -20,6 +20,8 @@ export interface LivePayload {
   score: Score;
   can_undo: boolean;
   can_redo: boolean;
+  /** The sound's current take after the call. */
+  current: number;
 }
 
 export interface AppliedPayload {
@@ -52,7 +54,7 @@ export interface RenderPayload {
   check?: Partial<VerifyReport> & { failed?: string[] };
 }
 
-/** One record of a sound's `takes.json` (WP-K2's take ops). */
+/** One take record (docs/contracts/cli.md, "The take record"); `render.path` is absolute. */
 export interface TakeRecord {
   n: number;
   who: string;
@@ -66,26 +68,45 @@ export interface TakeRecord {
   checks: Partial<VerifyReport> | null;
   opens?: ViewName | null;
   scope?: TakeScope | null;
-  /** The take's score (its project version `take-<n>`), when the op includes it. */
+  /** The take's score (its project version `take-<n>`); praxis-app always asks for it. */
   score?: Score | null;
+  version?: string;
+  from?: number;
+  identical_bars?: [number, number][];
+  provider?: string;
+  seed?: number;
 }
 
-/** A view an agent or the assistant asked the app to open (`open_view`). */
+/** A view request in `takes.json` (`open_view`): `by` is "Praxis" or the agent's name. */
 export interface ViewRequest {
+  revision: number;
   view: ViewName;
-  who: string;
-  /** Monotonic within the sound, so each request is shown once. */
-  seq?: number;
-  revision?: number;
+  by: string;
+  take: number;
 }
 
 /** The `takes` payload: the whole history of one sound. */
 export interface TakesPayload {
+  sound: string;
   revision: number;
   current: number;
   takes: TakeRecord[];
+  /** The live score, null before the first take. */
   score: Score | null;
-  views?: ViewRequest[];
+  can_undo: boolean;
+  can_redo: boolean;
+  views: ViewRequest[];
+}
+
+/** The `ask` / `keep_variation` payload: the new take and where the sound now stands. */
+export interface AskPayload {
+  sound: string;
+  revision: number;
+  current: number;
+  take: TakeRecord;
+  can_undo: boolean;
+  can_redo: boolean;
+  provider_note?: string | null;
 }
 
 const num = (v: unknown, d = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);

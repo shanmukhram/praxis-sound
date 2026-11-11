@@ -1,13 +1,16 @@
 //! What each Tauri command does, as plain functions over a sound folder, so they are tested
 //! without a window. `shell.rs` wraps each one in a `#[tauri::command]`.
 //!
-//! Takes go through the command layer's take ops (`praxis_cli::ops`), the same functions the CLI
-//! and the MCP server call. The project-level calls here (apply a patch, undo, redo, render the
-//! live score, export) work on the sound's `project.praxis` through `praxis_score::Project`.
+//! Takes go through the command layer's take ops (`praxis_cli::ops::{ask, takes, restore, edit,
+//! variations, keep_variation, open_view}`), the same functions the CLI and the MCP server call,
+//! so the app never keeps a take store of its own. The project-level calls here (apply a patch,
+//! undo, redo, render the live score, export) work on the sound's `project.praxis` through
+//! `praxis_score::Project`, under the sound's `.lock` like every other writer.
 
 use crate::sounds::{PROJECT_FILE, SoundInfo, list_sounds};
 use praxis_cli::ops::render::{RenderSettings, render_score};
-use praxis_cli::ops::{ExportMidiRequest, export_midi};
+use praxis_cli::ops::sound::{Sound, SoundLock, load_project, save_project};
+use praxis_cli::ops::{self, ExportMidiRequest, export_midi, resolve_sound};
 use praxis_cli::{ErrorCode, OpError};
 use praxis_score::Score;
 use praxis_score::patch::{PatchError, ScorePatch};
@@ -89,56 +92,96 @@ fn rejected(e: &PatchError) -> CmdError {
     }
 }
 
-// ------------------------------------------------------------------ the project file
-
-pub fn project_path(sound: &Path) -> PathBuf {
-    sound.join(PROJECT_FILE)
+/// The folder of a sound as the front end names it (a folder path from `list_sounds` or
+/// `new_sound_path`; a bare name resolves under `PRAXIS_HOME/sounds`).
+fn dir_of(sound: &str) -> CmdResult<PathBuf> {
+    Ok(resolve_sound(sound)?)
 }
 
-pub fn read_project(sound: &Path) -> CmdResult<Project> {
-    let path = project_path(sound);
-    let text = std::fs::read_to_string(&path).map_err(|e| io(&path, e))?;
-    Project::from_json(&text)
-        .map_err(|e| CmdError::new(ErrorCode::BadScore, format!("{}: {e}", path.display())))
+/// The folder of a sound that has a project (its first take), checked before taking the lock,
+/// which would otherwise create the folder.
+fn made_sound(sound: &str) -> CmdResult<PathBuf> {
+    let dir = dir_of(sound)?;
+    if !dir.join(PROJECT_FILE).is_file() {
+        return Err(no_take_yet(&dir));
+    }
+    Ok(dir)
 }
 
-/// Writes the project atomically (temp file, then rename), so a reader (an agent's MCP call, the
-/// watcher) never sees half a file.
-pub fn write_project(sound: &Path, project: &Project) -> CmdResult<()> {
-    let path = project_path(sound);
-    let text = project
-        .to_json()
-        .map_err(|e| CmdError::new(ErrorCode::Error, e.to_string()))?;
-    let tmp = sound.join(format!(".{PROJECT_FILE}.{}.tmp", std::process::id()));
-    std::fs::write(&tmp, text + "\n").map_err(|e| io(&tmp, e))?;
-    std::fs::rename(&tmp, &path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        io(&path, e)
-    })
+// ------------------------------------------------------------------ sounds
+
+pub fn sounds(root: &Path) -> Vec<SoundInfo> {
+    list_sounds(root)
 }
 
-/// The live score and the undo state, as the front end's `TakeState` needs them.
+// ------------------------------------------------------------------ takes (the shared history)
+
+/// A request in words, or a hand edit (`patch`), on a sound: `ops::ask` plans, renders, checks
+/// and records the take. The take comes back with its score.
+pub fn ask(mut req: ops::AskRequest) -> CmdResult<Value> {
+    req.include_score = true;
+    Ok(ops::ask(&req)?)
+}
+
+/// The sound's whole history (`ops::takes`), each take with its score.
+pub fn takes(sound: &str) -> CmdResult<Value> {
+    Ok(ops::takes(&ops::TakesRequest {
+        sound: sound.into(),
+        include_scores: true,
+    })?)
+}
+
+/// Goes back to take `n` through an undoable patch.
+pub fn restore(req: &ops::RestoreRequest) -> CmdResult<Value> {
+    Ok(ops::restore(req)?)
+}
+
+/// A prompt edit of a project that makes no take (`ops::edit`, the CLI's `praxis edit`).
+pub fn edit(req: &ops::EditRequest) -> CmdResult<Value> {
+    Ok(ops::edit(req)?)
+}
+
+/// Rendered, checked candidates; none is committed until one is kept.
+pub fn variations(req: &ops::VariationsRequest) -> CmdResult<Value> {
+    Ok(ops::variations(req)?)
+}
+
+/// Commits a variation as a new take.
+pub fn keep_variation(mut req: ops::KeepVariationRequest) -> CmdResult<Value> {
+    req.include_score = true;
+    Ok(ops::keep_variation(&req)?)
+}
+
+/// Records a view request; the app shows it ("Notes opened by ...").
+pub fn open_view(req: &ops::OpenViewRequest) -> CmdResult<Value> {
+    Ok(ops::open_view(req)?)
+}
+
+// ------------------------------------------------------------------ the project (no take)
+
+/// The live score, the undo state and the current take after a project-level call.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Live {
     pub score: Value,
     pub can_undo: bool,
     pub can_redo: bool,
+    pub current: u32,
 }
 
-fn live_of(project: &Project) -> Live {
+fn live_of(project: &Project, current: u32) -> Live {
     Live {
         score: serde_json::to_value(&project.score).unwrap_or(Value::Null),
         can_undo: project.can_undo(),
         can_redo: project.can_redo(),
+        current,
     }
 }
 
-/// The live score of a sound; `None` before its first take.
-pub fn live(sound: &Path) -> CmdResult<Option<Live>> {
-    if !project_path(sound).is_file() {
-        return Ok(None);
-    }
-    Ok(Some(live_of(&read_project(sound)?)))
+fn no_take_yet(dir: &Path) -> CmdError {
+    CmdError::new(
+        ErrorCode::Error,
+        format!("{} has no take yet; ask for a sound first", dir.display()),
+    )
 }
 
 /// The result of `apply_patch`: the new live score and the exact inverse.
@@ -149,15 +192,19 @@ pub struct Applied {
 }
 
 /// A patch that makes no take (mute, solo, lock), committed to the project's undo history.
-pub fn apply_patch(sound: &Path, patch: Value) -> CmdResult<Applied> {
+/// `takes.json` is left alone: no take was made.
+pub fn apply_patch(sound: &str, patch: Value) -> CmdResult<Applied> {
     let patch: ScorePatch = serde_json::from_value(patch)
         .map_err(|e| CmdError::new(ErrorCode::BadJson, format!("patch: {e}")))?;
-    let mut project = read_project(sound)?;
+    let dir = made_sound(sound)?;
+    let _lock = SoundLock::acquire(&dir)?;
+    let s = Sound::open(&dir)?;
+    let mut project = s.project.ok_or_else(|| no_take_yet(&dir))?;
     let entry = project.commit(patch).map_err(|e| rejected(&e))?;
     let inverse = serde_json::to_value(&entry.inverse).unwrap_or(Value::Null);
-    write_project(sound, &project)?;
+    save_project(&dir.join(PROJECT_FILE), &project)?;
     Ok(Applied {
-        live: live_of(&project),
+        live: live_of(&project, s.takes.current),
         inverse,
     })
 }
@@ -169,33 +216,65 @@ pub struct Stepped {
     pub live: Live,
 }
 
-pub fn undo(sound: &Path) -> CmdResult<Stepped> {
-    let mut project = read_project(sound)?;
-    let moved = project.undo().map_err(|e| rejected(&e))?.is_some();
-    if moved {
-        write_project(sound, &project)?;
+/// The take whose score the live score equals: the current one when it still matches, else the
+/// newest match. `None` when the live score is no take's (a mute or solo since, say).
+fn matching_take(s: &Sound, project: &Project) -> Option<u32> {
+    let is = |n: u32| {
+        s.takes
+            .take(n)
+            .and_then(|t| project.version(&t.version))
+            .is_some_and(|v| v.score == project.score)
+    };
+    if is(s.takes.current) {
+        return Some(s.takes.current);
     }
-    Ok(Stepped {
-        moved,
-        live: live_of(&project),
-    })
+    s.takes.takes.iter().rev().map(|t| t.n).find(|&n| is(n))
 }
 
-pub fn redo(sound: &Path) -> CmdResult<Stepped> {
-    let mut project = read_project(sound)?;
-    let moved = project.redo().map_err(|e| rejected(&e))?.is_some();
-    if moved {
-        write_project(sound, &project)?;
+/// Undoes or redoes one step of the project's history (a take, a go-back or a plain edit). When
+/// the step lands on another take's score, that take becomes current and `takes.json` gets a
+/// new revision, as going back does.
+fn step(sound: &str, redo: bool) -> CmdResult<Stepped> {
+    let dir = made_sound(sound)?;
+    let _lock = SoundLock::acquire(&dir)?;
+    let mut s = Sound::open(&dir)?;
+    let Some(mut project) = s.project.take() else {
+        return Err(no_take_yet(&dir));
+    };
+    let moved = if redo {
+        project.redo().map_err(|e| rejected(&e))?.is_some()
+    } else {
+        project.undo().map_err(|e| rejected(&e))?.is_some()
+    };
+    if !moved {
+        return Ok(Stepped {
+            moved,
+            live: live_of(&project, s.takes.current),
+        });
     }
-    Ok(Stepped {
-        moved,
-        live: live_of(&project),
-    })
+    let current = matching_take(&s, &project).unwrap_or(s.takes.current);
+    let live = live_of(&project, current);
+    if current == s.takes.current {
+        save_project(&dir.join(PROJECT_FILE), &project)?;
+    } else {
+        s.takes.current = current;
+        s.project = Some(project);
+        s.save()?;
+    }
+    Ok(Stepped { moved, live })
+}
+
+pub fn undo(sound: &str) -> CmdResult<Stepped> {
+    step(sound, false)
+}
+
+pub fn redo(sound: &str) -> CmdResult<Stepped> {
+    step(sound, true)
 }
 
 /// The score of take `n` (its project version `take-<n>`), or the live score for `None`.
-pub fn take_score(sound: &Path, n: Option<u32>) -> CmdResult<Score> {
-    let project = read_project(sound)?;
+pub fn take_score(dir: &Path, n: Option<u32>) -> CmdResult<Score> {
+    let project = load_project(&dir.join(PROJECT_FILE))?;
     match n {
         None => Ok(project.score),
         Some(n) => project
@@ -205,31 +284,26 @@ pub fn take_score(sound: &Path, n: Option<u32>) -> CmdResult<Score> {
     }
 }
 
-/// Renders the live score (with mute / solo since the take) to `<sound>/live/mix.wav` and
+/// Renders the live score (with any mute / solo since the take) to `<sound>/live/mix.wav` and
 /// checks it. The payload is the CLI `render` payload.
-pub fn render_live(sound: &Path) -> CmdResult<Value> {
-    let score = take_score(sound, None)?;
-    let out = sound.join("live").join("mix.wav");
+pub fn render_live(sound: &str) -> CmdResult<Value> {
+    let dir = dir_of(sound)?;
+    let score = take_score(&dir, None)?;
+    let out = dir.join("live").join("mix.wav");
     Ok(render_score(&score, &out, &RenderSettings::default())?)
-}
-
-// ------------------------------------------------------------------ sounds
-
-pub fn sounds(root: &Path) -> Vec<SoundInfo> {
-    list_sounds(root)
 }
 
 // ------------------------------------------------------------------ export
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct ExportArgs {
-    pub sound: PathBuf,
+    pub sound: String,
     /// The take to export; the live score when absent.
     #[serde(default)]
     pub take: Option<u32>,
     /// `wav16`, `wav24`, `wav32f`, `flac`, `stems`, `midi`, `project`.
     pub kinds: Vec<String>,
-    /// The output folder; relative paths resolve inside the sound folder.
+    /// The output folder; a relative path resolves inside the sound folder.
     pub destination: String,
     pub base_name: String,
 }
@@ -250,7 +324,13 @@ pub struct Exported {
 fn safe_base(name: &str) -> String {
     let s: String = name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let s = s.trim_matches('-');
     if s.is_empty() { "sound".into() } else { s.into() }
@@ -258,10 +338,11 @@ fn safe_base(name: &str) -> String {
 
 /// Writes the chosen kinds of a take (or the live score) into the destination folder.
 pub fn export(args: &ExportArgs) -> CmdResult<Exported> {
-    let score = take_score(&args.sound, args.take)?;
+    let sound = dir_of(&args.sound)?;
+    let score = take_score(&sound, args.take)?;
     let dir = {
         let d = PathBuf::from(&args.destination);
-        if d.is_absolute() { d } else { args.sound.join(d) }
+        if d.is_absolute() { d } else { sound.join(d) }
     };
     std::fs::create_dir_all(&dir).map_err(|e| io(&dir, e))?;
     let base = dir.join(safe_base(&args.base_name));
@@ -271,16 +352,11 @@ pub fn export(args: &ExportArgs) -> CmdResult<Exported> {
     for kind in &args.kinds {
         match kind.as_str() {
             "wav16" | "wav24" | "wav32f" | "flac" => {
-                let (format, ext) = match kind.as_str() {
-                    "wav16" => ("16", ".wav"),
-                    "wav24" => ("24", ".wav"),
-                    "wav32f" => ("32f", ".wav"),
-                    _ => ("flac", ".flac"),
-                };
-                let out = if kind == "flac" {
-                    with_ext(ext)
-                } else {
-                    with_ext(&format!("-{kind}{ext}"))
+                let (format, out) = match kind.as_str() {
+                    "wav16" => ("16", with_ext("-wav16.wav")),
+                    "wav24" => ("24", with_ext("-wav24.wav")),
+                    "wav32f" => ("32f", with_ext("-wav32f.wav")),
+                    _ => ("flac", with_ext(".flac")),
                 };
                 let settings = RenderSettings {
                     format: format.into(),
@@ -292,18 +368,19 @@ pub fn export(args: &ExportArgs) -> CmdResult<Exported> {
                     path: out.display().to_string(),
                 });
             }
-            "stems" if !stems_done => {
+            "stems" => {
+                if stems_done {
+                    continue;
+                }
                 stems_done = true;
                 let stems_dir = with_ext("-stems");
                 let settings = RenderSettings {
                     stems: Some(stems_dir.clone()),
                     ..RenderSettings::default()
                 };
-                let mix = stems_dir.join("mix.wav");
-                let payload = render_score(&score, &mix, &settings)?;
-                for s in payload["stems"].as_array().into_iter().flatten() {
-                    let p = s.get("path").and_then(Value::as_str).or(s.as_str());
-                    if let Some(p) = p {
+                let payload = render_score(&score, &stems_dir.join("mix.wav"), &settings)?;
+                for p in payload["stems"].as_array().into_iter().flatten() {
+                    if let Some(p) = p.as_str() {
                         files.push(ExportFile {
                             kind: "stems".into(),
                             path: p.into(),
@@ -330,13 +407,12 @@ pub fn export(args: &ExportArgs) -> CmdResult<Exported> {
             }
             "project" => {
                 let out = with_ext(".praxis");
-                praxis_cli::ops::write_project(&out, &score)?;
+                ops::write_project(&out, &score)?;
                 files.push(ExportFile {
                     kind: "project".into(),
                     path: out.display().to_string(),
                 });
             }
-            "stems" => {}
             other => {
                 return Err(CmdError::new(
                     ErrorCode::BadFormat,

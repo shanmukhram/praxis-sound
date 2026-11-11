@@ -32,6 +32,7 @@ import { type Bridge, isCmdError } from './bridge';
 import {
   agentName,
   type AppliedPayload,
+  type AskPayload,
   type LivePayload,
   type RenderPayload,
   type SoundInfo,
@@ -186,32 +187,30 @@ export class TauriEngine implements EngineAdapter {
   private async refresh(initial = false): Promise<void> {
     const sound = this.sound;
     if (!sound) return;
-    const [payload, live] = await Promise.all([
-      this.bridge.invoke<TakesPayload>('takes', { sound }),
-      this.bridge.invoke<LivePayload | null>('live', { sound }),
-    ]);
+    const payload = await this.bridge.invoke<TakesPayload>('takes', { sound });
     if (sound !== this.sound) return;
     this.revision = Math.max(this.revision, payload.revision ?? 0);
-    const liveScore = live?.score ? normalizeScore(live.score) : payload.score ? normalizeScore(payload.score) : null;
+    const liveScore = payload.score ? normalizeScore(payload.score) : null;
     const known = new Set(this.takeList.map((t) => t.n));
     const takes = payload.takes.map((r: TakeRecord) => toTake(r, (p) => this.bridge.fileUrl(p), liveScore));
     this.takeList = takes;
     this.currentN = payload.current ?? takes.at(-1)?.n ?? 0;
     this.score = liveScore;
-    this.canUndo = live?.can_undo ?? false;
-    this.canRedo = live?.can_redo ?? false;
-    for (const t of takes) {
+    this.canUndo = payload.can_undo ?? false;
+    this.canRedo = payload.can_redo ?? false;
+    const fresh = initial ? [] : takes.filter((t) => !known.has(t.n));
+    for (const t of initial ? takes : fresh) {
       const a = agentName(t.who);
-      if (a && !initial && !known.has(t.n)) this.agentSeen.set(a, this.now());
+      // On open, agents that worked on this sound are listed; their newer takes refresh them.
+      if (a) this.agentSeen.set(a, initial ? Math.max(this.agentSeen.get(a) ?? 0, 0) : this.now());
     }
     const views = payload.views ?? [];
-    const fresh = initial ? [] : takes.filter((t) => !known.has(t.n));
-    const newViews = initial ? [] : views.slice(this.seenViews);
-    this.seenViews = views.length;
+    const newViews = initial ? [] : views.filter((v) => v.revision > this.seenViews);
+    this.seenViews = Math.max(this.seenViews, ...views.map((v) => v.revision));
     this.emitState();
     for (const t of fresh) {
       this.takeSubs.forEach((cb) => cb(t));
-      if (t.opens) this.emitView(t.opens, agentName(t.who) ?? 'Praxis');
+      if (t.opens && !newViews.some((v) => v.take === t.n && v.view === t.opens)) this.emitView(t.opens, agentName(t.who) ?? 'Praxis');
     }
     for (const v of newViews) this.emitView(v.view, viewBy(v));
   }
@@ -259,7 +258,7 @@ export class TauriEngine implements EngineAdapter {
         sound = await this.bridge.invoke<string>('new_sound_path', { text: request.text });
       }
       try {
-        const record = await this.bridge.invoke<TakeRecord>('ask', {
+        const { take: record } = await this.bridge.invoke<AskPayload>('ask', {
           req: { sound, text: request.text, who: 'You', scope: request.scope ?? null },
         });
         if (this.sound !== sound) {
@@ -294,8 +293,9 @@ export class TauriEngine implements EngineAdapter {
     return this.exclusive(async () => {
       if (!this.sound) return { ok: false, message: 'Make a first take before editing it by hand.' } as AskResult;
       try {
-        const record = await this.bridge.invoke<TakeRecord>('edit_take', {
-          req: { sound: this.sound, patch, ask, who: 'You', scope: scope ?? null },
+        // A hand edit is an `ask` carrying the explicit patch (provider "hand").
+        const { take: record } = await this.bridge.invoke<AskPayload>('ask', {
+          req: { sound: this.sound, text: ask, patch, who: 'You', scope: scope ?? null },
         });
         await this.refresh(true);
         const take = this.takeList.find((t) => t.n === record.n);
@@ -349,7 +349,8 @@ export class TauriEngine implements EngineAdapter {
       if (!this.sound) return false;
       try {
         const r = await this.bridge.invoke<SteppedPayload>(cmd, { sound: this.sound });
-        if (r.moved) await this.refresh(true);
+        // The step may move the current take (takes.json): read the history back.
+        if (r.moved && r.live.current !== this.currentN) await this.refresh(true);
         else {
           this.setLive(r.live);
           this.emitState();
@@ -526,7 +527,7 @@ export class TauriEngine implements EngineAdapter {
 }
 
 function viewBy(v: ViewRequest): string {
-  const w = (v.who ?? '').trim();
+  const w = (v.by ?? '').trim();
   return !w || w === 'You' ? 'Praxis' : w.replace(/^Agent · /, '');
 }
 

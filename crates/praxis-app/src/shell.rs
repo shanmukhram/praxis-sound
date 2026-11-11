@@ -4,6 +4,7 @@
 use crate::commands::{self, CmdError, CmdResult, ExportArgs};
 use crate::sounds::{self, SoundInfo};
 use crate::watch::{WatchHandle, read_revision, watch};
+use praxis_cli::ops;
 use serde::Serialize;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -104,29 +105,63 @@ fn watch_sound(app: tauri::AppHandle, state: tauri::State<'_, AppState>, sound: 
     from
 }
 
+// ---------------------------------------------------------------- takes (praxis_cli::ops)
+
 #[tauri::command]
-async fn live(sound: String) -> CmdResult<Option<commands::Live>> {
-    blocking(move || commands::live(&PathBuf::from(sound))).await
+async fn ask(req: ops::AskRequest) -> CmdResult<Value> {
+    blocking(move || commands::ask(req)).await
 }
 
 #[tauri::command]
+async fn takes(sound: String) -> CmdResult<Value> {
+    blocking(move || commands::takes(&sound)).await
+}
+
+#[tauri::command]
+async fn restore(req: ops::RestoreRequest) -> CmdResult<Value> {
+    blocking(move || commands::restore(&req)).await
+}
+
+#[tauri::command]
+async fn edit(req: ops::EditRequest) -> CmdResult<Value> {
+    blocking(move || commands::edit(&req)).await
+}
+
+#[tauri::command]
+async fn variations(req: ops::VariationsRequest) -> CmdResult<Value> {
+    blocking(move || commands::variations(&req)).await
+}
+
+#[tauri::command]
+async fn keep_variation(req: ops::KeepVariationRequest) -> CmdResult<Value> {
+    blocking(move || commands::keep_variation(req)).await
+}
+
+#[tauri::command]
+async fn open_view(req: ops::OpenViewRequest) -> CmdResult<Value> {
+    blocking(move || commands::open_view(&req)).await
+}
+
+// ---------------------------------------------------------------- the project (no take)
+
+#[tauri::command]
 async fn apply_patch(sound: String, patch: Value) -> CmdResult<commands::Applied> {
-    blocking(move || commands::apply_patch(&PathBuf::from(sound), patch)).await
+    blocking(move || commands::apply_patch(&sound, patch)).await
 }
 
 #[tauri::command]
 async fn undo(sound: String) -> CmdResult<commands::Stepped> {
-    blocking(move || commands::undo(&PathBuf::from(sound))).await
+    blocking(move || commands::undo(&sound)).await
 }
 
 #[tauri::command]
 async fn redo(sound: String) -> CmdResult<commands::Stepped> {
-    blocking(move || commands::redo(&PathBuf::from(sound))).await
+    blocking(move || commands::redo(&sound)).await
 }
 
 #[tauri::command]
 async fn render_live(sound: String) -> CmdResult<Value> {
-    blocking(move || commands::render_live(&PathBuf::from(sound))).await
+    blocking(move || commands::render_live(&sound)).await
 }
 
 #[tauri::command]
@@ -151,7 +186,13 @@ pub fn run() {
             list_sounds,
             new_sound_path,
             watch_sound,
-            live,
+            ask,
+            takes,
+            restore,
+            edit,
+            variations,
+            keep_variation,
+            open_view,
             apply_patch,
             undo,
             redo,

@@ -4,29 +4,17 @@
 //! command layer's take ops. The app only lists those folders and names new ones; it never
 //! writes a take itself, so the app and agents (through the MCP server) share one history.
 
-use praxis_cli::ops::{load_score, score_summary};
+pub use praxis_cli::ops::sound::{PROJECT_FILE, TAKES_FILE};
+use praxis_cli::ops::{load_score, praxis_home, score_summary};
 use serde::Serialize;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
-/// Overrides the Praxis Sound home folder (sounds live in `<home>/sounds`).
-pub const HOME_ENV: &str = "PRAXIS_HOME";
-pub const PROJECT_FILE: &str = "project.praxis";
-pub const TAKES_FILE: &str = "takes.json";
-
-/// `PRAXIS_HOME`, else `Documents\Praxis Sound` in the user's profile, else the current folder.
+/// The Praxis Sound home folder (`PRAXIS_HOME`, default `Documents\Praxis Sound`), as the
+/// command layer resolves it.
 pub fn home() -> PathBuf {
-    if let Some(h) = std::env::var_os(HOME_ENV).filter(|h| !h.is_empty()) {
-        return PathBuf::from(h);
-    }
-    let profile = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .filter(|p| !p.is_empty());
-    match profile {
-        Some(p) => PathBuf::from(p).join("Documents").join("Praxis Sound"),
-        None => PathBuf::from("Praxis Sound"),
-    }
+    praxis_home()
 }
 
 /// The folder that holds one sub-folder per sound.
@@ -124,12 +112,12 @@ pub fn list_sounds(root: &Path) -> Vec<SoundInfo> {
 /// A folder name from the first words of a request: "a calm 30-second felt piano loop in A
 /// minor" -> "calm-30-second-felt-piano-loop". Never empty, never a reserved Windows name.
 pub fn slug(text: &str) -> String {
-    const SKIP: [&str; 4] = ["a", "an", "the", "make"];
+    const SKIP: [&str; 10] = ["a", "an", "the", "make", "in", "of", "with", "and", "for", "to"];
     let words: Vec<String> = text
         .split(|c: char| !c.is_alphanumeric() && c != '-')
         .map(|w| w.trim_matches('-').to_lowercase())
         .filter(|w| !w.is_empty() && !SKIP.contains(&w.as_str()))
-        .take(6)
+        .take(5)
         .collect();
     let mut s = words.join("-");
     s.truncate(48);
