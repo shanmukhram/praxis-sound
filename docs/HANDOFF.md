@@ -111,7 +111,9 @@ review), large paid spend, and anything that plays audio on the owner's speakers
 
 At most two sessions compile at once (10 of 20 threads; `.claude/worktrees/.cargo/config.toml`
 caps each at 5 jobs and adds sccache + rust-lld). Queued sessions read and write code but must not
-build until messaged "slot free" (the dependent ones also wait for a named merge). Session starts
+build until messaged "slot free" (the dependent ones also wait for a named merge). Session notes only wake the orchestrator when no other started session is working, so every
+session is told to SendMessage the orchestrator (`local_b37ecbec-7aed-4686-af91-6fbce30705d2`) when it finishes or needs
+something, and the orchestrator subscribes with `notify_when_idle`. Session starts
 are refused in automated turns, so every package was started in one owner turn; later steps are
 messages to these sessions.
 
@@ -119,9 +121,9 @@ messages to these sessions.
 | --- | --- | --- | --- | --- |
 | WP-P4 live planner quality | `local_9d36f82c-3389-4b79-bcd5-49ee65dc6bfb` | **merged**, Phase 4 closed | WP-P4-live-planner-quality.md | (running) |
 | WP-D2 Sound Profile + library | `local_d4822b8f-57b1-47ae-b93b-d705b8a08ca4` | **merged** | WP-D2-sound-profile.md | (running) |
-| WP-H2 realistic sfx | `local_e181048d-d661-4de8-9bd3-62cfb7c11812` | building | WP-H2-sfx-realism.md | first free slot |
+| WP-H2 realistic sfx | `local_e181048d-d661-4de8-9bd3-62cfb7c11812` | **merged** | WP-H2-sfx-realism.md | first free slot |
 | WP-P3 scoring depth + hit points | `local_26d5ea83-cf3a-4e26-9484-d34526546f88` | building | WP-P3-scoring-depth.md | after WP-P4 merges: "WP-P4 merged, slot free" |
-| WP-U6 reference clips in the app | `local_2c567f48-72fa-4ff1-8380-8e5ee1c2cc5f` | queued | WP-U6-reference-clips-ui.md | after WP-D2: "WP-D2 merged, slot free" |
+| WP-U6 reference clips in the app | `local_2c567f48-72fa-4ff1-8380-8e5ee1c2cc5f` | building | WP-U6-reference-clips-ui.md | after WP-D2: "WP-D2 merged, slot free" |
 | WP-M match loop | `local_c25d0d15-36a9-439c-84d9-450faee7771e` | queued | WP-M-match.md | after WP-D2 and WP-H2: "WP-D2 and WP-H2 merged, slot free" |
 | WP-W browser build | `local_1eaf0bdd-3166-4fc0-bbf7-2f97f3dea4ba` | queued | WP-W-browser.md | after WP-U6: "WP-U6 merged, slot free" |
 | WP-Z performance + release | `local_8d511f36-2c98-42bf-b40e-155091985439` | queued | WP-Z-performance-release.md | last: "all packages merged, slot free" |
