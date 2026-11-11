@@ -228,7 +228,7 @@ enum Command {
         #[arg(long)]
         score: PathBuf,
     },
-    /// Measure an audio or video clip (the Sound Profile features available so far).
+    /// Measure an audio or video clip: its complete Sound Profile.
     Analyze {
         clip: PathBuf,
         /// Also write the measurements to this JSON file.
@@ -236,6 +236,11 @@ enum Command {
         out: Option<PathBuf>,
         #[arg(long, default_value_t = 4)]
         beats_per_bar: u8,
+    },
+    /// The reference library: saved, tagged Sound Profiles (never audio).
+    Library {
+        #[command(subcommand)]
+        action: LibraryCmd,
     },
     /// Make something like a reference clip: a new project with its character, refined by
     /// rendering and measuring until the similarity stops improving (FR-14 to FR-18).
@@ -301,6 +306,36 @@ enum PacksCmd {
 }
 
 #[derive(Subcommand, Debug)]
+enum LibraryCmd {
+    /// Analyse a clip (or read a profile JSON from `analyze -o`) and save its profile.
+    Add {
+        input: PathBuf,
+        /// Style name (default: the file name).
+        #[arg(long)]
+        name: Option<String>,
+        /// A tag; repeat for more.
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+        #[arg(long, default_value_t = 4)]
+        beats_per_bar: u8,
+    },
+    /// Every saved profile.
+    List,
+    /// One saved profile in full.
+    Show { id: String },
+    /// Add or remove tags.
+    Tag {
+        id: String,
+        #[arg(long)]
+        add: Vec<String>,
+        #[arg(long)]
+        remove: Vec<String>,
+    },
+    /// Delete a saved profile.
+    Remove { id: String },
+}
+
+#[derive(Subcommand, Debug)]
 enum KeyCmd {
     /// Read the key from stdin and store it in the OS keychain.
     Set,
@@ -325,6 +360,7 @@ fn name(c: &Command) -> &'static str {
         Command::KeepVariation { .. } => "keep-variation",
         Command::OpenView { .. } => "open-view",
         Command::Analyze { .. } => "analyze",
+        Command::Library { .. } => "library",
         Command::Match { .. } => "match",
         Command::ExportMidi { .. } => "export-midi",
         Command::Packs { .. } => "packs",
@@ -594,6 +630,26 @@ fn run(command: Command) -> Result<Value, OpError> {
             out,
             beats_per_bar,
         }),
+        Command::Library { action } => {
+            let action = match action {
+                LibraryCmd::Add {
+                    input,
+                    name,
+                    tags,
+                    beats_per_bar,
+                } => ops::LibraryAction::Add {
+                    input,
+                    name,
+                    tags,
+                    beats_per_bar,
+                },
+                LibraryCmd::List => ops::LibraryAction::List,
+                LibraryCmd::Show { id } => ops::LibraryAction::Show { id },
+                LibraryCmd::Tag { id, add, remove } => ops::LibraryAction::Tag { id, add, remove },
+                LibraryCmd::Remove { id } => ops::LibraryAction::Remove { id },
+            };
+            ops::library(&ops::LibraryRequest { action, dir: None })
+        }
         Command::Match {
             clip,
             prompt,

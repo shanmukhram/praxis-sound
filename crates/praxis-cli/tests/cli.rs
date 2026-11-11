@@ -950,7 +950,9 @@ fn analyze_shapes() {
             "complete", "missing", "source", "tempo", "key", "loudness", "onsets_s",
         ],
     );
-    assert_eq!(v["complete"], json!(false));
+    // The full Sound Profile (WP-D2).
+    assert_eq!(v["complete"], json!(true));
+    assert_eq!(v["missing"], json!([]));
     assert_eq!(v["source"]["sample_rate"], json!(48_000));
     assert_eq!(v["key"]["name"], json!("a minor"), "{}", v["key"]);
     assert!(!v["onsets_s"].as_array().unwrap().is_empty());

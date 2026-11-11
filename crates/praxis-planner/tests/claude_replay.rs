@@ -138,10 +138,15 @@ fn plans_acceptance1_and_sends_the_documented_request() {
         .expect("input_schema");
     let expected: Value = serde_json::from_str(&fixture("expected_request.json")).expect("json");
     assert_eq!(skeleton, expected);
-    let system = system.as_str().expect("system text");
+    assert_eq!(system[0]["cache_control"]["type"], "ephemeral");
+    let system = system[0]["text"].as_str().expect("system text");
     assert!(system.contains("plan_score"));
     assert!(system.contains("felt_piano"));
     assert!(system.contains("Answer only by calling the `plan_score` tool"));
+    // The restraint rules (WP-P4), written as plain sentences.
+    assert!(system.contains("Use only the instruments the brief names"));
+    assert!(system.contains("Every layer plays from bar 1 to the last bar"));
+    assert!(!system.contains("  "), "{system}");
     // Strict tool schema: an object schema, closed objects, no unsupported constraints.
     assert_eq!(schema["type"], "object");
     assert_eq!(schema["additionalProperties"], false);
@@ -164,7 +169,7 @@ fn older_models_get_a_forced_tool_call() {
     assert_eq!(body["tool_choice"]["type"], "tool");
     assert_eq!(body["tool_choice"]["name"], "plan_score");
     assert!(
-        !body["system"]
+        !body["system"][0]["text"]
             .as_str()
             .unwrap_or("")
             .contains("Answer only by calling")
@@ -172,6 +177,34 @@ fn older_models_get_a_forced_tool_call() {
     // Haiku 5.5 does not take `fallbacks: "default"`.
     let (h, _) = provider("claude-haiku-5-5", vec![]);
     assert!(h.request_body(&req).get("fallbacks").is_none());
+}
+
+/// The live failure of 2026-11-11: the plan arrives wrapped in `{"parameters": ...}`. It is
+/// unwrapped before validation, so no repair round is spent on it.
+#[test]
+fn a_plan_wrapped_in_parameters_needs_no_repair_round() {
+    let mut resp: Value = serde_json::from_str(&fixture("plan_response.json")).expect("json");
+    let block = resp["content"]
+        .as_array_mut()
+        .expect("content")
+        .iter_mut()
+        .find(|b| b["type"] == "tool_use")
+        .expect("tool_use");
+    let plan = block["input"].take();
+    block["input"] = serde_json::json!({ "parameters": plan });
+    let (p, replay) = provider(
+        "claude-opus-5-5",
+        vec![HttpResponse {
+            status: 200,
+            body: resp.to_string(),
+            retry_after_s: None,
+        }],
+    );
+    let out = plan_brief(BRIEF, &p, &Catalogue::standard(), 1).expect("plan");
+    assert_eq!(out.attempts, 1);
+    assert!(out.rounds.is_empty(), "{:?}", out.rounds);
+    check_acceptance1(&out.score).expect("acceptance 1");
+    assert_eq!(replay.requests.lock().expect("lock").len(), 1);
 }
 
 #[test]

@@ -200,7 +200,7 @@ fn initialize(c: &mut Client) -> Value {
     init
 }
 
-const TOOLS: [&str; 16] = [
+const TOOLS: [&str; 17] = [
     "praxis_analyze",
     "praxis_ask",
     "praxis_check",
@@ -209,6 +209,7 @@ const TOOLS: [&str; 16] = [
     "praxis_export",
     "praxis_generate",
     "praxis_keep_variation",
+    "praxis_library",
     "praxis_open_view",
     "praxis_plan_schema",
     "praxis_presets",

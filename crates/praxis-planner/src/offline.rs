@@ -1103,6 +1103,126 @@ pub fn class_mentions(brief: &str) -> ClassMentions {
     m
 }
 
+/// What a brief says about its instruments and their bars, for the restraint checks a model's
+/// plan gets (`brief::quality_issues`). Read with the same vocabulary as the rule planner.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BriefInstruments {
+    /// Instrument families named without a negation ("piano", "kick", "bass", "drums", "arp").
+    pub families: BTreeSet<String>,
+    /// Classes named without a negation ("melody", "chords", "bass", "drums").
+    pub classes: BTreeSet<GeneratorClass>,
+    /// Requested instruments the catalogue lacks ("strings"), in brief order.
+    pub unmapped: Vec<String>,
+    /// The brief places layers in bars ("bars 9-16", "second half", "from bar 5", "intro").
+    pub timed: bool,
+}
+
+/// Families a drum-kit word ("drums", "beat", "percussion") covers.
+const DRUM_FAMILIES: [&str; 10] = [
+    "kick", "snare", "rim", "hats", "openhat", "shaker", "clap", "toms", "drums", "tick",
+];
+
+/// Words that say when a part enters or leaves without a bar number.
+const TIMING_WORDS: [&str; 16] = [
+    "intro",
+    "outro",
+    "enters",
+    "enter",
+    "comes",
+    "joins",
+    "join",
+    "later",
+    "then",
+    "halfway",
+    "midway",
+    "verse",
+    "chorus",
+    "breakdown",
+    "bridge",
+    "drop",
+];
+
+impl BriefInstruments {
+    /// The brief names at least one instrument (or an instrument it cannot have).
+    pub fn names_any(&self) -> bool {
+        !self.families.is_empty() || !self.unmapped.is_empty()
+    }
+
+    /// The brief asks for a layer with this preset and class: its family is named, a drum-kit
+    /// word covers a drum, or its class is named ("a bass", "a melody").
+    pub fn covers(&self, preset: &str, class: GeneratorClass) -> bool {
+        let fams = preset_families(preset);
+        if fams.iter().any(|f| self.families.contains(*f)) {
+            return true;
+        }
+        let drum_word = self.families.contains("drums")
+            || self.classes.contains(&GeneratorClass::Drums)
+            || self.classes.contains(&GeneratorClass::Percussion);
+        if drum_word && fams.iter().any(|f| DRUM_FAMILIES.contains(f)) {
+            return true;
+        }
+        self.classes.contains(&class)
+    }
+}
+
+/// Every instrument family whose words resolve to `preset` (`pluck` is both "pluck" and "arp").
+pub fn preset_families(preset: &str) -> Vec<&'static str> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for (_, family, p) in INSTRUMENTS {
+        let hit = match p.strip_prefix('*') {
+            Some(suffix) => preset.ends_with(suffix),
+            None => *p == preset,
+        };
+        if hit && !out.contains(family) {
+            out.push(family);
+        }
+    }
+    if preset.starts_with("tom_") && !out.contains(&"toms") {
+        out.push("toms");
+    }
+    out
+}
+
+pub fn brief_instruments(brief: &str) -> BriefInstruments {
+    let norm = normalize(brief);
+    let (_, blanked) = extract_spoken(&norm);
+    let a = Analysis::new(&lower_and_negate(&blanked));
+    let mut out = BriefInstruments::default();
+    let mut notes = Vec::new();
+    for m in a.mentions(&mut notes) {
+        if !m.negated {
+            out.families.insert(m.family);
+        }
+    }
+    for (i, t) in a.toks.iter().enumerate() {
+        let Some(w) = t.word() else { continue };
+        if a.negated[i] {
+            continue;
+        }
+        if UNMAPPED.contains(&w) && !out.unmapped.iter().any(|u| u == w) {
+            out.unmapped.push(w.to_string());
+        }
+        if matches!(w, "beat" | "beats" | "groove") {
+            out.families.insert("drums".into());
+        }
+        if !matches!(w, "effects" | "fx" | "sfx" | "trailer")
+            && let Some(classes) = class_words(w)
+        {
+            out.classes.extend(classes);
+        }
+        if TIMING_WORDS.contains(&w) {
+            out.timed = true;
+        }
+    }
+    if !out.timed {
+        out.timed = a
+            .sentences
+            .iter()
+            .any(|&s| !a.markers(s, crate::plan::MAX_BARS).is_empty());
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------------------------
 // Brief -> plan
 

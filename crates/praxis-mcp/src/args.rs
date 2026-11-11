@@ -5,8 +5,8 @@
 //! the command runs, so every path in a response is absolute.
 
 use praxis_cli::ops::{
-    AnalyzeRequest, CheckRequest, ExportMidiRequest, GenerateRequest, MatchClipRequest,
-    ProviderChoice, RenderRequest, RenderSettings, ValidateRequest,
+    AnalyzeRequest, CheckRequest, ExportMidiRequest, GenerateRequest, LibraryAction,
+    LibraryRequest, MatchClipRequest, ProviderChoice, RenderRequest, RenderSettings, ValidateRequest,
 };
 use praxis_cli::{ErrorCode, OpError};
 use schemars::JsonSchema;
@@ -251,6 +251,76 @@ impl AnalyzeArgs {
             out: abs_opt(&self.out),
             beats_per_bar: self.beats_per_bar.unwrap_or(4),
         }
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct LibraryArgs {
+    /// "add" (analyse `input` and save its profile), "list", "show" (`id`), "tag" (`id`,
+    /// `add`, `remove`) or "remove" (`id`).
+    #[schemars(extend("enum" = ["add", "list", "show", "tag", "remove"]))]
+    pub action: String,
+    /// add: an audio or video clip, or a profile JSON written by praxis_analyze `out`.
+    #[serde(default)]
+    pub input: Option<PathBuf>,
+    /// add: the style name (default: the file name).
+    #[serde(default)]
+    pub name: Option<String>,
+    /// add: tags for the new entry.
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// show, tag, remove: the entry id from "list" or "add".
+    #[serde(default)]
+    pub id: Option<String>,
+    /// tag: tags to add.
+    #[serde(default)]
+    pub add: Vec<String>,
+    /// tag: tags to remove.
+    #[serde(default)]
+    pub remove: Vec<String>,
+    /// add: beats per bar for downbeat detection (default 4).
+    #[serde(default)]
+    pub beats_per_bar: Option<u8>,
+}
+
+impl LibraryArgs {
+    pub fn request(&self) -> Result<LibraryRequest, OpError> {
+        let need_id = || {
+            self.id.clone().ok_or_else(|| {
+                OpError::new(
+                    ErrorCode::BadJson,
+                    format!("`{}` needs `id` (see the \"list\" action)", self.action),
+                )
+            })
+        };
+        let action = match self.action.as_str() {
+            "add" => LibraryAction::Add {
+                input: absolute(self.input.as_deref().ok_or_else(|| {
+                    OpError::new(
+                        ErrorCode::BadJson,
+                        "`add` needs `input`: a clip or a profile JSON",
+                    )
+                })?),
+                name: self.name.clone(),
+                tags: self.tags.clone(),
+                beats_per_bar: self.beats_per_bar.unwrap_or(4),
+            },
+            "list" => LibraryAction::List,
+            "show" => LibraryAction::Show { id: need_id()? },
+            "tag" => LibraryAction::Tag {
+                id: need_id()?,
+                add: self.add.clone(),
+                remove: self.remove.clone(),
+            },
+            "remove" => LibraryAction::Remove { id: need_id()? },
+            other => {
+                return Err(OpError::new(
+                    ErrorCode::BadJson,
+                    format!("unknown action `{other}`; use add, list, show, tag or remove"),
+                ));
+            }
+        };
+        Ok(LibraryRequest { action, dir: None })
     }
 }
 

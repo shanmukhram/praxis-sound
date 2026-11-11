@@ -5,7 +5,7 @@
 
 use crate::args::{
     AnalyzeArgs, AskArgs, CheckArgs, ComposeArgs, EditArgs, Export, ExportArgs, GenerateArgs,
-    KeepVariationArgs, MatchArgs, NoArgs, OpenViewArgs, PlanSchemaArgs, RenderArgs, RestoreArgs,
+    KeepVariationArgs, LibraryArgs, MatchArgs, NoArgs, OpenViewArgs, PlanSchemaArgs, RenderArgs, RestoreArgs,
     TakesArgs, ValidateArgs, VariationsArgs, parse,
 };
 use crate::guide;
@@ -240,7 +240,7 @@ impl PraxisServer {
 
     #[tool(
         name = "praxis_analyze",
-        description = "Measure an audio or video clip: duration, tempo and beats, key with confidence, loudness (integrated, range, true peak), onsets and loop seam. `complete: false` lists Sound Profile fields not measured yet.",
+        description = "Measure an audio or video clip: its complete Sound Profile (`complete: true`): class (music / sfx / ambience with probabilities), tempo and beats, key with confidence, loudness (integrated, range, true peak, crest), envelope (attack, decay, sustain, release), spectral balance (centroid, rolloff, flatness, 10 octave bands, tilt), groove on the beat grid with swing, pitch track, tonality, stereo width, reverb decay, sections, the feature vector (`feature_names`) and a one-line `summary`. Numbers only, never audio.",
         input_schema = input_schema::<AnalyzeArgs>(),
         annotations(read_only_hint = true, open_world_hint = false)
     )]
@@ -255,6 +255,25 @@ impl PraxisServer {
             Err(e) => return Ok(tool_result("analyze", Err(e))),
         };
         Ok(run("analyze", &meta, &peer, move || ops::analyze(&req)).await)
+    }
+
+    #[tool(
+        name = "praxis_library",
+        description = "The reference library (FR-19): saved, tagged Sound Profiles reusable as named styles; profiles only, never audio. `action`: \"add\" (`input` clip or profile JSON, optional `name` and `tags`; the same clip twice is kept once, `already: true`), \"list\", \"show\" (`id`: the full profile), \"tag\" (`id`, `add`, `remove`), \"remove\" (`id`). Same payloads as `praxis library`.",
+        input_schema = input_schema::<LibraryArgs>(),
+        annotations(read_only_hint = false, destructive_hint = true, open_world_hint = false)
+    )]
+    async fn library(
+        &self,
+        args: JsonObject,
+        meta: RequestMetaObject,
+        peer: Peer<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let req = match parse::<LibraryArgs>(args).and_then(|a| a.request()) {
+            Ok(r) => r,
+            Err(e) => return Ok(tool_result("library", Err(e))),
+        };
+        Ok(run("library", &meta, &peer, move || ops::library(&req)).await)
     }
 
     #[tool(
