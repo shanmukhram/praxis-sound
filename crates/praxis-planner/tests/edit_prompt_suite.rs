@@ -223,6 +223,34 @@ fn check_case(case: &Value) -> Result<String, String> {
             ));
         }
     }
+    // The bars the edit was allowed to change, whatever the patch scope (tone and space edits
+    // over some bars have no bar scope: they hold the change to the bars with automation).
+    if let Some(b) = ex.get("edited_bars").and_then(Value::as_array) {
+        let want = BarRange {
+            start: b[0].as_u64().unwrap_or(0) as u32,
+            end: b[1].as_u64().unwrap_or(0) as u32,
+        };
+        if out.bars != want {
+            return Err(format!("edited bars {:?} != {want:?}", out.bars));
+        }
+    }
+    // Tone and space edits change the sound, never a note or a clip.
+    if ex.get("notes_unchanged").and_then(Value::as_bool) == Some(true) {
+        if expand_notes(&before, SR) != expand_notes(after, SR) {
+            return Err("the notes changed".into());
+        }
+        if before.patterns != after.patterns
+            || before
+                .layers
+                .iter()
+                .any(|l| after.layer(&l.id).is_none_or(|a| a.clips != l.clips))
+        {
+            return Err("patterns or clips changed".into());
+        }
+        if !out.changed() {
+            return Err(format!("nothing changed: {}", out.summary));
+        }
+    }
     if ex.get("whole").and_then(Value::as_bool) == Some(true) && out.scope.bars.is_some() {
         return Err(format!(
             "expected a whole-score edit, got {:?}",

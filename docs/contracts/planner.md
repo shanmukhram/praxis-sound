@@ -150,19 +150,22 @@ Entry points:
   and `variations_with(..., catalogue)`.
 
 `EditOutcome {patch, inverse, score, scope, bars, summary, refused, new_layers, plan, attempts,
-rounds, repairs, provider_id}`; `changed()` is false when the patch has no ops.
+rounds, repairs, provider_id}`; `changed()` is false when the patch has no ops; `understood()` is
+false for a `not_understood` plan (empty patch, unchanged Score, a summary that starts "Nothing
+changed:" and lists what edits are possible, `edit::EDIT_CAPABILITIES`). `bars` is always the bars
+the edit was allowed to change, also when the patch itself has no bar scope (tone and space).
 `Variation {index, seed, patch, inverse, score, summary}`.
 
 ### EditPlan fields
 
 | Field | Meaning |
 | --- | --- |
-| `intent` | `add_layer`, `add_melody`, `rewrite_motif`, `change_instrument`, `change_dynamics`, `remove_layer`, `thin_out` |
+| `intent` | `add_layer`, `add_melody`, `rewrite_motif`, `change_instrument`, `change_dynamics`, `remove_layer`, `thin_out`, `change_tone`, `change_space`, `not_understood` |
 | `scope.bars` | Explicit `{start, end}` (1-based, inclusive); wins over `phrase` |
 | `scope.phrase` | Resolved against the Score: "last N bars", "first N bars", "first half", "second half" (the half is `bars / 2`, rounded down), "bars A-B", "bar N", "from bar N", "until bar N", "whole" |
 | `scope.keep` | Bars the instruction keeps, as a phrase. Alone, the scope is the bars outside it (one range); with a phrase that overlaps it, the scope is narrowed (never widened) and the summary says so |
-| `layers[]` | Existing layers by id, name, preset or a word of it, class, or role ("drums", "melody"). Empty for `add_*`; for `rewrite_motif`, `change_dynamics` and `thin_out` empty means every unlocked layer that plays in the bars |
-| `params` | `preset`, `class`, `name`, `register`, `dynamics`, `gain_db` (-60..=24), `change` (softer/louder), `amount_db` (0 < x <= 24; default 4 softer, 3 louder), `grid`, `spoken`, `degrees`, `length_bars` (1..=8) |
+| `layers[]` | Existing layers by id, name, preset or a word of it, class, or role ("drums", "melody"). A reference equal to a layer id (ignoring case, spaces and dashes) selects only that layer (`resolve::layers_matching`), so `piano` never also reaches an `upright_piano` layer. Empty for `add_*`; for `rewrite_motif`, `change_dynamics`, `thin_out` and `change_tone` empty means every unlocked layer that plays in the bars; for `change_space` it means the layers playing there that have a reverb, plus (for `wetter`) the pitched, sustaining, non-drum ones |
+| `params` | `preset`, `class`, `name`, `register`, `dynamics`, `gain_db` (-60..=24), `change` (softer/louder), `amount_db` (0 < x <= 24; default 4 softer, 3 louder), `grid`, `spoken`, `degrees`, `length_bars` (1..=8), `tone` (`darker`/`brighter`, required for `change_tone`), `space` (`wetter`/`drier`/`dry`, required for `change_space`), `amount` (`a_little`/`normal`/`much`, default `normal`) |
 | `notes[]` | Remarks |
 
 ### Patch rules
@@ -189,6 +192,35 @@ whole score) and `scope.layers` = the target layers plus any new layer; it is ap
   octave transposition into the preset's range); bars -> `clear_bars` on the layer and a new
   layer `<layer>_<preset>` that plays the same patterns and phase in those bars. Drum <-> pitched
   swaps are refused.
+- `change_tone` (notes, patterns and clips never change): whole score -> one `update_layer` per
+  target. In order: a darker edit first lowers an `air` EQ an earlier brighter edit added (a
+  brighter edit first opens or removes an un-automated `tone_lp` low-pass); otherwise the
+  preset's tone controls move (`catalogue::ToneControls`: `tone` on every pitched synth, the
+  sampled pianos and the drums, plus `felt` on `felt_piano`) by 0.15 / 0.3 / 0.45 for
+  a_little / normal / much, `tone` down and `felt` up for darker (the reverse for brighter),
+  clamped to 0..=1; at the end of their range, or on a preset without them (the sound effects),
+  darker adds or lowers a `tone_lp` filter (low-pass, resonance 0; new at 6000 / 3000 / 1500 Hz,
+  existing x0.75 / x0.5 / x0.33, never below 250 Hz) and brighter adds or raises an `air` EQ
+  high shelf at 5 kHz (+2 / +4 / +6 dB, at most +12). "Make the piano muffled" on the felt
+  piano: `tone` 0.5 -> 0.2, `felt` 0.7 -> 1.0. Bars -> `apply` refuses `update_layer` sound
+  changes in a bar-scoped patch, so the patch has no `scope.bars` (only `scope.layers`) and its
+  one `update_layer` inserts a filter `tone_b<start>_<end>` first in the chain at `mix` 0 (a
+  low-pass at 3000 / 1500 / 800 Hz for darker, a high-pass tilt at 800 Hz for brighter) plus a
+  `step` lane on `effects.<id>.mix` that is 0 outside the bars and 1 (darker) or 0.35 / 0.6 /
+  0.85 (brighter) inside them. A filter at `mix` 0 passes its input through exactly, so the
+  layer, and with a frozen master gain the master, is bit-identical outside the window of
+  contracts/patch.md. A second edit of the same bars deepens that filter, or removes it when it
+  went the other way.
+- `change_space` (notes never change): whole score -> `update_layer {effects}`. `wetter` adds
+  the arranger's room reverb `room` (decay 1.8 s, predelay 12 ms, size 0.35, mix 0.18; for
+  much 2.6 s, size 0.6, mix 0.26) when the layer has none, otherwise raises each reverb's `mix`
+  by 0.06 / 0.12 / 0.2 (at most 0.6), `decay_s` by x(1 + 2.5 step) (at most 8 s) and `size` by
+  the step; `drier` scales `mix` by 0.75 / 0.55 / 0.3 and shortens decay and size; `dry`
+  removes every reverb (and lanes on them). Bars -> no bar scope, as for tone: a `step` lane on
+  each reverb's `mix` holding its own value outside the bars (`dry` is 0 inside); with no
+  reverb, `wetter` adds `room` at `mix` 0 and the lane sets it inside the bars. A layer with no
+  reverb to reduce is a no-change outcome that says so.
+- `not_understood`: no patch; see `understood()` above. `rewrite_motif` is never a fallback.
 
 Bar edits never mutate an existing pattern.
 
@@ -213,10 +245,40 @@ and "but/then/while", bar phrases, keep clauses ("keep", "leave", "don't touch")
 this order: add (+ melody words, or nothing named) -> `add_melody`; add -> `add_layer`; remove,
 drop, without, mute -> `remove_layer`; swap, replace, instead, change X to Y -> `change_instrument`;
 thin, sparser, simpler -> `thin_out`; softer/louder words -> `change_dynamics` ("a little" 2 dB,
-"much" 8/6 dB); otherwise `rewrite_motif`. Model providers get the same forced-tool request with
-a system prompt that lists the catalogue and the Score (layers, bars they play, locks);
-`tests/edit_claude_replay.rs` replays `ClaudeProvider` through a repair round and a widened
-answer.
+"much" 8/6 dB); new-notes words (rewrite, vary, variation, different, new, rework, "change /
+redo the melody, motif, rhythm, notes, pattern ...", a quoted spoken rhythm, a grid word with a
+named layer) -> `rewrite_motif`; otherwise `not_understood` (never a rewrite). Two readings come
+before all of these, unless the instruction adds a named instrument or a melody ("add a bell with
+lots of reverb" stays `add_layer`): space -> `change_space` (a reverb noun: reverb, room, space,
+ambience, echo, with no / without / remove / cut / off or "dry" -> `dry`, less / reduce / lower /
+down, "too much" or a drier word -> `drier`, otherwise `wetter`; with no reverb noun: dry ->
+`dry`; drier, closer, intimate, up front, "too wet" -> `drier`; wetter, bigger, hall, cathedral,
+spacious, distant, far away -> `wetter`); then tone ->
+`change_tone` (muffled, muted, darker, warmer, warmth, duller, mellow, rounder, "a softer tone",
+harsh, brittle, shrill, tinny, "cut the highs" -> `darker`; brighter, clearer, crisper, airy,
+"more air / treble", muddy, murky, boomy -> `brighter`; "less" or "not" up to two words before a
+quality flips it; "tone down" stays dynamics). Amounts: little, slightly, bit, touch, tad ->
+`a_little`; much, lot, very, really, completely, hall -> `much`. Layers a bar-less keep clause
+names ("keep the piano but make it sound muffled") are the targets of a tone or space edit that
+names none.
+
+The app's Feel sliders (`app/src/ui/views/overview.ts` `MACROS`) send fixed phrases; each maps
+to one intent (tested in `tests/edit_tone_space.rs` and `edit/rules.rs`):
+
+| Slider | Down | Up |
+| --- | --- | --- |
+| Mood | "Make the mood calmer" -> `change_dynamics` softer | "Make the mood more tense" -> `change_dynamics` louder |
+| Brightness | "Make it a little darker" -> `change_tone` darker, a_little | "Make it a little brighter" -> `change_tone` brighter, a_little |
+| Space | "Make it drier" -> `change_space` drier | "Give it more room" -> `change_space` wetter |
+| Energy | "Calmer, less energy" -> `change_dynamics` softer | "More energy" -> `change_dynamics` louder |
+
+Mood and Energy have no intent of their own; the nearest existing one that keeps the notes is
+dynamics (every unlocked layer, default 4 dB softer / 3 dB louder). Rewriting or thinning notes
+for a slider nudge would break "never rewrite a part unless asked". Model providers get the same forced-tool request with
+a system prompt that lists the catalogue, the presets with tone controls, the tone / space /
+not_understood rules and the Score (layers, bars they play, locks);
+`tests/edit_claude_replay.rs` replays `ClaudeProvider` through a repair round, a widened
+answer, a `change_tone` answer and a `not_understood` answer.
 
 ### Variations
 

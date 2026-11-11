@@ -19,8 +19,8 @@ pub mod rules;
 pub mod scope;
 
 pub use plan::{
-    DynamicsChange, EDIT_TOOL_NAME, EditIntent, EditIssue, EditIssueCode, EditParams, EditPlan,
-    EditScope, edit_issues_text, edit_schema,
+    ChangeAmount, DynamicsChange, EDIT_TOOL_NAME, EditIntent, EditIssue, EditIssueCode, EditParams,
+    EditPlan, EditScope, SpaceChange, ToneChange, edit_issues_text, edit_schema,
 };
 pub use resolve::Resolved;
 pub use rules::{EditRules, parse_edit};
@@ -32,6 +32,14 @@ use praxis_score::patch::{PatchError, Scope, ScorePatch};
 use praxis_score::project::Project;
 use praxis_score::{BarRange, Score};
 use resolve::bars_text;
+
+/// What the edit planner can do, in plain words; the summary of a `not_understood` edit ends
+/// with it.
+pub const EDIT_CAPABILITIES: &str = "I can add a layer or a melody, remove or mute a layer, \
+swap an instrument, make layers softer or louder, thin a part out, make the sound darker \
+(muffled, warmer) or brighter, give it more or less room (reverb), or write new notes (a new \
+motif, a different rhythm, a variation), for the whole sound or for some bars (\"in the last \
+four bars\", \"bars 9-12\")";
 
 /// Provider id of the offline rules. `plan_edit` answers edit requests to a provider with this id
 /// (`RuleProvider`) with [`EditRules`].
@@ -72,6 +80,12 @@ impl EditOutcome {
     /// True when the patch changed the Score.
     pub fn changed(&self) -> bool {
         !self.patch.ops.is_empty()
+    }
+
+    /// False when the instruction asked for no change the planner can make (`not_understood`):
+    /// the patch is empty and `summary` says what edits are possible.
+    pub fn understood(&self) -> bool {
+        self.plan.intent != EditIntent::NotUnderstood
     }
 }
 
@@ -167,11 +181,39 @@ Never widen the scope.\n\
 3. Arrangement is layering: prefer adding a layer in the scope to rewriting existing parts.\n\
 4. Restraint: subtle means soft dynamics; no risers, sweeps, impacts, booms, pads, whooshes or \
 fills unless the user asks.\n\
-5. Use only presets from this catalogue (name, kind, class):\n{}\n\
+5. Tone and space change the sound, never the notes. Muffled, muted, darker, warmer, duller, \
+mellow or a softer tone is `change_tone` with `params.tone` = `darker`; brighter, clearer, \
+crisper or more air is `brighter`. More room, bigger, a hall, wetter or more space is \
+`change_space` with `params.space` = `wetter`; drier, less reverb or closer is `drier`; no \
+reverb at all is `dry`. Give the size in `params.amount` (`a_little`, `normal`, `much`). Presets \
+with tone controls: {}.\n\
+6. Use `rewrite_motif` only when the user asks for new notes (a new or different melody, \
+motif or rhythm, a variation). Never rewrite notes to answer a request about sound, level or \
+space.\n\
+7. If the instruction asks for no change you can express, use `not_understood` and say why in \
+`notes`; nothing changes and the user is told what edits are possible.\n\
+8. Use only presets from this catalogue (name, kind, class):\n{}\n\
 The score:\n{}",
+        tone_listing(catalogue),
         catalogue.prompt_listing(),
         score_listing(score)
     )
+}
+
+/// Presets with tone controls and their defaults, for the system prompt.
+fn tone_listing(catalogue: &Catalogue) -> String {
+    catalogue
+        .presets
+        .iter()
+        .filter_map(|p| {
+            let t = p.tone?;
+            Some(match t.felt_default {
+                Some(f) => format!("{} (tone {:.2}, felt {:.2})", p.name, t.tone_default, f),
+                None => format!("{} (tone {:.2})", p.name, t.tone_default),
+            })
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// The tool request for an edit instruction.
@@ -189,7 +231,8 @@ pub fn edit_request(
         }],
         tool_name: EDIT_TOOL_NAME.to_string(),
         tool_description: "Submit the EditPlan for the instruction: intent, the bars to change \
-                           (and to keep), the target layers and parameters."
+                           (and to keep), the target layers and parameters. Tone and space \
+                           requests use change_tone / change_space and never change notes."
             .to_string(),
         input_schema: edit_schema(),
         max_tokens: 4_000,
@@ -275,10 +318,15 @@ fn try_edit(
             EditIssueCode::Schema,
             "",
             format!(
-                "{e}; the input must match the `{EDIT_TOOL_NAME}` schema (intent is one of                  add_layer, add_melody, rewrite_motif, change_instrument, change_dynamics,                  remove_layer, thin_out)"
+                "{e}; the input must match the `{EDIT_TOOL_NAME}` schema (intent is one of \
+                 add_layer, add_melody, rewrite_motif, change_instrument, change_dynamics, \
+                 remove_layer, thin_out, change_tone, change_space, not_understood)"
             ),
         )]
     })?;
+    if plan.intent == EditIntent::NotUnderstood {
+        return Ok((not_understood(plan, score), vec![]));
+    }
     // The scope is bound as soon as it resolves, even if the rest of the plan has problems.
     if let Ok((bars, whole, _)) = resolve::resolve_bars(&plan, score)
         && let Some(issue) = bound.check_bars(bars, whole)
@@ -314,6 +362,40 @@ fn try_edit(
         provider_id: String::new(),
     };
     Ok((outcome, built.repairs))
+}
+
+/// The outcome of a `not_understood` plan: no patch, the Score as it was, and a summary that
+/// says nothing changed and what edits are possible.
+fn not_understood(plan: EditPlan, score: &Score) -> EditOutcome {
+    let why = if plan.notes.is_empty() {
+        "the instruction asks for no change I can make".to_string()
+    } else {
+        plan.notes.join("; ")
+    };
+    let empty = ScorePatch {
+        description: "not_understood: no change".to_string(),
+        origin: praxis_score::patch::Origin::Model,
+        scope: Scope::default(),
+        ops: vec![],
+    };
+    EditOutcome {
+        patch: empty.clone(),
+        inverse: empty,
+        score: score.clone(),
+        scope: Scope::default(),
+        bars: BarRange {
+            start: 1,
+            end: score.bars.max(1),
+        },
+        summary: format!("Nothing changed: {why}. {EDIT_CAPABILITIES}."),
+        refused: vec![],
+        new_layers: vec![],
+        plan,
+        attempts: 0,
+        rounds: vec![],
+        repairs: vec![],
+        provider_id: String::new(),
+    }
 }
 
 fn rejected_path(e: &PatchError) -> String {
@@ -355,6 +437,12 @@ fn summarize(r: &resolve::Resolved, b: &build::Built, score: &Score) -> String {
             if !kept.is_empty() {
                 parts.push(format!("{} are unchanged", capitalise(&kept.join(" and "))));
             }
+        }
+        if matches!(
+            r.plan.intent,
+            EditIntent::ChangeTone | EditIntent::ChangeSpace
+        ) {
+            parts.push("The notes are unchanged".to_string());
         }
         let others: Vec<&str> = score
             .layers

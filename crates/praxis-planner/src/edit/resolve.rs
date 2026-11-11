@@ -3,10 +3,10 @@
 //! layer. Everything the patch builder needs, with issues written for a model to fix.
 
 use super::material::{is_drum, layer_preset};
-use super::plan::{EditIntent, EditIssue, EditIssueCode, EditPlan};
+use super::plan::{EditIntent, EditIssue, EditIssueCode, EditPlan, SpaceChange};
 use super::scope::{PHRASE_FORMS, resolve_phrase};
 use crate::catalogue::{Catalogue, PresetSpec, class_name};
-use praxis_score::{BarRange, GeneratorClass, Layer, Score};
+use praxis_score::{BarRange, EffectKind, GeneratorClass, Layer, Score};
 
 /// An edit plan resolved against a Score.
 #[derive(Clone, Debug, PartialEq)]
@@ -63,7 +63,7 @@ fn singular(s: &str) -> &str {
 }
 
 /// True when the reference names layer `l` (by id, name, preset or a word of it, class, or a
-/// role word).
+/// role word). This is the loose test; [`layers_matching`] first looks for an exact layer id.
 pub fn matches_layer(reference: &str, l: &Layer) -> bool {
     let r = norm(reference);
     let r1 = singular(&r).to_string();
@@ -92,6 +92,29 @@ pub fn matches_layer(reference: &str, l: &Layer) -> bool {
         "keys" | "key" => preset.contains("keys") || preset.contains("piano"),
         _ => false,
     }
+}
+
+/// The layers a reference names. A reference equal to an existing layer id (ignoring case,
+/// spaces and dashes) selects only that layer, so `piano` does not also reach an
+/// `upright_piano` melody; otherwise every layer [`matches_layer`] accepts.
+pub fn layers_matching<'a>(reference: &str, score: &'a Score) -> Vec<&'a Layer> {
+    let r = norm(reference);
+    let exact: Vec<&Layer> = score.layers.iter().filter(|l| norm(&l.id) == r).collect();
+    if !exact.is_empty() {
+        return exact;
+    }
+    score
+        .layers
+        .iter()
+        .filter(|l| matches_layer(reference, l))
+        .collect()
+}
+
+/// True when the layer has an algorithmic or convolution reverb.
+pub fn has_reverb(l: &Layer) -> bool {
+    l.effects
+        .iter()
+        .any(|e| matches!(e.kind, EffectKind::Reverb | EffectKind::ConvolutionReverb))
 }
 
 fn layer_list(score: &Score) -> String {
@@ -237,11 +260,7 @@ pub fn resolve(
     let mut targets: Vec<String> = Vec::new();
     let mut refused: Vec<String> = Vec::new();
     for (i, r) in plan.layers.iter().enumerate() {
-        let hits: Vec<&Layer> = score
-            .layers
-            .iter()
-            .filter(|l| matches_layer(r, l))
-            .collect();
+        let hits = layers_matching(r, score);
         if hits.is_empty() {
             issues.push(EditIssue::new(
                 EditIssueCode::UnknownLayer,
@@ -273,9 +292,35 @@ pub fn resolve(
             | EditIntent::RewriteMotif
             | EditIntent::ChangeDynamics
             | EditIntent::ThinOut
+            | EditIntent::ChangeTone
+            | EditIntent::ChangeSpace
     );
+    let mut remarks = remarks;
     if needs_target && plan.layers.is_empty() {
         match plan.intent {
+            EditIntent::ChangeSpace => {
+                // Layers with a reverb; a new reverb goes only on pitched, sustaining layers.
+                let wetter = plan.params.space == Some(SpaceChange::Wetter);
+                for l in &score.layers {
+                    let roomy = layer_preset(catalogue, l)
+                        .is_some_and(|p| p.pitched && p.sustaining && !is_drum(l));
+                    if plays_in(l, bars) && (has_reverb(l) || (wetter && roomy)) {
+                        if l.locked {
+                            refused.push(l.id.clone());
+                        } else {
+                            targets.push(l.id.clone());
+                        }
+                    }
+                }
+                if targets.is_empty() && refused.is_empty() {
+                    remarks.push(if wetter {
+                        "no layer playing there takes a reverb; name the layer to give room to"
+                            .to_string()
+                    } else {
+                        "no layer playing there has a reverb to reduce".to_string()
+                    });
+                }
+            }
             EditIntent::RemoveLayer | EditIntent::ChangeInstrument => issues.push(EditIssue::new(
                 EditIssueCode::NoTarget,
                 "/layers",
@@ -298,7 +343,12 @@ pub fn resolve(
             }
         }
     }
-    if needs_target && issues.is_empty() && targets.is_empty() && refused.is_empty() {
+    if needs_target
+        && issues.is_empty()
+        && targets.is_empty()
+        && refused.is_empty()
+        && !(plan.intent == EditIntent::ChangeSpace && plan.layers.is_empty())
+    {
         issues.push(EditIssue::new(
             EditIssueCode::NoTarget,
             "/layers",
@@ -416,6 +466,22 @@ pub fn resolve(
             preset = p;
         }
         _ => {}
+    }
+    if plan.intent == EditIntent::ChangeTone && plan.params.tone.is_none() {
+        issues.push(EditIssue::new(
+            EditIssueCode::Material,
+            "/params/tone",
+            "say which way the tone goes: `darker` (muffled, muted, warmer) or `brighter` \
+             (clearer, crisper, more air)",
+        ));
+    }
+    if plan.intent == EditIntent::ChangeSpace && plan.params.space.is_none() {
+        issues.push(EditIssue::new(
+            EditIssueCode::Material,
+            "/params/space",
+            "say which way the space goes: `wetter` (more room), `drier` (less reverb) or \
+             `dry` (no reverb)",
+        ));
     }
     if let Some(g) = plan.params.gain_db
         && !(-60.0..=24.0).contains(&g)
