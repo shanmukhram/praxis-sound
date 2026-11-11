@@ -66,15 +66,34 @@ fn mute(layer: &str, on: bool) -> Value {
 
 /// The fields the TypeScript `Take` reads, present and typed (app/src/engine/tauri/protocol.ts).
 fn assert_take_shape(t: &Value) {
-    for f in ["n", "who", "ask", "title", "say", "changed", "untouched", "render", "checks"] {
+    for f in [
+        "n",
+        "who",
+        "ask",
+        "title",
+        "say",
+        "changed",
+        "untouched",
+        "render",
+        "checks",
+    ] {
         assert!(t.get(f).is_some(), "take lacks `{f}`: {t}");
     }
     assert!(t["n"].is_u64());
     assert!(t["score"].is_object(), "take comes back with its score");
     let path = t["render"]["path"].as_str().unwrap();
-    assert!(Path::new(path).is_absolute() && Path::new(path).is_file(), "{path}");
+    assert!(
+        Path::new(path).is_absolute() && Path::new(path).is_file(),
+        "{path}"
+    );
     let r = &t["render"]["report"];
-    for f in ["sample_rate", "length_samples", "is_loop", "loudness_lufs", "true_peak_dbtp"] {
+    for f in [
+        "sample_rate",
+        "length_samples",
+        "is_loop",
+        "loudness_lufs",
+        "true_peak_dbtp",
+    ] {
         assert!(r.get(f).is_some(), "render report lacks `{f}`");
     }
     assert!(t["checks"]["checks"].is_array());
@@ -127,7 +146,7 @@ fn a_sound_from_first_take_to_export() {
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].path, sound);
     assert_eq!(list[0].takes, 1);
-    assert!(list[0].sub.contains("minor"), "{}", list[0].sub);
+    assert!(list[0].sub.starts_with("A minor · "), "{}", list[0].sub);
     assert!(list[0].sub.ends_with("loop"), "{}", list[0].sub);
 
     // `takes`: the whole history with scores and the undo state.

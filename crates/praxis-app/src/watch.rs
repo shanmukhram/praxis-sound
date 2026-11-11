@@ -90,7 +90,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let write = |rev: u64| {
-            let body = format!(r#"{{"format":"praxis-takes","version":1,"revision":{rev},"current":0,"takes":[]}}"#);
+            let body = format!(
+                r#"{{"format":"praxis-takes","version":1,"revision":{rev},"current":0,"takes":[]}}"#
+            );
             std::fs::write(dir.join(TAKES_FILE), body).unwrap();
         };
         write(1);

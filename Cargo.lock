@@ -3700,6 +3700,7 @@ name = "praxis-app"
 version = "0.1.0"
 dependencies = [
  "praxis-cli",
+ "praxis-instruments",
  "praxis-score",
  "serde",
  "serde_json",

@@ -72,13 +72,25 @@ pub fn patch_error_json(e: &PatchError) -> Value {
         PatchError::OutOfScope { index, op, reason } => {
             json!({"kind": "out_of_scope", "index": index, "op": op, "reason": reason})
         }
-        PatchError::UnknownId { index, op, what, id } => {
+        PatchError::UnknownId {
+            index,
+            op,
+            what,
+            id,
+        } => {
             json!({"kind": "unknown_id", "index": index, "op": op, "what": what, "id": id})
         }
-        PatchError::DuplicateId { index, op, what, id } => {
+        PatchError::DuplicateId {
+            index,
+            op,
+            what,
+            id,
+        } => {
             json!({"kind": "duplicate_id", "index": index, "op": op, "what": what, "id": id})
         }
-        PatchError::UnlockNotAllowed(layer) => json!({"kind": "unlock_not_allowed", "layer": layer}),
+        PatchError::UnlockNotAllowed(layer) => {
+            json!({"kind": "unlock_not_allowed", "layer": layer})
+        }
         PatchError::Invalid(message) => json!({"kind": "invalid", "message": message}),
     }
 }
@@ -333,7 +345,11 @@ fn safe_base(name: &str) -> String {
         })
         .collect();
     let s = s.trim_matches('-');
-    if s.is_empty() { "sound".into() } else { s.into() }
+    if s.is_empty() {
+        "sound".into()
+    } else {
+        s.into()
+    }
 }
 
 /// Writes the chosen kinds of a take (or the live score) into the destination folder.

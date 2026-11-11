@@ -64,9 +64,16 @@ fn describe(project: &Path) -> Option<(String, String)> {
     let s = score_summary(&score);
     let secs = s["duration_s"].as_f64().unwrap_or(0.0).round() as u64;
     let looped = s["playback"]["mode"].as_str() == Some("loop");
+    // "a minor" -> "A minor", as the app writes keys everywhere else.
+    let key = s["key"].as_str().unwrap_or("?");
+    let mut chars = key.chars();
+    let key: String = chars
+        .next()
+        .map(|c| c.to_uppercase().chain(chars).collect())
+        .unwrap_or_default();
     let sub = format!(
         "{} · {}:{:02}{}",
-        s["key"].as_str().unwrap_or("?"),
+        key,
         secs / 60,
         secs % 60,
         if looped { " loop" } else { "" }
@@ -112,7 +119,9 @@ pub fn list_sounds(root: &Path) -> Vec<SoundInfo> {
 /// A folder name from the first words of a request: "a calm 30-second felt piano loop in A
 /// minor" -> "calm-30-second-felt-piano-loop". Never empty, never a reserved Windows name.
 pub fn slug(text: &str) -> String {
-    const SKIP: [&str; 10] = ["a", "an", "the", "make", "in", "of", "with", "and", "for", "to"];
+    const SKIP: [&str; 10] = [
+        "a", "an", "the", "make", "in", "of", "with", "and", "for", "to",
+    ];
     let words: Vec<String> = text
         .split(|c: char| !c.is_alphanumeric() && c != '-')
         .map(|w| w.trim_matches('-').to_lowercase())
