@@ -288,9 +288,12 @@ mod tests {
 
     const KEY: &str = "test-placeholder-not-a-key";
 
+    /// The headers of each request sent.
+    type Seen = Arc<Mutex<Vec<Vec<(String, String)>>>>;
+
     struct Canned {
         responses: Mutex<Vec<(u16, String)>>,
-        seen: Arc<Mutex<Vec<Vec<(String, String)>>>>,
+        seen: Seen,
     }
 
     impl Poster for Canned {
@@ -310,9 +313,7 @@ mod tests {
         }
     }
 
-    fn client(
-        responses: Vec<(u16, String)>,
-    ) -> (HttpClient, Arc<Mutex<Vec<Vec<(String, String)>>>>) {
+    fn client(responses: Vec<(u16, String)>) -> (HttpClient, Seen) {
         let seen = Arc::new(Mutex::new(Vec::new()));
         let mut c = HttpClient::with_parts(
             "http://test.invalid/v1/messages".into(),

@@ -191,7 +191,7 @@ mod tests {
         assert_eq!(silent.centroid_hz, None);
         assert_eq!(silent.rms_dbfs, FLOOR_DB);
         let c = compare(
-            &[b.clone()],
+            std::slice::from_ref(&b),
             &[LayerMeasure {
                 id: "b".into(),
                 ..a

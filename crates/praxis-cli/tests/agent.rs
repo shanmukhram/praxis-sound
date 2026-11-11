@@ -763,10 +763,13 @@ fn refusals_and_api_failures() {
 
 // --------------------------------------------------------------------------- replay over HTTP
 
+/// The headers of each request sent.
+type Headers = Arc<Mutex<Vec<Vec<(String, String)>>>>;
+
 /// Serves recorded SSE streams in order and keeps the headers it was sent.
 struct Replay {
     streams: Mutex<Vec<String>>,
-    headers: Arc<Mutex<Vec<Vec<(String, String)>>>>,
+    headers: Headers,
 }
 
 impl Poster for Replay {

@@ -90,14 +90,25 @@ listen.
 
 ## Cost
 
-From the request sizes (`request_sizes_for_the_cost_estimate` in `tests/agent.rs`) and the
-replay fixtures: the cached prefix (tools and system prompt) is about 11-12 thousand tokens; a
-typical edit turn ("make the piano muffled") makes 4 requests, adds about 3-6 thousand tokens of
-history (tool results, mostly the layer and the measurements) and writes about 1-2 thousand
-output tokens including thinking. At Claude Opus 5.5 prices (input $4, output $20 per million
-tokens; cache writes 1.25x for 5 minutes and 2x for one hour; cache reads $0.20 per million):
+Measured from the requests the tests send (`request_sizes_for_the_cost_estimate` and the
+`conversation.json` of `a_conversation_new_sound_muffled_then_brighter`), converted at about
+3.5 bytes per token (no `count_tokens` call was possible without a key, so the token numbers
+are estimates; the live run's `agent.usage` gives the real ones):
 
-- First request of a session (prefix written to the one-hour cache): about $0.10.
-- A typical edit turn with the prefix cached: about $0.04-0.08.
-- The same turn without any cache hits: about $0.20-0.25.
-- A new sound (the ScorePlan is written as output): about $0.08-0.15 with cache hits.
+- Cached prefix (tools 8.2 KB + system prompt 28.2 KB): about 10 000 tokens.
+- "Make the piano muffled": 4 requests; the turn adds about 6 KB of history (the request with
+  the sound's state 0.5 KB, the piano layer 2.6 KB, the measurements 2.3 KB, the calls). Input
+  over the 4 requests is about 53 000 tokens, almost all of it the repeated prefix and history.
+  Output (thinking at effort medium, the calls, the reply): an estimated 1 500-2 500 tokens.
+
+At Claude Opus 5.5 prices ($4 input, $20 output per million tokens; cache reads $0.20 per
+million; cache writes 1.25x for five minutes, 2x for one hour):
+
+| Request | With cache hits | Without cache hits |
+| --- | --- | --- |
+| A typical edit turn ("make the piano muffled", 4 requests) | about $0.06-0.08 | about $0.25 |
+| A new sound (3 requests, the ScorePlan written as output) | about $0.08-0.12 | about $0.20 |
+| First request after an hour idle (prefix rewritten to the one-hour cache) | +$0.08 | - |
+
+Most of a cached turn's cost is output tokens; most of an uncached turn's is the repeated
+prefix, so the cache matters: check `cache_read_input_tokens` in the live run.
