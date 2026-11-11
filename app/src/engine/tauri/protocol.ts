@@ -145,6 +145,7 @@ export function toVerifyReport(c: Partial<VerifyReport> | null | undefined): Ver
     passed: Boolean(k.passed),
     measured: String(k.measured ?? ''),
     expected: String(k.expected ?? ''),
+    inconclusive: typeof k.inconclusive === 'boolean' ? k.inconclusive : undefined,
   }));
   return {
     checks,

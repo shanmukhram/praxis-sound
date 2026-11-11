@@ -99,7 +99,8 @@ pub struct TakeRecord {
     /// What stayed identical, in words (measured on the renders).
     pub untouched: String,
     pub render: TakeRender,
-    /// The verify report (`VerifyReport`) plus `passed`, `failed[]` and `layers_checked[]`.
+    /// The verify report (`VerifyReport`) plus `passed`, `failed[]`, `inconclusive[]`, `summary` and
+    /// `layers_checked[]`.
     pub checks: Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opens: Option<ViewName>,

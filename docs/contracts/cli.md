@@ -12,7 +12,7 @@ the JSON payloads below only gain fields, never lose or rename them.
 
 | Command | Input | Payload |
 | --- | --- | --- |
-| `render <score\|project> -o out.wav [--format 16\|24\|32f\|flac\|flac16\|flac24] [--sample-rate N] [--stems DIR] [--seed N] [--skip-missing]` | score JSON or `.praxis` | `output, stems[], sample_rate, frames, duration_s, is_loop, loudness_lufs, true_peak_dbtp, applied_gain_db, blocked_layers[], render_seconds, realtime_factor, format, skipped_layers[], warnings[], check{VerifyReport fields, passed, failed[]}` |
+| `render <score\|project> -o out.wav [--format 16\|24\|32f\|flac\|flac16\|flac24] [--sample-rate N] [--stems DIR] [--seed N] [--skip-missing]` | score JSON or `.praxis` | `output, stems[], sample_rate, frames, duration_s, is_loop, loudness_lufs, true_peak_dbtp, applied_gain_db, blocked_layers[], render_seconds, realtime_factor, format, skipped_layers[], warnings[], check{VerifyReport fields, passed, failed[], inconclusive[], summary}` |
 | `validate <score>` | score JSON | `valid, errors[], warnings[]` (issues: `code, path, message`) |
 | `schema [--write]` | - | `score, patch, plan` schemas, or `written[]` |
 | `generate (--prompt TEXT [--provider offline\|claude] \| --plan FILE\|-) [--seed N] -o project.praxis [--render out.wav]` | brief or agent-written ScorePlan | `project, score_summary{key, bpm, bars, layers[], sections[]}, provider, provider_note, attempts, repairs[], render?` |
