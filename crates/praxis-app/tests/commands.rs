@@ -359,3 +359,64 @@ fn only_a_real_sound_folder_gets_its_audio_served() {
     // Reaching the plain folder through the sound with `..` is still refused.
     refused(&sound.join("..").join("documents"));
 }
+
+/// The assistant through the app's `ask` (WP-AG2): each step reaches the progress callback the
+/// shell turns into `praxis://agent` events, and a turn without a take comes back as a reply.
+/// A scripted model stands in for the API (no key, no network).
+#[test]
+fn the_assistant_reports_its_steps_and_replies_without_a_take() {
+    use praxis_app::commands::{AGENT_EVENT, AgentProgress};
+    use praxis_cli::agent::AgentEvent;
+    use praxis_cli::agent::testing::{ScriptedModel, message, tool_use};
+    use std::sync::{Arc, Mutex};
+
+    let sound = scratch("assistant-reply").join("logo");
+    let q = "Should it be a short rising sting or a soft chime?";
+    let model = ScriptedModel::new(vec![
+        message(
+            vec![tool_use(
+                "r1",
+                "read_sound",
+                json!({"part": "summary", "layer": "", "take": 0}),
+            )],
+            "tool_use",
+        ),
+        message(
+            vec![tool_use("q1", "ask_user", json!({"question": q}))],
+            "tool_use",
+        ),
+    ]);
+    let seen: Arc<Mutex<Vec<AgentProgress>>> = Arc::default();
+    let sink = seen.clone();
+    let name = s(&sound);
+    let progress: praxis_cli::agent::Progress = Arc::new(move |e: &AgentEvent| {
+        sink.lock().unwrap().push(AgentProgress {
+            sound: name.clone(),
+            event: e.clone(),
+        })
+    });
+    let mut req = ask(&s(&sound), "a sound for my app's logo", None);
+    req.provider = None;
+    let v = commands::ask_with(req, Some(progress), Some(model)).expect("a reply, not an error");
+    assert_eq!(v["take"], Value::Null);
+    assert_eq!(v["no_take"], json!("question"));
+    assert_eq!(v["reply"], json!(q));
+
+    let seen = seen.lock().unwrap().clone();
+    let steps: Vec<Value> = seen
+        .iter()
+        .map(|p| serde_json::to_value(p).unwrap())
+        .filter(|p| p["event"] == "step")
+        .collect();
+    assert_eq!(AGENT_EVENT, "praxis://agent");
+    // The event the window gets: the sound, then the AgentEvent's own fields.
+    assert_eq!(
+        steps[0],
+        json!({"sound": s(&sound), "event": "step", "n": 1, "tool": "read_sound", "words": "Reading the sound"})
+    );
+    assert_eq!(steps[1]["words"], json!("Asking you a question"));
+    assert!(seen.iter().any(|p| matches!(
+        &p.event,
+        AgentEvent::Finished { outcome, .. } if outcome == "question"
+    )));
+}

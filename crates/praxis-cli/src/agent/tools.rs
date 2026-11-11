@@ -2,7 +2,7 @@
 //!
 //! Every schema is strict (`strict: true`, `additionalProperties: false`, every property
 //! required). The API allows at most 20 strict tools, 24 optional parameters and 16 union-typed
-//! parameters per request, so the table has 16 tools, no optional and no union parameters:
+//! parameters per request, so the table has 17 tools, no optional and no union parameters:
 //! "none" is said with an empty string or a 0. The three large documents (a ScorePlan, an
 //! EditPlan, a ScorePatch) travel as JSON text and are checked by the same code the CLI and MCP
 //! use (`compose_plan`, `compose_edit`, `apply`), whose errors point into the document; their
@@ -239,8 +239,36 @@ pub fn definitions() -> Vec<Value> {
             "Throw away every change in the draft and start again from the current take.",
             object(&[]),
         ),
+        tool(
+            FINISH_TURN,
+            "End your turn. Write your reply to the person as text in the same message, then \
+             call this as the only tool in that message. Your changes become the take; its \
+             title is `title`.",
+            object(&[
+                (
+                    "title",
+                    string(
+                        "The take's title: 3 to 6 words in sentence case saying what changed in \
+                         sound terms, without \"I\" (\"Muffled felt piano\", \"Softer kick in \
+                         the second half\"). \"\" when nothing changed.",
+                    ),
+                ),
+                (
+                    "no_take",
+                    one_of(
+                        &["", "refused", "nothing_to_change"],
+                        "\"\" when you changed the sound. Otherwise why not: `refused` (you \
+                         could not or would not do it, e.g. the layer is locked) or \
+                         `nothing_to_change` (an answer, advice, an undo or a view).",
+                    ),
+                ),
+            ]),
+        ),
     ]
 }
+
+/// The tool that ends a turn with the take's title (handled by the turn loop, not [`run`]).
+pub const FINISH_TURN: &str = "finish_turn";
 
 /// What a tool call returned.
 #[derive(Clone, Debug, PartialEq)]
@@ -381,6 +409,11 @@ pub(crate) fn run(name: &str, input: &Value, ctx: &mut ToolCtx) -> ToolResult {
             Ok(()) => ToolResult::ok(json!({"discarded": true})),
             Err(e) => ToolResult::fail(err_text(&e)),
         },
+        FINISH_TURN => {
+            let mut r = ToolResult::ok(json!({"finished": true}));
+            r.ends_turn = true;
+            r
+        }
         other => ToolResult::fail(format!(
             "there is no tool `{other}`; the tools are: {}",
             definitions()

@@ -17,6 +17,7 @@ import type {
   ApplyResult,
   AskRequest,
   AskResult,
+  TakeResult,
   BlankSound,
   EngineAdapter,
   MakeTakeOptions,
@@ -39,6 +40,8 @@ import type {
 } from '../EngineAdapter';
 import { type Bridge, isCmdError } from './bridge';
 import {
+  AGENT_EVENT,
+  type AgentEventPayload,
   agentName,
   type AppliedPayload,
   type AskPayload,
@@ -113,12 +116,19 @@ function patchError(e: unknown): PatchError | undefined {
   return isCmdError(e) && e.patch_error ? (e.patch_error as PatchError) : undefined;
 }
 
+/** The words of a reply without a take. */
+function replyOf(p: AskPayload): string {
+  return (p.reply ?? p.agent?.reply ?? '').trim() || 'Nothing was changed.';
+}
+
 export class TauriEngine implements EngineAdapter {
   readonly kind = 'tauri' as const;
   readonly label = 'Praxis engine';
 
   /** Folder of the open sound; null for a new sound before its first take. */
   private sound: string | null = null;
+  /** The folder a new sound's first request was asked in when it made no take yet (a question). */
+  private unborn: string | null = null;
   private revision = 0;
   private takeList: Take[] = [];
   private currentN = 0;
@@ -209,6 +219,7 @@ export class TauriEngine implements EngineAdapter {
 
   private reset(): void {
     this.sound = null;
+    this.unborn = null;
     this.revision = 0;
     this.takeList = [];
     this.currentN = 0;
@@ -316,12 +327,33 @@ export class TauriEngine implements EngineAdapter {
       if (this.isDraft()) return { ok: false, message: DRAFT_ASK } as AskResult;
       let sound = this.sound;
       if (!sound) {
-        sound = await this.bridge.invoke<string>('new_sound_path', { text: request.text });
+        // A new sound whose first request got a question keeps its folder (and the assistant's
+        // conversation) for the answer.
+        sound = this.unborn ?? (await this.bridge.invoke<string>('new_sound_path', { text: request.text }));
       }
+      const progress = request.onProgress;
+      const stop = progress
+        ? await this.bridge
+            .listen<AgentEventPayload>(AGENT_EVENT, (e) => {
+              if (e.sound !== sound) return;
+              if (e.event === 'step') progress({ kind: 'step', n: e.n, words: e.words });
+              else if (e.event === 'step_done') progress({ kind: 'step_done', n: e.n, ok: e.ok, words: e.words });
+              else if (e.event === 'said') progress({ kind: 'said', text: e.text });
+            })
+            .catch(() => null)
+        : null;
       try {
-        const { take: record } = await this.bridge.invoke<AskPayload>('ask', {
+        const payload = await this.bridge.invoke<AskPayload>('ask', {
           req: { sound, text: request.text, who: 'You', scope: request.scope ?? null },
         });
+        const record = payload.take;
+        if (!record) {
+          // A reply without a take: a question, a refusal, an undo, a view.
+          if (this.sound === sound) await this.refresh();
+          else this.unborn = sound;
+          return { ok: true, take: null, reply: replyOf(payload), noTake: payload.no_take ?? 'nothing_to_change' } as AskResult;
+        }
+        this.unborn = null;
         if (this.sound !== sound) {
           this.revision = await this.bridge.invoke<number>('watch_sound', { sound });
           this.sound = sound;
@@ -335,6 +367,8 @@ export class TauriEngine implements EngineAdapter {
         return { ok: true, take } as AskResult;
       } catch (e) {
         return { ok: false, message: message(e), error: patchError(e) } as AskResult;
+      } finally {
+        stop?.();
       }
     });
     if (created) {
@@ -355,9 +389,15 @@ export class TauriEngine implements EngineAdapter {
       if (!this.sound) return { ok: false, message: 'Make a first take before editing it by hand.' } as AskResult;
       try {
         // A hand edit is an `ask` carrying the explicit patch (provider "hand").
-        const { take: record } = await this.bridge.invoke<AskPayload>('ask', {
+        const payload = await this.bridge.invoke<AskPayload>('ask', {
           req: { sound: this.sound, text: ask, patch, who: 'You', scope: scope ?? null },
         });
+        const record = payload.take;
+        if (!record) {
+          // A lock, mute or solo: the live score changed, no take was made.
+          await this.refresh();
+          return { ok: true, take: null, reply: replyOf(payload), noTake: payload.no_take ?? 'live' } as AskResult;
+        }
         await this.refresh(true);
         const take = this.takeList.find((t) => t.n === record.n);
         if (!take) return { ok: false, message: `Take ${record.n} was made but could not be read back.` } as AskResult;
@@ -423,20 +463,20 @@ export class TauriEngine implements EngineAdapter {
     return this.presetCache.map((x) => ({ ...x }));
   }
 
-  async makeTake(ask: string, options: MakeTakeOptions = {}): Promise<AskResult> {
+  async makeTake(ask: string, options: MakeTakeOptions = {}): Promise<TakeResult> {
     return this.exclusive(async () => {
-      if (!this.sound) return { ok: false, message: 'Start a sound first.' } as AskResult;
+      if (!this.sound) return { ok: false, message: 'Start a sound first.' } as TakeResult;
       try {
-        const { take: record } = await this.bridge.invoke<AskPayload>('make_take', {
+        const { take: record } = await this.bridge.invoke<AskPayload & { take: TakeRecord }>('make_take', {
           req: { sound: this.sound, ask, who: 'You', title: options.title ?? null, say: options.say ?? null, scope: options.scope ?? null },
         });
         await this.refresh(true);
         const take = this.takeList.find((t) => t.n === record.n);
-        if (!take) return { ok: false, message: `Take ${record.n} was made but could not be read back.` } as AskResult;
+        if (!take) return { ok: false, message: `Take ${record.n} was made but could not be read back.` } as TakeResult;
         this.takeSubs.forEach((cb) => cb(take));
-        return { ok: true, take } as AskResult;
+        return { ok: true, take } as TakeResult;
       } catch (e) {
-        return { ok: false, message: message(e), error: patchError(e) } as AskResult;
+        return { ok: false, message: message(e), error: patchError(e) } as TakeResult;
       }
     });
   }
@@ -452,16 +492,16 @@ export class TauriEngine implements EngineAdapter {
     };
   }
 
-  async restore(n: number): Promise<AskResult> {
+  async restore(n: number): Promise<TakeResult> {
     return this.exclusive(async () => {
       const take = this.takeList.find((t) => t.n === n);
-      if (!take || !this.sound) return { ok: false, message: `There is no take ${n}.` } as AskResult;
+      if (!take || !this.sound) return { ok: false, message: `There is no take ${n}.` } as TakeResult;
       try {
         await this.bridge.invoke('restore', { req: { sound: this.sound, n } });
         await this.refresh(true);
-        return { ok: true, take: this.takeList.find((t) => t.n === n) ?? take } as AskResult;
+        return { ok: true, take: this.takeList.find((t) => t.n === n) ?? take } as TakeResult;
       } catch (e) {
-        return { ok: false, message: `Could not go back to take ${n}: ${message(e)}`, error: patchError(e) } as AskResult;
+        return { ok: false, message: `Could not go back to take ${n}: ${message(e)}`, error: patchError(e) } as TakeResult;
       }
     });
   }

@@ -53,29 +53,38 @@ fn tool_result(id: &str, content: String, is_error: bool) -> Value {
     v
 }
 
-/// A short take title from the reply: its first clause, at most about 40 characters.
-pub fn title_from(reply: &str) -> String {
-    let first = reply
-        .split(['.', ';', ':', '\n', ','])
-        .next()
-        .unwrap_or("")
-        .trim();
-    let first = first.split(" by ").next().unwrap_or(first).trim();
-    let mut out = String::new();
-    for w in first.split_whitespace() {
-        if !out.is_empty() && out.len() + w.len() + 1 > 40 {
-            break;
+/// Why a turn made no take (`no_take` in the payload).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoTake {
+    /// The assistant asked a clarifying question (`ask_user`).
+    Question,
+    /// It could not or would not do it (a locked layer, a declined request).
+    Refused,
+    /// It stepped the history back or forward, or went back to a take.
+    Undo,
+    /// It only opened a view.
+    View,
+    /// Nothing needed changing (an answer, advice, out of steps before any change).
+    NothingToChange,
+}
+
+impl NoTake {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            NoTake::Question => "question",
+            NoTake::Refused => "refused",
+            NoTake::Undo => "undo",
+            NoTake::View => "view",
+            NoTake::NothingToChange => "nothing_to_change",
         }
-        if !out.is_empty() {
-            out.push(' ');
-        }
-        out.push_str(w);
     }
-    if out.is_empty() {
-        "Assistant edit".to_string()
-    } else {
-        out
-    }
+}
+
+/// What the assistant said with `finish_turn`.
+#[derive(Clone, Debug, Default)]
+struct Finish {
+    title: String,
+    no_take: String,
 }
 
 /// The sound's state as the model reads it at the top of a request.
@@ -194,13 +203,19 @@ fn state_text(
 }
 
 /// Runs one assistant turn for `ask` (see the module docs). The payload is `ask`'s, plus
-/// `agent`; a turn without a take fails with the reply as the message and the `agent` record as
-/// the only issue.
+/// `agent`. A turn without a take (a question, a refusal, an undo, a view, nothing to change) is
+/// a reply, not an error: `take: null`, `no_take` (why) and `reply`. Only a real failure (the
+/// API unreachable, no key, a render that failed) is an error, with the reply as the message and
+/// the `agent` record as the only issue.
 pub fn run_ask(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
     let dir = resolve_sound(&req.sound)?;
     let text = req.text.trim().to_string();
     if text.is_empty() {
         return Err(OpError::new(ErrorCode::Error, "say what to make or change"));
+    }
+    if opts.client.is_none() {
+        // A test address that is not this machine is refused before anything is written.
+        crate::ops::generate::claude_url_override()?;
     }
     let _turn = SoundLock::acquire_file(&dir, AGENT_LOCK_FILE)?;
     let sound = Sound::open(&dir)?;
@@ -282,6 +297,9 @@ pub fn run_ask(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
     let mut wrap_up_sent = false;
     let mut cutoffs = 0u32;
     let mut fail_code = ErrorCode::ProviderFailed;
+    let mut finish: Option<Finish> = None;
+    // What the turn did without a take, for `no_take`.
+    let (mut undone, mut viewed, mut locked) = (false, false, false);
 
     let (mut outcome, mut reply) = loop {
         emit(AgentEvent::Thinking {
@@ -363,10 +381,30 @@ pub fn run_ask(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
         let over_time = started.elapsed() > config.time_limit;
         let mut results = Vec::new();
         let mut ended = false;
+        let mut finished = false;
         for call in &calls {
             let id = call["id"].as_str().unwrap_or("");
             let name = call["name"].as_str().unwrap_or("");
             let input = &call["input"];
+            if name == tools::FINISH_TURN && !truncated && !ended {
+                if calls.len() > 1 {
+                    results.push(tool_result(
+                        id,
+                        "Not run: call finish_turn as the only tool in its message, once you \
+                         have seen the results of your other calls."
+                            .into(),
+                        true,
+                    ));
+                } else {
+                    finish = Some(Finish {
+                        title: input["title"].as_str().unwrap_or("").to_string(),
+                        no_take: input["no_take"].as_str().unwrap_or("").to_string(),
+                    });
+                    results.push(tool_result(id, "Turn finished.".into(), false));
+                    finished = true;
+                }
+                continue;
+            }
             let refuse = if truncated {
                 Some(
                     "Not run: your message was cut off (max_tokens) before this call was \
@@ -412,11 +450,30 @@ pub fn run_ask(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
                 words: step_words,
                 result: r.short(),
             });
+            match name {
+                "undo_redo" => undone |= r.ok && r.value["moved"] == json!(true),
+                "restore_take" => undone |= r.ok,
+                "open_view" => viewed |= r.ok && !r.value["opened"].is_null(),
+                _ => {}
+            }
+            locked |= !r.ok && r.error.contains("Only the person can unlock");
             results.push(tool_result(id, r.content(), !r.ok));
             ended |= r.ends_turn;
         }
         if truncated {
             cutoffs += 1;
+        }
+        if finished {
+            // Not sent: the next request is added to this message.
+            conv.push_user(results);
+            let outcome = if draft.dirty() || draft.take_made.is_some() {
+                Outcome::Take
+            } else if wrap_up_sent {
+                Outcome::OutOfSteps
+            } else {
+                Outcome::NoChange
+            };
+            break (outcome, said);
         }
         if ended {
             // Not sent: the person's answer is added to this message next time.
@@ -463,10 +520,19 @@ pub fn run_ask(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
             (Some(s), Some(base)) => format!("{text} ({})", scope_label(base, s)),
             _ => text.clone(),
         };
+        // The assistant's own title, else a summary of what changed (never a clipped reply).
+        let title = req
+            .title
+            .clone()
+            .or_else(|| finish.as_ref().and_then(|f| words::clean_title(&f.title)))
+            .unwrap_or_else(|| match &draft.score {
+                Some(score) => words::summary_title(draft.base.as_ref(), score),
+                None => "Assistant edit".to_string(),
+            });
         let take_words = Words {
             who: normalize_who(Some(AGENT_NAME), DEFAULT_WHO),
             ask: ask_text,
-            title: title_from(&say),
+            title,
             say: say.clone(),
             scope: req.scope.clone(),
             provider: format!("agent:{}", config.model),
@@ -564,19 +630,41 @@ pub fn run_ask(req: &AskRequest, opts: &AskOptions) -> Result<Value, OpError> {
             v["agent"] = agent;
             Ok(v)
         }
-        None => {
-            let code = match outcome {
-                Outcome::Failed => fail_code,
-                Outcome::Declined => ErrorCode::ProviderFailed,
-                Outcome::NoChange => ErrorCode::PatchRejected,
-                _ => ErrorCode::Error,
-            };
-            Err(OpError::new(code, reply.clone()).with_issues(vec![json!({
+        None if outcome == Outcome::Failed => Err(OpError::new(fail_code, reply.clone())
+            .with_issues(vec![json!({
                 "code": "agent",
                 "path": "",
                 "message": reply,
                 "agent": agent,
-            })]))
+            })])),
+        None => {
+            // A reply without a take: a question, a refusal, an undo, a view, or nothing to do.
+            let no_take = match outcome {
+                Outcome::Question => NoTake::Question,
+                Outcome::Declined => NoTake::Refused,
+                _ if undone => NoTake::Undo,
+                _ if locked || finish.as_ref().is_some_and(|f| f.no_take == "refused") => {
+                    NoTake::Refused
+                }
+                _ if viewed => NoTake::View,
+                _ => NoTake::NothingToChange,
+            };
+            let sound = Sound::open(&dir)?;
+            let project = sound.project.as_ref();
+            Ok(json!({
+                "sound": dir.display().to_string(),
+                "project": sound.project_path().display().to_string(),
+                "revision": sound.takes.revision,
+                "current": sound.takes.current,
+                "take": null,
+                "no_take": no_take.as_str(),
+                "reply": reply,
+                "score_summary": project.map(|p| ops::score_summary(&p.score)),
+                "can_undo": project.is_some_and(|p| p.can_undo()),
+                "can_redo": project.is_some_and(|p| p.can_redo()),
+                "provider_note": null,
+                "agent": agent,
+            }))
         }
     }
 }
@@ -586,12 +674,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn titles_are_short_first_clauses() {
+    fn no_take_reasons_have_their_contract_names() {
+        let all = [
+            NoTake::Question,
+            NoTake::Refused,
+            NoTake::Undo,
+            NoTake::View,
+            NoTake::NothingToChange,
+        ];
+        let names: Vec<&str> = all.iter().map(|n| n.as_str()).collect();
         assert_eq!(
-            title_from("Muffled the felt piano by lowering its tone to 0.2. Notes unchanged."),
-            "Muffled the felt piano"
+            names,
+            ["question", "refused", "undo", "view", "nothing_to_change"]
         );
-        assert_eq!(title_from(""), "Assistant edit");
-        assert!(title_from(&"word ".repeat(40)).len() <= 40);
     }
 }

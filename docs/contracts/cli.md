@@ -138,13 +138,22 @@ that sees a new revision finds the project and audio it refers to. Writers take 
 - `who`: `"You"` or `"Agent · <name>"` (a bare name is prefixed; the CLI defaults to `"You"`,
   the MCP tools to `"Agent · <MCP client name>"`).
 - `patch`: null for take 1. `changed`: `{layer: [first, last]}` of the bars whose expanded notes
-  differ; a layer whose sound settings (instrument, gain, pan, effects, mute, solo) changed, or
-  that was added or removed, counts its whole extent; a tempo/key/metre/length/master change
-  counts every layer. Empty for take 1.
+  differ, plus the bars where its effects or automation sound different: an automation lane
+  counts where its value differs from the old one (the old lane, or the fixed value); a new
+  effect counts only where it is heard (nowhere when bypassed; where its `mix` is above 0 for
+  `filter`, `compressor`, `delay`, `reverb`, `convolution_reverb` and `chorus`, which pass their
+  input through unchanged at `mix` 0; the fixed `mix` must be 0 too for a one-shot); gain and pan
+  lanes glide over one 128-sample block, so a change of theirs starting at a bar line also counts
+  the bar before. A layer whose other sound settings (instrument, gain, pan, mute, solo) changed,
+  whose existing effects changed or were removed, or that was added or removed, counts its whole
+  extent; a tempo/key/metre/length/master change counts every layer. Empty for take 1.
 - `identical_bars`: runs of bars whose master samples are bit-identical to take `from`
   (measured on the two WAVs). `untouched` says it in words; when no bar is bit-identical (a
   recirculating reverb on a changed layer leaves rounding-level differences), it says which bars
-  are identical note for note instead. Each existing layer the take did not change is listed
+  are identical note for note instead; when each bar's largest difference is measured below
+  -120 dBFS (the patch contract's rounding level), it says so with the residue: "Bars 3–12
+  identical note for note to take 4; only reverb rounding differs (at most -131 dBFS)." (bars
+  holding the change's audible tail are left out). Each existing layer the take did not change is listed
   ("Soft kick unchanged.").
 - `provider`: the planner that answered, `hand` for an explicit patch, `variation` for a kept
   variation. `seed`: defaults to the take number.
@@ -171,6 +180,12 @@ that sees a new revision finds the project and audio it refers to. Writers take 
   records the scope appended to the request ("... (bars 13–16, Felt piano)").
 - **Hand edit**: with `patch` (a ScorePatch) the patch is committed as given; `title` defaults
   to "Hand edit[, bars A–B]" and `say` to "Changed by hand: <description>.".
+- **Lock, mute, solo**: a `patch` whose ops only lock or unlock layers (`set_lock`) or set
+  `muted` / `solo` (`update_layer` with nothing else) changes how the live score plays, as in the
+  app: it is committed to the project (undoable) and `revision` grows, with no render and no
+  take. Payload `{sound, project, revision, current, take: null, no_take: "live", reply,
+  score_summary, can_undo, can_redo, provider_note: null}`; `reply` is "<description>; no take
+  was made.". Exit code 0.
 - An edit that changes nothing fails with `patch_rejected` (its summary is the message) and
   makes no take. The new take is rendered to `takes/<n>/mix.wav`, checked, saved as version
   `take-<n>` and becomes `current`.
@@ -199,34 +214,44 @@ unchanged.
 
 **The turn.** One Claude Messages API tool loop (`claude-opus-5-5`, `output_config.effort`
 `medium` unless set, adaptive thinking left at the model default, `tool_choice: auto`, every tool
-`strict`, streaming, server-side refusal fallbacks and server-side compaction as betas) with 16
+`strict`, streaming, server-side refusal fallbacks and server-side compaction as betas) with 17
 tools: `read_sound`, `catalogue`, `get_schema`, `compose_sound` (a ScorePlan), `compose_edit` (an
 EditPlan), `apply_patch` (any ScorePatch op; locks and scope enforced by `apply`), `set_params`
 (instrument parameters of one layer), `render_check` (the checks plus loudness, true peak, onsets
 on the grid, per-layer spectral centroid, low-band and high-band energy and RMS, each against the current
 take, and the bars bit-identical to it), `make_variations`, `keep_variation`, `restore_take`,
-`undo_redo`, `open_view`, `analyze_clip`, `ask_user`, `discard_changes`. Changes collect in a
+`undo_redo`, `open_view`, `analyze_clip`, `ask_user`, `discard_changes`, `finish_turn {title,
+no_take}` (ends the turn with the take's title; called alone, after the other results). A sound
+change held to the scope's bars by automation (a lane at the old value outside them, or a new
+effect at zero mix there) passes the scope check, which reads `changed` above. Changes collect in a
 draft of the score; with a `scope` every change is checked against it (another existing layer,
 or bars outside it, is refused to the model). The turn ends when the model answers without a
-tool call, calls `ask_user`, declines (`stop_reason: refusal`), or uses up 16 tool calls or 10
+tool call, calls `ask_user` or `finish_turn`, declines (`stop_reason: refusal`), or uses up 16 tool calls or 10
 minutes (it is then told to wrap up and gets one more response). The system prompt is
 `docs/agents/praxis-skill/assistant.md`, five sections of `SKILL.md` and the preset and effect
 tables generated from code.
 
 **The take.** One request makes at most one take: the draft, committed as one patch (`origin:
 model`) through the same take path as above, with `who` `"Agent · Assistant"`, `provider`
-`"agent:<model>"`, `say` the assistant's reply and `title` its first clause. `keep_variation`
+`"agent:<model>"`, `say` the assistant's reply and `title` the one it gave with `finish_turn` (3-6 words,
+tidied; one that is empty, starts with "I" or runs past 8 words is not used), else a summary of
+what changed ("Felt piano sound", "New upright piano, bars 13–16", "Kick level"); never the
+reply clipped. `keep_variation`
 inside a turn is that turn's take. `restore_take` and `undo_redo` move the history at once and
 make no take.
 
 **Payload.** As `ask`, plus `agent {outcome, reply, question, model, turn, steps[{tool, words,
 ok, result}], usage{requests, input_tokens, output_tokens, cache_creation_input_tokens,
 cache_read_input_tokens}}`. `outcome`: `take`, `question`, `no_change`, `out_of_steps`,
-`declined`, `failed`. A turn that makes no take fails: `message` is the assistant's reply (for a
-question, the question) and `issues[0]` is `{code: "agent", path: "", message, agent}`. Codes:
-`error` (a question, out of steps), `patch_rejected` (nothing changed, e.g. a locked layer),
-`provider_failed` (declined, or the API failed), `no_api_key`, or the code of a failed final
-render.
+`declined`, `failed`. A turn that makes no take is a reply, not an error (exit code 0): `take:
+null`, `reply` (for a question, the question) and `no_take`: `question` (`ask_user`; the next
+request answers it), `refused` (a locked layer, the model declining, or `finish_turn` with
+`refused`), `undo` (`undo_redo` or `restore_take` moved the history), `view` (only a view was
+opened), `nothing_to_change` (an answer, advice, or out of steps before any change); with
+`revision`, `current`, `score_summary`, `can_undo`, `can_redo` as after the turn. Only a real
+failure is an error: `message` is the reply and `issues[0]` is `{code: "agent", path: "",
+message, agent}`, with `provider_failed` (the API failed), `no_api_key`, or the code of a failed
+final render.
 
 **Progress.** `AgentEvent` (`started`, `thinking`, `said`, `step {n, tool, words}`, `step_done
 {n, tool, ok, words}`, `take_made {n}`, `finished {outcome, reply}`) through
@@ -243,6 +268,17 @@ and felt", "Rendering", "Checking: 8 of 8 passed"). `praxis ask` prints the step
   Written atomically at the end of each turn.
 - `.agent-lock`: held for a whole turn, so two turns on one sound run one after the other.
 - `agent/draft.wav`, `agent/current.wav`: the last `render_check` renders (not takes).
+
+**API address.** `PRAXIS_CLAUDE_URL` (a local stand-in for the API, used by tests) is accepted only
+with an `http://` or `https://` loopback host: `localhost`, `127.x.y.z` or `[::1]`, no user
+info. Anything else fails with `error` ("PRAXIS_CLAUDE_URL must point at this machine ...")
+before a request is sent or a file written, for the assistant and the planner's Claude provider
+alike; the HTTP client follows no redirects. The key can never be sent elsewhere by an
+environment variable.
+
+**App.** The desktop shell's `ask` command sends each `AgentEvent` to the window as
+`praxis://agent` with the sound: `{sound, event: "step", n, tool, words}` and so on; the thread
+shows the steps under the request while the turn runs.
 
 **CLI.** `praxis ask <sound> <text> [--provider offline|claude] [--model M] [--effort
 low|medium|high|xhigh|max] [--max-steps N]`. **MCP.** `praxis_ask` takes `effort` and

@@ -26,6 +26,11 @@ struct Client {
 
 impl Client {
     fn spawn(packs: Option<&Path>, cwd: &Path) -> Client {
+        Client::spawn_with(packs, cwd, &[])
+    }
+
+    /// With extra environment (a fake key and a loopback stand-in for the API).
+    fn spawn_with(packs: Option<&Path>, cwd: &Path, env: &[(&str, &str)]) -> Client {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_praxis-mcp"));
         cmd.current_dir(cwd)
             .env("PRAXIS_KEYCHAIN", "off")
@@ -34,6 +39,9 @@ impl Client {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
         match packs {
             Some(p) => cmd.env("PRAXIS_PACKS", p),
             // A folder with no packs, so a stray ./packs is not picked up.
@@ -728,4 +736,78 @@ fn takes_over_stdio() {
     assert_eq!(kept["take"]["n"], json!(3));
     assert_eq!(kept["take"]["from"], json!(2));
     assert_eq!(kept["take"]["changed"], json!({"piano": [13, 16]}));
+}
+
+/// Serves recorded Messages API streams on a loopback port, one per request, then stops.
+fn replay_server(streams: Vec<String>) -> (String, std::thread::JoinHandle<usize>) {
+    use std::io::Read;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!(
+        "http://127.0.0.1:{}/v1/messages",
+        listener.local_addr().unwrap().port()
+    );
+    let handle = std::thread::spawn(move || {
+        let mut n = 0;
+        for body in streams {
+            let (mut conn, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(conn.try_clone().unwrap());
+            let mut len = 0usize;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line.trim().is_empty() {
+                    break;
+                }
+                if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    len = v.trim().parse().unwrap();
+                }
+            }
+            let mut req = vec![0u8; len];
+            reader.read_exact(&mut req).unwrap();
+            write!(
+                conn,
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\n\
+                 connection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+            n += 1;
+        }
+        n
+    });
+    (url, handle)
+}
+
+/// A turn of the sound assistant that ends with a question is a reply over MCP too: `ok: true`,
+/// `take: null`, `no_take: "question"`, the reply and the steps (WP-AG2).
+#[test]
+fn praxis_ask_returns_a_reply_without_a_take() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("../praxis-cli/tests/fixtures/agent");
+    let stream = |n: &str| std::fs::read_to_string(fixtures.join(n)).unwrap();
+    let (url, server) = replay_server(vec![stream("read_summary.sse"), stream("ask_user.sse")]);
+    let dir = temp_dir("ask-reply");
+    let mut c = Client::spawn_with(
+        None,
+        &dir,
+        &[
+            ("PRAXIS_CLAUDE_URL", &url),
+            ("ANTHROPIC_API_KEY", "test-placeholder-not-a-key-9d1e"),
+        ],
+    );
+    initialize(&mut c);
+    let sound = at(&dir, "sounds/logo");
+    let v = c.ok(
+        "praxis_ask",
+        json!({"sound": s(&sound), "text": "make a sound for my app's logo"}),
+    );
+    assert_eq!(v["command"], json!("ask"));
+    assert_eq!(v["take"], Value::Null);
+    assert_eq!(v["no_take"], json!("question"));
+    assert_eq!(
+        v["reply"],
+        json!("Should the logo sound be a short rising sting or a soft tonal chime?")
+    );
+    assert_eq!(v["agent"]["outcome"], json!("question"));
+    assert_eq!(v["agent"]["steps"][0]["tool"], json!("read_sound"));
+    assert_eq!(server.join().unwrap(), 2);
 }

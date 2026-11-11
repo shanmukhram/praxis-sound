@@ -191,10 +191,31 @@ export interface AskRequest {
   scope?: TakeScope;
   /** A dropped reference clip (FR-11). */
   clipFile?: File | { name: string };
+  /** Called with each step of the sound assistant while it works (the desktop engine). */
+  onProgress?: (p: AskProgress) => void;
 }
 
-/** A take, or why no take was made (a refused patch, or a request the planner cannot do). */
-export type AskResult = { ok: true; take: Take } | { ok: false; message: string; error?: PatchError };
+/** One step of the sound assistant's work, in plain words. */
+export type AskProgress =
+  | { kind: 'step'; n: number; words: string }
+  | { kind: 'step_done'; n: number; ok: boolean; words: string }
+  | { kind: 'said'; text: string };
+
+/**
+ * Why a request made no take though it went fine: the assistant asked a question, refused (a
+ * locked layer), stepped the history (undo), only opened a view, found nothing to change, or the
+ * request only locked, muted or soloed layers (`live`).
+ */
+export type NoTake = 'question' | 'refused' | 'undo' | 'view' | 'nothing_to_change' | 'live';
+
+/**
+ * A take; or a reply without a take (`take: null`, shown as the assistant's answer, never as an
+ * error); or why the request failed (a refused patch, a request that could not be carried out).
+ */
+export type AskResult = TakeResult | { ok: true; take: null; reply: string; noTake: NoTake };
+
+/** A take, or why none was made (making a take by hand, going back). */
+export type TakeResult = { ok: true; take: Take } | { ok: false; message: string; error?: PatchError };
 
 export interface TakeState {
   takes: Take[];
@@ -286,11 +307,11 @@ export interface EngineAdapter {
    * Renders, checks and records the live score as one take: the first take of a blank sound, or
    * every hand edit since the current take. Refused when nothing changed or there is no layer.
    */
-  makeTake(ask: string, options?: MakeTakeOptions): Promise<AskResult>;
+  makeTake(ask: string, options?: MakeTakeOptions): Promise<TakeResult>;
   takes(): Promise<Take[]>;
   state(): TakeState;
   /** Goes back to take n through a patch, so it can be undone. */
-  restore(n: number): Promise<AskResult>;
+  restore(n: number): Promise<TakeResult>;
   undo(): Promise<boolean>;
   redo(): Promise<boolean>;
   /** Suggestion chips generated from the current sound. */

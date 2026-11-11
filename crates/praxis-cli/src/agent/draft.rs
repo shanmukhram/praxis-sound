@@ -122,9 +122,14 @@ impl Draft {
                     "this would change {} of layer `{layer}`, outside the request's scope ({}). \
                      Change only bars {}-{} of `{}`: notes in those bars (write_bars, clear_bars, \
                      compose_edit with those bars), or a new layer that plays only there. A \
-                     change to a layer's sound (instrument parameters, gain, pan, effects, \
-                     automation) counts as a change to every bar it plays, so it cannot be held \
-                     to the scope: say so to the person and offer to apply it to the whole layer",
+                     change to a layer's fixed settings (instrument parameters, gain, pan, an \
+                     existing effect's parameters) counts as a change to every bar it plays. To \
+                     hold a change of sound to the bars, automate it in an unscoped \
+                     update_layer: an automation lane that keeps the old value outside the bars \
+                     (a `step` curve with points at the first bar and at the bar after the \
+                     last), or a new effect whose `mix` is 0 outside the bars (and 0 as its \
+                     fixed value). If that does not fit, say so to the person and offer to \
+                     apply the change to the whole layer",
                     bars_label(r),
                     scope_label(base, scope),
                     b.start,
@@ -271,8 +276,9 @@ pub(crate) fn explain(e: &PatchError, patch: &ScorePatch) -> String {
              clear_bars, place_clip) or add a layer that plays only there. An update_layer that \
              changes the instrument, gain, pan, effects or automation changes the whole layer: \
              send it in a patch without `scope.bars` (leave `scope` out). To make such a change \
-             audible only in some bars, put automation points over those bars in that unscoped \
-             update_layer (e.g. an effect's `mix` at 0 outside the bars)",
+             audible only in some bars, put automation in that unscoped update_layer that keeps \
+             the old value outside the bars (e.g. `instrument.tone` on a `step` curve, or a new \
+             reverb whose `mix` is 0 outside the bars); the request's scope counts it bar by bar",
         );
     }
     if let PatchError::LockedLayer(id) = e {

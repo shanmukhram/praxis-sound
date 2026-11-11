@@ -46,7 +46,8 @@ listen.
 4. **"Undo what you just did to the piano."**
    Either `undo_redo` (take 2 becomes current, no new take; the turn then has no take and the
    reply says take 2 is current again) or a `set_params` back to take 2's values (a new take).
-   Both are right; the reply must say which.
+   Both are right; the reply must say which. With `undo_redo`: `praxis ask` exits 0 with `ok:
+   true`, `take: null`, `no_take: "undo"`.
 
 5. **"Make the kick a little softer in the second half."** (with the kick present only in bars
    9-16, "second half" is the same bars)
@@ -61,23 +62,49 @@ listen.
    1-3 hold the new layer's tail wrapped round the loop).
 
 7. **Lock the kick in the app, then ask "make the kick louder".**
+   (CLI: `praxis ask live-1 "Lock the kick" --patch lock.json` with a `set_lock` op: exit 0,
+   `take: null`, `no_take: "live"`, no take and no render, `revision` one higher; undoable.)
    The patch on the kick is refused by the tools; the reply says the kick is locked and nothing
-   changed. No take (`praxis ask` exits 1 with `patch_rejected` and the reply as the message).
+   changed. No take: exit 0, `ok: true`, `take: null`, `no_take: "refused"`.
 
 8. **"Make it better."**
    Too vague: the assistant should call `ask_user` with one short question (or make one small,
-   clearly described change). No take for a question; the next request answers it and the
-   assistant continues from there.
+   clearly described change). No take for a question (exit 0, `no_take: "question"`); the next
+   request answers it and the assistant continues from there.
 
 9. **"Give me three alternatives for the last four bars of the piano and keep the one whose
    checks all pass."**
-   Steps: `make_variations` (piano, bars 13-16, count 3), `keep_variation`. One take.
+   Steps: `make_variations` (piano, bars 13-16, count 3), `keep_variation`. One take. If no bar
+   is bit-identical (the piano's reverb), `untouched` reads "Bars ... identical note for note to
+   take N; only reverb rounding differs (at most -1xx dBFS)".
 
 10. **"Show me the notes."**
-    Steps: `open_view` notes. The app shows "Notes opened by Assistant". No take.
+    Steps: `open_view` notes. The app shows "Notes opened by Assistant". No take (exit 0,
+    `no_take: "view"`).
+
+11. **In the app, select bars 5-8 of the piano and ask "make these bars muffled".**
+    (CLI: `praxis ask live-1 "make these bars muffled" --layer piano --bars 5-8`.)
+    Steps: an unscoped `apply_patch` adding an `instrument.tone` lane (step curve: the old value,
+    a lower one from bar 5, the old value again from bar 9), or `set_params`-like change held to
+    the bars by automation; `render_check`. Take: `changed` is `{"piano": [5, 8]}`; the scope
+    is not refused; bars 1-4 and 11-16 of the master are identical (bit-identical or below
+    -120 dBFS). If the assistant instead refuses ("a tone change applies to the whole layer"),
+    record it: the prompt should have led it to automation.
 
 ## What to look at
 
+- **Every turn without a take** (requests 4, 7, 8, 10) exits 0 with `ok: true`, `take: null`,
+  `reply` and `no_take`; in the app it shows as the assistant's reply (labelled "Assistant"),
+  never as an error.
+- **Titles** (`praxis takes live-1`): 3-6 words saying what changed ("Muffled felt piano"),
+  never a clipped sentence ("I made a 16-bar"). The assistant gives them through `finish_turn`;
+  check that most turns end with it (in `agent.steps` it is not listed; in `conversation.json`
+  it is the last `tool_use` of the turn).
+- **The app** shows the steps under the request while the assistant works ("Reading the
+  sound", "Changing the felt piano's tone", "Rendering", "Checking: 8 of 8 passed"), replaced
+  by the take or the reply.
+- **Key safety**: `PRAXIS_CLAUDE_URL` must be unset; set to anything but a loopback address it
+  is refused before any request.
 - `agent.steps` reads like a sensible plan; no tool fails more than once in a row.
 - `agent.usage`: from the second request of a turn on, `cache_read_input_tokens` is around
   10 000 or more and `cache_creation_input_tokens` small; if `cache_read_input_tokens` stays 0,

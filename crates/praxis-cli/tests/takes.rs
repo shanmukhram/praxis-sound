@@ -449,15 +449,29 @@ fn takes_restore_variations_and_views() {
     .unwrap_err();
     assert_eq!(stale.code, ErrorCode::PatchRejected);
 
-    // A hand edit from a panel view: an explicit patch (mute the kick) becomes take 4.
-    let kick_update: Value = json!({
+    // A mute sent as a patch changes how the live score plays: no take (WP-AG2).
+    let mute: Value = json!({
         "description": "mute the kick",
         "origin": "user",
         "ops": [{"op": "update_layer", "id": "kick", "update": {"muted": true}}]
     });
-    let mut hand = ask(&sound, "mute the kick");
+    let mut muting = ask(&sound, "mute the kick");
+    muting.patch = Some(serde_json::from_value(mute).unwrap());
+    let muted = ops::ask(&muting).unwrap();
+    assert_eq!(muted["take"], Value::Null);
+    assert_eq!(muted["no_take"], json!("live"));
+    assert_eq!(muted["current"], json!(3));
+
+    // A hand edit from a panel view: an explicit patch (the kick quieter) becomes take 4.
+    let kick_update: Value = json!({
+        "description": "quieter kick",
+        "origin": "user",
+        "ops": [{"op": "update_layer", "id": "kick", "update": {"gain_db": -9.0}}]
+    });
+    let mut hand = ask(&sound, "quieter kick");
     hand.patch = Some(serde_json::from_value(kick_update).unwrap());
     let four = ops::ask(&hand).unwrap();
+    assert_eq!(four["take"]["n"], json!(4));
     assert_eq!(four["take"]["provider"], json!("hand"));
     assert_eq!(four["take"]["title"], json!("Hand edit"));
     assert_eq!(four["take"]["changed"], json!({"kick": [9, 16]}));

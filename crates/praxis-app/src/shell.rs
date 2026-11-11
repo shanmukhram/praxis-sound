@@ -5,10 +5,11 @@
 use crate::audio::{
     AudioService, FakeOutput, LayerLive, Opener, TRANSPORT_EVENT, TransportStatus, cpal_opener,
 };
-use crate::commands::{self, CmdError, CmdResult, ExportArgs};
+use crate::commands::{self, AGENT_EVENT, AgentProgress, CmdError, CmdResult, ExportArgs};
 use crate::hand::{self, MakeTakeArgs, NewSound, NewSoundArgs};
 use crate::sounds::{self, SoundInfo};
 use crate::watch::{WatchHandle, read_revision, watch};
+use praxis_cli::agent::{AgentEvent, Progress};
 use praxis_cli::ops;
 use praxis_score::BarRange;
 use serde::Serialize;
@@ -125,9 +126,27 @@ fn watch_sound(
 
 // ---------------------------------------------------------------- takes (praxis_cli::ops)
 
+/// A request on a sound. While the sound assistant works, each of its steps goes to the window
+/// as an [`AGENT_EVENT`] (`{sound, event: "step", n, tool, words}`, ...), so the thread shows
+/// "Reading the sound", "Rendering", "Checking: 8 of 8 passed" under the request.
 #[tauri::command]
-async fn ask(req: ops::AskRequest) -> CmdResult<Value> {
-    blocking(move || commands::ask(req)).await
+async fn ask(app: tauri::AppHandle, req: ops::AskRequest) -> CmdResult<Value> {
+    let progress = agent_progress(app, req.sound.clone());
+    blocking(move || commands::ask_with(req, Some(progress), None)).await
+}
+
+/// The progress callback that sends each step to the window. Emitting only queues the message,
+/// so it never blocks the turn.
+fn agent_progress(app: tauri::AppHandle, sound: String) -> Progress {
+    Arc::new(move |e: &AgentEvent| {
+        let _ = app.emit(
+            AGENT_EVENT,
+            AgentProgress {
+                sound: sound.clone(),
+                event: e.clone(),
+            },
+        );
+    })
 }
 
 #[tauri::command]

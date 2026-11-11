@@ -170,10 +170,40 @@ pub fn sounds(root: &Path) -> Vec<SoundInfo> {
 // ------------------------------------------------------------------ takes (the shared history)
 
 /// A request in words, or a hand edit (`patch`), on a sound: `ops::ask` plans, renders, checks
-/// and records the take. The take comes back with its score.
-pub fn ask(mut req: ops::AskRequest) -> CmdResult<Value> {
+/// and records the take. The take comes back with its score. A turn of the sound assistant
+/// that makes no take (a question, a refusal, an undo, a view) comes back as a reply:
+/// `take: null`, `no_take` and `reply`; so does a lock, mute or solo sent as a patch.
+pub fn ask(req: ops::AskRequest) -> CmdResult<Value> {
+    ask_with(req, None, None)
+}
+
+/// Event the shell sends to the window for each step of the sound assistant's turn.
+pub const AGENT_EVENT: &str = "praxis://agent";
+
+/// One step of the assistant's turn, for the sound it works on: the [`AGENT_EVENT`] payload,
+/// `{sound, event: "step", n, tool, words}` and so on (`praxis_cli::agent::AgentEvent`).
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct AgentProgress {
+    pub sound: String,
+    #[serde(flatten)]
+    pub event: praxis_cli::agent::AgentEvent,
+}
+
+/// [`ask`] with the assistant's steps passed to `progress` as they happen (the shell sends them
+/// to the window as events), and optionally another model client (tests use a scripted one).
+/// `progress` runs on the blocking thread that runs the turn, so it must not block.
+pub fn ask_with(
+    mut req: ops::AskRequest,
+    progress: Option<praxis_cli::agent::Progress>,
+    client: Option<std::sync::Arc<dyn praxis_cli::agent::ModelClient>>,
+) -> CmdResult<Value> {
     req.include_score = true;
-    Ok(ops::ask(&req)?)
+    let opts = ops::AskOptions {
+        client,
+        progress,
+        ..ops::AskOptions::default()
+    };
+    Ok(ops::ask_with(&req, &opts)?)
 }
 
 /// The sound's whole history (`ops::takes`), each take with its score.

@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { TauriEngine, TAKES_EVENT, TRANSPORT_EVENT, type AudioLike, type PlaybackInfo } from '../../src/engine/tauri/TauriEngine';
 import type { Bridge } from '../../src/engine/tauri/bridge';
 import type { AskPayload, SoundInfo, TakeRecord, TakesPayload, TransportEventPayload, TransportStatusPayload, ViewRequest } from '../../src/engine/tauri/protocol';
-import { toTake, toWho } from '../../src/engine/tauri/protocol';
+import { AGENT_EVENT, toTake, toWho } from '../../src/engine/tauri/protocol';
+import { applyProgress, making } from '../../src/ui/agentWork';
 import type { Meters, Take, TakeState, TransportPosition } from '../../src/engine/EngineAdapter';
 import { applyPatch } from '../../src/engine/mock/apply';
 import { muteLayer } from '../../src/score/patchBuilder';
@@ -133,6 +134,15 @@ class FakeBridge implements Bridge {
     (this.listeners.get(event) ?? []).forEach((cb) => cb(payload));
   }
 
+  /** What `progressSeen` returned while the assistant worked (set by a test). */
+  agentSteps: string[] = [];
+  /** Read while a request is still running: what the window shows under it at that moment. */
+  progressSeen: () => string[] = () => [];
+
+  listeners_(event: string): number {
+    return (this.listeners.get(event) ?? []).length;
+  }
+
   /** What the watcher does when takes.json gets a new revision. */
   touch(sound: FakeSound): void {
     if (this.watched === sound.path) this.emit(TAKES_EVENT, { sound: sound.path, revision: sound.revision });
@@ -170,6 +180,50 @@ class FakeBridge implements Bridge {
         const s = this.sound(req.sound as string);
         const text = req.text as string;
         if (text.includes('impossible')) throw { code: 'patch_rejected', message: 'layer `piano` is locked', patch_error: { kind: 'locked_layer', layer: 'piano' } };
+        // The sound assistant at work: its steps go out as events while the command runs.
+        const step = (e: Record<string, unknown>) => this.emit(AGENT_EVENT, { sound: s.path, ...e });
+        const reply = (no_take: AskPayload['no_take'], words: string): T => {
+          const out: AskPayload = { sound: s.path, revision: s.revision, current: s.current, take: null, no_take, reply: words, can_undo: s.undo.length > 0, can_redo: false };
+          return out as T;
+        };
+        if (text === 'make it better') {
+          step({ event: 'started', request: text });
+          step({ event: 'step', n: 1, tool: 'read_sound', words: 'Reading the sound' });
+          step({ event: 'step_done', n: 1, tool: 'read_sound', ok: true, words: 'Done' });
+          // Another sound's assistant is not this request's.
+          this.emit(AGENT_EVENT, { sound: 'elsewhere', event: 'step', n: 9, tool: 'render_check', words: 'Rendering elsewhere' });
+          this.agentSteps.push(...this.progressSeen());
+          return reply('question', 'What would make it better for you: a warmer tone, more space, or more movement?');
+        }
+        if (text === 'undo what you just did') {
+          step({ event: 'step', n: 1, tool: 'undo_redo', words: 'Undoing the last step' });
+          step({ event: 'step_done', n: 1, tool: 'undo_redo', ok: true, words: 'Done' });
+          const prev = s.takes.find((t) => t.n === s.current - 1)!;
+          s.current = prev.n;
+          s.live = clone(prev.score!) as NScore;
+          s.revision += 1;
+          return reply('undo', `Take ${prev.n} is current again; say "redo" to bring the change back.`);
+        }
+        if (text === 'make the piano muffled' && s.live) {
+          step({ event: 'step', n: 1, tool: 'read_sound', words: 'Reading the Felt piano' });
+          step({ event: 'step_done', n: 1, tool: 'read_sound', ok: true, words: 'Done' });
+          step({ event: 'step', n: 2, tool: 'set_params', words: "Changing the Felt piano's tone and felt" });
+          step({ event: 'step_done', n: 2, tool: 'set_params', ok: true, words: 'Done' });
+          step({ event: 'step', n: 3, tool: 'render_check', words: 'Rendering' });
+          step({ event: 'step_done', n: 3, tool: 'render_check', ok: true, words: 'Checking: 8 of 8 passed' });
+          this.agentSteps.push(...this.progressSeen());
+        }
+        // A lock, mute or solo sent as a patch changes the live score and makes no take.
+        const ops = ((req.patch as ScorePatch | undefined)?.ops ?? []) as unknown as Record<string, unknown>[];
+        const liveOnly = ops.length > 0 && ops.every((o) => o.op === 'set_lock' || (o.op === 'update_layer' && Object.keys(o.update as object).every((k) => k === 'muted' || k === 'solo')));
+        if (liveOnly && s.live) {
+          const r = applyPatch(s.live, req.patch as ScorePatch);
+          if (!r.ok) throw { code: 'patch_rejected', message: 'refused', patch_error: r.error };
+          s.undo.push({ patch: req.patch as ScorePatch, inverse: r.inverse, current: [s.current, s.current] });
+          s.live = r.score;
+          s.revision += 1;
+          return reply('live', `${(req.patch as ScorePatch).description ?? 'Changed'}; no take was made.`);
+        }
         let score: NScore;
         let patch: ScorePatch | null = null;
         if (!s.live) score = fixture();
@@ -345,7 +399,7 @@ describe('TauriEngine over a fake Tauri bridge', () => {
 
     const r = await engine.ask({ text: 'A calm 30-second felt piano loop in A minor' });
     expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    if (!r.ok || !r.take) return;
     expect(r.take.n).toBe(1);
     expect(r.take.who).toBe('You');
     expect(r.take.render.audioUrl).toBe(bridge.fileUrl(`${bridge.root}\\calm-30-second-felt-piano-loop\\takes\\1\\mix.wav`));
@@ -421,7 +475,7 @@ describe('TauriEngine over a fake Tauri bridge', () => {
 
     const scope = { layer: 'piano', bars: { start: 13, end: 16 } };
     const r = await engine.ask({ text: 'softer', scope });
-    expect(r.ok && r.take.n).toBe(2);
+    expect(r.ok && r.take?.n).toBe(2);
     expect(bridge.calls.filter((c) => c.cmd === 'ask').at(-1)!.args).toEqual({ req: { sound: s.path, text: 'softer', who: 'You', scope } });
 
     const no = await engine.ask({ text: 'something impossible' });
@@ -429,11 +483,67 @@ describe('TauriEngine over a fake Tauri bridge', () => {
 
     const score = engine.state().score!;
     const patch = muteLayer(score, score.layers[0].id, true);
+    // A mute sent as a hand edit changes the live score and makes no take (as `praxis ask --patch`).
     const e = await engine.edit(patch, 'Mute the piano by hand');
-    expect(e.ok && e.take.n).toBe(3);
+    expect(e).toMatchObject({ ok: true, take: null, noTake: 'live' });
+    expect(engine.state().takes.length).toBe(2);
+    expect(engine.state().score!.layers[0].muted).toBe(true);
     const call = bridge.calls.filter((c) => c.cmd === 'ask').at(-1)!.args as { req: Record<string, unknown> };
     expect(call.req.patch).toEqual(patch);
     expect(call.req.text).toBe('Mute the piano by hand');
+  });
+
+  it("shows the assistant's steps live and its replies without a take (WP-AG2)", async () => {
+    const { bridge, engine, takes } = setup();
+    const s = bridge.sound(`${bridge.root}\\calm`);
+    s.addTake('You', 'calm loop', fixture(), null);
+    await engine.openSound(s.path);
+
+    // A take: the steps arrive while the command runs, as the thread draws them.
+    const m = making('make the piano muffled', 'You');
+    bridge.progressSeen = () => m.steps.map((l) => `${l.state}: ${l.words}`);
+    const r = await engine.ask({ text: 'make the piano muffled', onProgress: (p) => applyProgress(m, p) });
+    expect(r.ok && r.take?.n).toBe(2);
+    expect(bridge.agentSteps).toEqual([
+      'done: Reading the Felt piano',
+      "done: Changing the Felt piano's tone and felt",
+      'done: Rendering',
+      'done: Checking: 8 of 8 passed',
+    ]);
+    expect(bridge.listeners_(AGENT_EVENT)).toBe(0);
+
+    // A question: a reply, not an error, and no take; only this sound's steps are shown.
+    bridge.agentSteps = [];
+    const q = making('make it better', 'You');
+    bridge.progressSeen = () => q.steps.map((l) => l.words);
+    const asked = await engine.ask({ text: 'make it better', onProgress: (p) => applyProgress(q, p) });
+    expect(asked).toEqual({ ok: true, take: null, noTake: 'question', reply: 'What would make it better for you: a warmer tone, more space, or more movement?' });
+    expect(bridge.agentSteps).toEqual(['Reading the sound']);
+    expect(engine.state().takes.length).toBe(2);
+    expect(bridge.listeners_(AGENT_EVENT)).toBe(0);
+
+    // Undo through the assistant: take 1 is current again, no new take.
+    const before = takes.length;
+    const undo = await engine.ask({ text: 'undo what you just did' });
+    expect(undo).toMatchObject({ ok: true, take: null, noTake: 'undo' });
+    expect(undo.ok && !undo.take && undo.reply).toContain('Take 1 is current again');
+    expect(engine.state().current).toBe(1);
+    expect(engine.state().takes.length).toBe(2);
+    expect(takes.length).toBe(before);
+  });
+
+  it("keeps a new sound's folder when its first request gets a question", async () => {
+    const { bridge, engine } = setup();
+    await engine.openSound(null);
+    const asked = await engine.ask({ text: 'make it better' });
+    expect(asked).toMatchObject({ ok: true, take: null, noTake: 'question' });
+    expect(engine.soundPath()).toBe(null);
+    // The answer goes to the same folder, where the assistant's conversation is.
+    const r = await engine.ask({ text: 'a warmer calm piano loop' });
+    expect(r.ok && r.take?.n).toBe(1);
+    const asks = bridge.calls.filter((c) => c.cmd === 'ask').map((c) => (c.args as { req: { sound: string } }).req.sound);
+    expect(asks[0]).toBe(asks[1]);
+    expect(bridge.calls.filter((c) => c.cmd === 'new_sound_path').length).toBe(1);
   });
 
   it('applies plain patches, undoes across takes and goes back', async () => {
