@@ -232,29 +232,40 @@ by both CLI and MCP (no duplicated behaviour).
 FR-11 (pipeline), FR-12, FR-13, FR-19. Owns: `crates/praxis-analyze/src/{features,similarity,originality}/**`,
 profile building, library store, `tests/clips/**` (self-made/licensed labelled set + labels.json).
 Depends: WP-D1, WP-E. Done: profile per contract; classification; labelled-set accuracy test in CI.
+Brief: `docs/briefs/WP-D2-sound-profile.md` (also owns `praxis analyze` / `praxis library` and the
+MCP tools for them).
+
+### WP-U6 reference clips in the app
+FR-11, FR-12, FR-19, FR-30. Owns: `app/src/ui/**`, `app/src/engine/**` (not engine-wasm), app
+tests, `crates/praxis-app/**`. Depends: WP-D2. Brief: `docs/briefs/WP-U6-reference-clips-ui.md`.
+Done: drop a clip, profile view in plain words, loudness-matched A/B, reference library.
 
 ## Phase 6: Similar-sound generation (exit: each generated sound closest to its own reference, passes originality, survives blind listening)
 
 ### WP-H sfx patches
 FR-16. Owns: `crates/praxis-instruments/src/sfx.rs` + dir, `tests/sfx_*.rs`, `demos/sfx/**`.
+Merged (9aa1093). Realism follow-up WP-H2: `docs/briefs/WP-H2-sfx-realism.md`.
 Depends: WP-B1, WP-B2. Brief: `docs/briefs/WP-H-sfx-patches.md`. Done: six presets with
 monotonic, measured macros, tuned to the key, riser landing on its end sample, demos.
 ### WP-M match
-FR-14, FR-15, FR-17, FR-18. Owns: `crates/praxis-match/**`. Depends: WP-D2, WP-H, WP-F2, WP-P.
+FR-14, FR-15, FR-17, FR-18. Owns: `crates/praxis-match/**`, `ops/match.rs`, MCP `praxis_match`,
+`demos/phase-6/**`. Depends: WP-D2, WP-H2, WP-F2, WP-P. Brief: `docs/briefs/WP-M-match.md`.
 
 ## Phase 7: Scoring depth (exit: 2-minute score from a brief with three hit points lands each on its marker; listening review)
 
 ### WP-P3 scoring depth
 FR-9, FR-10. Owns: planner arranger extensions (`arrange/**`), score chord helpers by request.
-Depends: WP-P2, WP-F2.
+Depends: WP-P2, WP-F2, WP-P4. Brief: `docs/briefs/WP-P3-scoring-depth.md`.
 
 ## Phase 8: Performance and release (exit: every success criterion in PRD section 2 passes on release builds)
 
 ### WP-W wasm + browser build
-Owns: `crates/praxis-wasm/**`, browser AudioWorklet glue in `app/src/engine-wasm/**`.
+Owns: `crates/praxis-wasm/**`, browser AudioWorklet glue in `app/src/engine-wasm/**`, `app/src/main.ts`.
+Depends: WP-U6. Brief: `docs/briefs/WP-W-browser.md`.
 ### WP-Z performance + release
 Profiling (20x real time for 2-min 8-layer piece; cold start < 1 s; idle < 200 MB), installers
 (Windows, macOS), pack downloader UI, CLI docs, crash reporting, licence audit.
+Last. Brief: `docs/briefs/WP-Z-performance-release.md` (Windows installer only; owner's platform decision).
 
 ## Success-criteria checks (PRD section 2) and where they are tested
 

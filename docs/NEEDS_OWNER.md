@@ -29,3 +29,10 @@ Only things the owner can give. Work continues on everything they do not block.
   Controlled Folder Access (ransomware protection, on for this PC) blocked the unsigned app from
   writing there and it closed at start. If its folder cannot be created, the app now falls back to
   `%LOCALAPPDATA%\Praxis Sound` instead of closing.
+- Autonomy (2026-11-11): "from now on dont wait to ask me just go ahed and finish the project."
+  The orchestrator decides routine engineering and product choices and keeps packages running to
+  the end of the PRD; it asks only for PRD sign-offs (Phase 6 blind listening review, Phase 7
+  listening review), large paid spend, and anything that plays audio on the owner's speakers.
+- Downloads approved (2026-11-11): "you have authority to download i approve". Build tools such
+  as wasm-bindgen-cli and Tauri's NSIS bundler are installed from official sources without asking
+  and recorded in THIRD_PARTY.md.
