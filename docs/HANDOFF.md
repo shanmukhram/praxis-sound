@@ -1,4 +1,4 @@
-# Handoff: Praxis Sound build (kept current; last updated 2026-11-11: wave 3 running, see section 5)
+# Handoff: Praxis Sound build (kept current; last updated 2026-11-11: wave 4 running, see section 5)
 
 Paste the block below into a new Claude Code session opened in
 `C:\Users\admin\Desktop\praxis sound`. Everything else in this file is the detail it points to.
@@ -103,50 +103,37 @@ The soft kick layer is skipped until WP-C2 lands (the test says so and tightens 
 
 Test totals at handoff: 386 Rust tests pass in release; app: 140 unit tests on the WP-U2 branch.
 
-## 5. In flight (updated 2026-11-11: wave 3 running as four sessions)
+## 5. In flight (updated 2026-11-11: wave 4, Phases 4-8)
 
-Old merged branches and worktrees were deleted; only `build/integration` and the four wave-3
-worktrees exist. Every wave-3 package works in its own worktree under `.claude/worktrees/` on the
-branch below (the app may add a prefix/suffix: check `git branch`). Briefs are in `docs/briefs/`.
+The owner said to finish the project without routine questions and approved tool downloads
+(docs/NEEDS_OWNER.md). Ask only for PRD sign-offs (Phase 6 blind review, Phase 7 listening
+review), large paid spend, and anything that plays audio on the owner's speakers.
 
-| WP | Session | Branch | Brief | Notes |
+At most two sessions compile at once (10 of 20 threads; `.claude/worktrees/.cargo/config.toml`
+caps each at 5 jobs and adds sccache + rust-lld). Queued sessions read and write code but must not
+build until messaged "slot free" (the dependent ones also wait for a named merge). Session starts
+are refused in automated turns, so every package was started in one owner turn; later steps are
+messages to these sessions.
+
+| WP | Session | State | Brief | Release when |
 | --- | --- | --- | --- | --- |
-| WP-K2 edits, variations, takes | `local_08d46492-ce2a-48b7-8784-c8906f5e6215` (wp-k2-takes) | **merged** (c84b212) | WP-K2-edits-takes.md | command layer + CLI + MCP; shared take history; frozen gain; CLI/planner tidy-ups (follow-ups 2-4) |
-| WP-D1b onset robustness | `local_c98b80e0-ef63-4d51-ab55-616e42b9e51f` (wp-d1b-onsets) | `claude/d1b-onsets-39c1f1` | WP-D1b-onset-robustness.md | **merged** (6b744c9): grid 100% |
-| WP-R real-time engine | `local_86d87740-e7d6-4839-94ac-5a0e5ef22ca7` (wp-r-realtime) | **merged** (1261d59) | WP-R-realtime.md | Phase 3 |
-| WP-U3 Tauri app | `local_c4804bca-8078-46c7-bef7-1ff48c2a7379` (wp-u3-adapter) | **merged** (e5d6bc6) | WP-U3-real-adapter.md | **waits on WP-K2**: when K2 is merged, message this session to merge `build/integration` and wire the take ops |
+| WP-P4 live planner quality | `local_9d36f82c-3389-4b79-bcd5-49ee65dc6bfb` | building | WP-P4-live-planner-quality.md | (running) |
+| WP-D2 Sound Profile + library | `local_d4822b8f-57b1-47ae-b93b-d705b8a08ca4` | building | WP-D2-sound-profile.md | (running) |
+| WP-H2 realistic sfx | `local_e181048d-d661-4de8-9bd3-62cfb7c11812` | queued | WP-H2-sfx-realism.md | first free slot |
+| WP-P3 scoring depth + hit points | `local_26d5ea83-cf3a-4e26-9484-d34526546f88` | queued | WP-P3-scoring-depth.md | after WP-P4 merges: "WP-P4 merged, slot free" |
+| WP-U6 reference clips in the app | `local_2c567f48-72fa-4ff1-8380-8e5ee1c2cc5f` | queued | WP-U6-reference-clips-ui.md | after WP-D2: "WP-D2 merged, slot free" |
+| WP-M match loop | `local_c25d0d15-36a9-439c-84d9-450faee7771e` | queued | WP-M-match.md | after WP-D2 and WP-H2: "WP-D2 and WP-H2 merged, slot free" |
+| WP-W browser build | `local_1eaf0bdd-3166-4fc0-bbf7-2f97f3dea4ba` | queued | WP-W-browser.md | after WP-U6: "WP-U6 merged, slot free" |
+| WP-Z performance + release | `local_8d511f36-2c98-42bf-b40e-155091985439` | queued | WP-Z-performance-release.md | last: "all packages merged, slot free" |
 
-**Build limit (owner, 2026-11-11): at most 10 of 20 threads for builds in total.** Four parallel
-full builds made the PC lag, so all sessions were stopped once. Now only two sessions compile at
-a time; `.claude/worktrees/.cargo/config.toml` (git-ignored, not in the repo; recreate it if
-missing) caps every session worktree at `jobs = 5` and `RUST_TEST_THREADS = 5`. The
-orchestrator does not run its own cargo builds while two sessions are building.
-Build speed-ups (local, not committed): sccache 0.19 (winget `Mozilla.sccache`, binary under
-`%LOCALAPPDATA%\Microsoft\WinGet\Packages\Mozilla.sccache_*\`) as `build.rustc-wrapper`, and
-`rust-lld.exe` as the msvc linker, set in each new worktree's own `.cargo/config.toml` (done for
-WP-R and WP-U3; WP-K2 and WP-D1b were mid-build and kept the defaults). Once a package builds
-cleanly with them, move both settings into `.claude/worktrees/.cargo/config.toml` for all.
-Dev Drive is the owner's call (not set up); Cranelift was rejected (tests run optimised). Running now:
-Nothing is running. Wave 3 is fully merged: WP-D1b, WP-R, WP-K2, WP-U3, WP-U4, WP-H, WP-P2b,
-WP-AG and WP-U5. Phase 3's machine-side exit passed (594 Rust tests, 172 app, 11 browser,
-acceptance 1, by-hand exit run); the owner's hardware check is ready
-(`docs/phase-3-hardware-check.md`). The owner's API key is stored; the assistant's live run
-(`docs/agents/live-run.md`, about US$1-3) waits for the owner's go-ahead. Never play audio on the
-owner's speakers without asking, and keep every test off the paid API (offline provider or
-`PRAXIS_KEYCHAIN=off`).
+Rules for every review: authorship + attribution checks, owned files only, rerun the package's
+tests with `PRAXIS_KEYCHAIN=off` (the owner's paid key is in the keychain) and nothing playing
+audio (Playwright through a temporary muted config), then merge with `--no-ff`, push, and rebuild
+the release app (`cd app && npm run tauri -- build --no-bundle`) when app code changed.
 
-Merge order: WP-D1b and WP-R whenever they are ready; WP-K2 before finishing WP-U3. WP-U3 and
-WP-R both may touch `Cargo.lock` (and U3 the root `Cargo.toml`): resolve by keeping both
-sides' entries and letting cargo regenerate the lock.
-
-- **Phase 2 closed**: the owner signed off `demos/phase-2/acceptance1_mixed_loop.flac` on 2026-11-11.
-
-Known follow-ups not yet assigned: none beyond the phases in section 6. (Follow-ups 1-5 from
-the pause are in WP-D1b, WP-K2, or done: old branches/worktrees deleted.)
-
-Test totals at pause: about 475 Rust tests in release (run the full suite with
-`PRAXIS_PACKS` pointing at `packs/` so the piano tests run), app 138 unit + 8 Playwright,
-MCP stdio test, acceptance test 1 all 8 checks.
+Closed: Phases 0-3 (owner sign-offs for 2 and 3). Phase 4: assistant live run passed; planner
+suites live 15/27 briefs, 19/20 edits (WP-P4 is closing it). Sounds live in
+`C:\Users\admin\Praxis Sound` (Windows Controlled Folder Access blocks Documents).
 
 ## Continuing this orchestration in the terminal
 
