@@ -2,7 +2,7 @@
 
 Updated after every merge. Newest first. Branch: `build/integration` (pushed to `origin`).
 
-## Current phase: 8 (Phases 0-7 closed). Last package: WP-Z
+## Current phase: 8 (Phases 0-7 closed). WP-Z merged; last package: WP-Z2 (speed, memory, CI)
 
 Wave 1 (WP-A, B1, B2, C1, D1, E, F, P) runs as background agents in worktrees. From wave 2 on,
 work packages run as visible sessions (owner's choice), briefed from `docs/briefs/`. WP-X (MCP
@@ -36,6 +36,8 @@ server for agents, ADR-0010) is planned after WP-K, P, D1, F2.
   placeholders that return empty results until their WPs land.
 
 ## Log
+
+- **Merged WP-Z performance + release** (c534f15). Every success criterion is measured in `docs/release/success-criteria.md` (i5-14600K, Windows 11, release). Pass: correctness (acceptance 1, 8/8), determinism (bench master hash 1689b209cbb72fc2 on P- and E-cores), edit isolation, loop seam, real time (256 frames, max 0.48 ms of 5.33 ms, 0 xruns), installer 9.58 MB (per-user NSIS, bzip2, unsigned), cold start 0.34-0.38 s, idle memory 85 MB with no sound, reference analysis (tempo 94.2%, key 97.9%), reference match 10/10, loudness -16.00 LUFS. **Miss:** render speed 18.4x on a P-core (was 6.3x; DSP speedups bit-identical), 9.2x on an E-core; memory 260 MB with the felt piano open (decoded f32 samples). Also: `praxis bench`, local crash reports (never uploaded, keys scrubbed), pack downloader and licences view in the app, LICENSE-MIT / LICENSE-APACHE, THIRD-PARTY-NOTICES.txt, `cargo deny` (permissive list plus 7 MPL crates via Tauri), generated CLI docs. Follow-up **WP-Z2** (same session): parallel layer rendering (bit-identical), smaller sample storage, CI fixes (Linux GTK packages, macOS seek timing, ask_reference without the piano), SKILL.md tools.
 
 - **Phase 6 closed.** Merged WP-M match loop (94a78b9..ee5891e): `praxis-match` (wasm-safe) turns a reference's Sound Profile into a ScorePlan (music) or an sfx patch / ambience bed, runs a deterministic analysis-by-synthesis loop (similarity per iteration, e.g. 0.538 -> 0.951 on the riser), mix and match (groove from A, timbre from B, mood from text), and an originality guard (re-generates a close melodic copy); `praxis match`, MCP `praxis_match`, the assistant's `match_reference` tool; `AskRequest.reference` (clip or library entry: the planner gets the numbers, the assistant a 1.2 kB trimmed profile, "like this" runs the match loop, takes record the reference). Exit, measured on the 10-clip self-made reference set: every result closest to its own reference (own 0.731-0.951 vs nearest other 0.554-0.722) and every result passes originality. The owner listened to the 10 blind pairs in `demos/phase-6/` and signed off ("i like them all sounds good", 2026-11-12; they did not judge which was the reference). Known weak spots: some effects are matched by another family (whoosh by glitch, impact by whoosh, drone by FM keys) because WP-D2's similarity prefers them; the classifier reads 4 of 5 music references as ambience (the matcher auditions every plausible kind). Rerun here: praxis-match, CLI, MCP and app tests, workspace clippy, wasm.
 
