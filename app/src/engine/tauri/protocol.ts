@@ -249,6 +249,8 @@ export interface TransportEventPayload {
   callbacks: number;
   swaps: number;
   preparing: boolean;
+  /** Play was asked for and the sound's first graph (its instruments) is still being built. */
+  loading?: boolean;
   stalled: boolean;
 }
 

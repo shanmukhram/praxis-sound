@@ -666,3 +666,63 @@ fn record_a_swap_for_listening() {
         current - 1
     );
 }
+
+/// The app's path (WP-Z2): an opened sound is built only on its first Play, and opening another
+/// sound or closing frees the graph (an empty one is swapped in).
+#[test]
+fn a_sound_is_built_on_its_first_play_and_freed_when_another_opens() {
+    let score = bell_score();
+    let (_, _, gain) = offline(&score);
+    let r = rig(10.0);
+    r.service.load_sound("sounds/a", score.clone(), Some(gain));
+    // Opened, not played: nothing is built.
+    std::thread::sleep(Duration::from_millis(300));
+    let s = r.service.status();
+    assert!(!s.loaded, "built before the first Play");
+    assert_eq!(s.prepare_ms, None);
+    assert_eq!(s.event.swaps, 0);
+    assert!(!s.event.loading);
+    // An edit of the same sound before any Play still builds nothing.
+    r.service.load_sound("sounds/a", score.clone(), Some(gain));
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(!r.service.status().loaded);
+
+    // The first Play builds it and the sound plays from the start.
+    let from = r.frames();
+    r.service.play();
+    r.loaded(1);
+    r.wait_frames(SR as usize);
+    let (l, _) = r.audio_from(from);
+    assert!(
+        l.iter().any(|x| x.abs() > 1e-3),
+        "silent after the first Play"
+    );
+    assert!(!r.service.status().event.loading);
+    r.service.stop();
+    wait_for("stop", 10.0, || r.last_event().is_some_and(|e| !e.playing));
+
+    // Once played, an edit of the same sound is built at once.
+    let mut edited = score.clone();
+    edited.tempo.bpm = 120.0;
+    r.service.load_sound("sounds/a", edited, Some(gain));
+    r.loaded(2);
+
+    // Another sound: the old graph is swapped out for an empty one, and nothing new is built.
+    r.service.load_sound("sounds/b", score.clone(), Some(gain));
+    wait_for("the empty graph", 10.0, || {
+        let s = r.service.status();
+        s.event.swaps >= 3 && !s.loaded
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(r.service.status().event.swaps, 3);
+
+    // Closing frees it too (no graph of the sound plays).
+    r.service.play();
+    r.loaded(4);
+    r.service.clear();
+    wait_for("the empty graph after closing", 10.0, || {
+        r.service.status().event.swaps >= 5
+    });
+    let s = r.service.status();
+    assert!(!s.loaded);
+}

@@ -25,6 +25,10 @@ describe('playback line', () => {
     );
   });
 
+  it('says the instruments are loading while the first Play builds the sound', () => {
+    expect(playbackText({ ...ok, loading: true, preparing: true })).toEqual({ text: 'Loading instruments…', trouble: false });
+  });
+
   it('flags xruns, device errors and a stalled device', () => {
     expect(playbackText({ ...ok, xruns: 1, deviceErrors: 2, stalled: true })).toEqual({
       text: 'Real-time engine · Speakers (Realtek(R) Audio) · 48 kHz · callbacks 480 frames · 1 xrun while playing · 2 device errors · the device stopped calling back',

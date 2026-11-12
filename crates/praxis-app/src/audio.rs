@@ -16,6 +16,12 @@
 //! applied live (`SetLayerMute` / `SetLayerSolo` / `SetLayerGain`, ramped over 10 ms): no
 //! rebuild. Any other change is prepared and swapped in, cross-faded over 30 ms while playing.
 //! Live layer overrides ([`LayerLive`]) sit on top of the score and survive swaps.
+//!
+//! Memory: a sound opened with [`AudioService::load_sound`] (the app's path) is not built until
+//! its first Play, so an open sound that has not been played holds no decoded instrument samples;
+//! while that first graph is built the transport reports `loading`. Opening another sound, or
+//! closing it ([`AudioService::clear`]), swaps in an empty graph and frees the old one's samples.
+//! [`AudioService::load`] builds at once (tests, and callers that want it ready).
 
 use praxis_audio_io::device::{OutputDevice, OutputRequest, OutputStream};
 use praxis_engine::InstrumentFactory;
@@ -274,6 +280,9 @@ pub struct TransportEvent {
     pub swaps: u64,
     /// A graph is being built for the newest score.
     pub preparing: bool,
+    /// Play was asked for and the sound's first graph (its instruments) is still being built:
+    /// the transport shows "Loading instruments...".
+    pub loading: bool,
     /// Playing, but the device has not called back for a while.
     pub stalled: bool,
 }
@@ -355,6 +364,8 @@ enum Req {
         generation: u64,
         score: Box<Score>,
         master_gain_db: Option<f64>,
+        /// The sound folder for a lazily built score (`load_sound`); `None`: build at once.
+        sound: Option<String>,
     },
     Prepared {
         generation: u64,
@@ -402,13 +413,14 @@ impl AudioService {
         let (tx, rx) = mpsc::channel();
         let (job_tx, job_rx) = mpsc::channel::<PrepareJob>();
         let back = tx.clone();
+        let builder = factory.clone();
         std::thread::Builder::new()
             .name("praxis-prepare".into())
-            .spawn(move || preparer(job_rx, back, factory))
+            .spawn(move || preparer(job_rx, back, builder))
             .ok();
         let thread = std::thread::Builder::new()
             .name("praxis-audio".into())
-            .spawn(move || Service::new(opener, job_tx, emit).run(rx))
+            .spawn(move || Service::new(opener, job_tx, factory, emit).run(rx))
             .ok();
         AudioService {
             tx,
@@ -452,16 +464,28 @@ impl AudioService {
     /// from now on. `master_gain_db` is the gain the take's offline render applied, used when the
     /// score has no frozen gain.
     pub fn load(&self, score: Score, master_gain_db: Option<f64>) -> u64 {
+        self.load_with(score, master_gain_db, None)
+    }
+
+    /// [`Self::load`] for the open sound `sound` (its folder), built only when it is first
+    /// played. A different sound than the last one frees the previous sound's graph and samples;
+    /// once the sound has been played, its later changes are built at once.
+    pub fn load_sound(&self, sound: &str, score: Score, master_gain_db: Option<f64>) -> u64 {
+        self.load_with(score, master_gain_db, Some(sound.to_string()))
+    }
+
+    fn load_with(&self, score: Score, master_gain_db: Option<f64>, sound: Option<String>) -> u64 {
         let generation = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         self.send(Req::Score {
             generation,
             score: Box::new(score),
             master_gain_db,
+            sound,
         });
         generation
     }
 
-    /// No sound is open: stop and forget the score and the overrides.
+    /// No sound is open: stop, forget the score and the overrides, and free the graph.
     pub fn clear(&self) {
         self.send(Req::Clear);
     }
@@ -534,7 +558,13 @@ struct Device {
 struct Service {
     opener: Opener,
     jobs: Sender<PrepareJob>,
+    /// Builds the empty graph that frees a closed sound's instruments.
+    factory: Arc<dyn InstrumentFactory>,
     emit: Emit,
+    /// The open sound (lazy loads), and whether its graph may be built: false from opening it
+    /// until its first Play.
+    sound: Option<String>,
+    armed: bool,
     device: Option<Device>,
     device_error: Option<String>,
     /// The newest score asked for, its generation and gain.
@@ -586,11 +616,19 @@ fn without_mix(score: &Score) -> Score {
 }
 
 impl Service {
-    fn new(opener: Opener, jobs: Sender<PrepareJob>, emit: Emit) -> Service {
+    fn new(
+        opener: Opener,
+        jobs: Sender<PrepareJob>,
+        factory: Arc<dyn InstrumentFactory>,
+        emit: Emit,
+    ) -> Service {
         let mut s = Service {
             opener,
             jobs,
+            factory,
             emit,
+            sound: None,
+            armed: true,
             device: None,
             device_error: None,
             want: None,
@@ -646,8 +684,11 @@ impl Service {
                 self.xruns_seen = 0;
                 self.sent.clear();
                 self.send_loop();
-                // A score asked for before the device opened is built now, at its rate.
-                if let Some((generation, score, gain)) = self.want.clone() {
+                // A score asked for before the device opened is built now, at its rate (a lazily
+                // loaded sound waits for its first Play).
+                if self.armed
+                    && let Some((generation, score, gain)) = self.want.clone()
+                {
                     self.request_prepare(generation, score, gain);
                 }
             }
@@ -702,6 +743,18 @@ impl Service {
                     self.device = None;
                 }
                 self.open();
+                // The first Play of a lazily loaded sound builds its graph; the engine starts
+                // playing it from the current position as soon as it is swapped in.
+                if !self.armed {
+                    self.armed = true;
+                    let current = self.graph.as_ref().map(|g| g.0);
+                    if let Some((generation, score, gain)) = self.want.clone()
+                        && current != Some(generation)
+                        && !self.preparing
+                    {
+                        self.request_prepare(generation, score, gain);
+                    }
+                }
                 self.send(Command::Play);
             }
             Req::Stop => self.send(Command::Stop),
@@ -735,7 +788,23 @@ impl Service {
                 generation,
                 score,
                 master_gain_db,
-            } => self.score(generation, *score, master_gain_db),
+                sound,
+            } => {
+                match sound {
+                    Some(sound) if self.sound.as_deref() != Some(sound.as_str()) => {
+                        // Another sound: free the last one's graph; build this one on Play.
+                        self.unload();
+                        self.sound = Some(sound);
+                        self.armed = false;
+                    }
+                    Some(_) => {}
+                    None => {
+                        self.sound = None;
+                        self.armed = true;
+                    }
+                }
+                self.score(generation, *score, master_gain_db)
+            }
             Req::Prepared {
                 generation,
                 graph,
@@ -752,6 +821,9 @@ impl Service {
             Req::Clear => {
                 self.send(Command::Stop);
                 self.send(Command::Seek(0));
+                self.unload();
+                self.sound = None;
+                self.armed = true;
                 self.want = None;
                 self.overrides.clear();
                 self.compare = None;
@@ -778,7 +850,10 @@ impl Service {
                 && g.master.frozen_gain_db == score.master.frozen_gain_db
                 && without_mix(g) == without_mix(&score)
         });
-        if mix_only && !self.preparing {
+        if !self.armed {
+            // Not played yet: nothing to build; the loop range follows the new score.
+            self.send_loop();
+        } else if mix_only && !self.preparing {
             // Same graph: the new mute / solo / gain go in live.
             if let Some(g) = &mut self.graph {
                 g.0 = generation;
@@ -801,6 +876,31 @@ impl Service {
             master_gain_db: gain,
             sample_rate: d.sample_rate,
         });
+    }
+
+    /// Frees the engine's graph (and its instruments' samples): swaps in a graph with no layers;
+    /// the old one is retired and dropped on this thread at the next tick.
+    fn unload(&mut self) {
+        self.preparing = false;
+        let Some((_, score)) = self.graph.take() else {
+            return;
+        };
+        self.graph_gain_db = None;
+        self.sent.clear();
+        let Some(sample_rate) = self.device.as_ref().map(|d| d.sample_rate) else {
+            return;
+        };
+        let mut empty = score;
+        empty.layers.clear();
+        let opts = RealtimeOptions {
+            sample_rate,
+            master_gain_db: Some(0.0),
+        };
+        if let Ok(g) = prepare(&empty, self.factory.as_ref(), &opts)
+            && let Some(d) = &mut self.device
+        {
+            let _ = d.control.swap(g);
+        }
     }
 
     fn prepared(&mut self, generation: u64, graph: Box<PreparedGraph>, score: Score, ms: f64) {
@@ -987,6 +1087,7 @@ impl Service {
             callbacks: stats.callbacks,
             swaps: st.swaps,
             preparing: self.preparing,
+            loading: self.loading(),
             stalled,
         };
         self.peak = [0.0; 2];
@@ -1001,6 +1102,7 @@ impl Service {
             || ev.position != self.last_event.position
             || ev.error != self.last_event.error
             || ev.preparing != self.last_event.preparing
+            || ev.loading != self.last_event.loading
             || ev.available != self.last_event.available
             || ev.swaps != self.last_event.swaps
             || ev.xruns != self.last_event.xruns
@@ -1010,6 +1112,11 @@ impl Service {
             self.last_emit = Instant::now();
         }
         self.last_event = ev;
+    }
+
+    /// The first graph of an armed sound is being built (no graph of it plays yet).
+    fn loading(&self) -> bool {
+        self.armed && self.preparing && self.graph.is_none()
     }
 
     fn status(&self) -> TransportStatus {
@@ -1028,6 +1135,7 @@ impl Service {
             event.sample_rate = d.sample_rate;
         }
         event.preparing = self.preparing;
+        event.loading = self.loading();
         if self.prepare_error.is_some() {
             event.error = self.prepare_error.clone();
         }
