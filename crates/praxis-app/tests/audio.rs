@@ -350,6 +350,18 @@ fn seek_and_a_loop_range_keep_the_position_in_the_range() {
     r.service.seek(4.0 * 1.875); // bar 5
     r.service.play();
     r.wait_frames(SR as usize * 6); // three passes of the two-bar range
+    // Position events come about 30 times a second of wall-clock time, and the fake output runs
+    // 10x faster than real time, so a slow runner may have sent only a few by now: keep playing
+    // (still inside the loop range) until there are enough to check.
+    wait_for("more than 10 position events", 60.0, || {
+        r.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.playing)
+            .count()
+            > 10
+    });
     r.service.stop();
     wait_for("stop", 10.0, || r.last_event().is_some_and(|e| !e.playing));
     let events = r.events.lock().unwrap().clone();

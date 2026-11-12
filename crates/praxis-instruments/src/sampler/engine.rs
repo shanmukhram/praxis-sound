@@ -15,7 +15,7 @@
 
 use super::program::Program;
 use super::region::{FilterType, LoopMode, Trigger};
-use super::sample::PAD_FRONT;
+use super::sample::{Channel, PAD_FRONT};
 use praxis_dsp::biquad::{Biquad, BiquadShape, Coeffs};
 use praxis_dsp::rng::{Pcg32, derive};
 use praxis_dsp::util::{db_to_gain, pan_gains, sanitize};
@@ -391,7 +391,7 @@ impl Voice {
 
     /// One output sample of the voice: what to add, and whether the voice ends there.
     #[inline(always)]
-    fn step(&mut self, sl: &[f32], sr: &[f32]) -> Step {
+    fn step(&mut self, sl: Channel<'_>, sr: Channel<'_>) -> Step {
         let loop_len = self.loop_end - self.loop_start;
         let e = self.env.next();
         if self.env.stage == Stage::Done {
@@ -434,9 +434,9 @@ impl Voice {
             let base = ip + PAD_FRONT;
             (base - 1, base, base + 1, base + 2)
         };
-        let mut xl = hermite(sl[a], sl[b], sl[c], sl[d], t);
+        let mut xl = hermite(sl.at(a), sl.at(b), sl.at(c), sl.at(d), t);
         let mut xr = if self.stereo {
-            hermite(sr[a], sr[b], sr[c], sr[d], t)
+            hermite(sr.at(a), sr.at(b), sr.at(c), sr.at(d), t)
         } else {
             xl
         };
@@ -479,7 +479,13 @@ impl Voice {
 
     /// [`Voice::render`] from the sample's padded channels.
     #[inline]
-    fn render_from(&mut self, sl: &[f32], sr: &[f32], l: &mut [f32], r: &mut [f32]) -> bool {
+    fn render_from(
+        &mut self,
+        sl: Channel<'_>,
+        sr: Channel<'_>,
+        l: &mut [f32],
+        r: &mut [f32],
+    ) -> bool {
         for (a, b) in l.iter_mut().zip(r.iter_mut()) {
             match self.step(sl, sr) {
                 Step::Add(x, y) => {
