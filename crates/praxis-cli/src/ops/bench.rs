@@ -44,6 +44,9 @@ pub struct BenchRequest {
     /// Also time each layer rendered alone (once each), to see where the time goes.
     #[serde(default)]
     pub per_layer: bool,
+    /// Also write the benched score here (the built-in piece as a `.score.json`).
+    #[serde(default)]
+    pub save_piece: Option<PathBuf>,
 }
 
 fn default_seconds() -> f64 {
@@ -64,6 +67,7 @@ impl Default for BenchRequest {
             runs: default_runs(),
             sample_rate: default_rate(),
             per_layer: false,
+            save_piece: None,
         }
     }
 }
@@ -255,6 +259,17 @@ pub fn bench(req: &BenchRequest) -> Result<Value, OpError> {
             "built-in 8-layer piece".to_string(),
         ),
     };
+    if let Some(path) = &req.save_piece {
+        crate::ops::ensure_parent(path)?;
+        let text = serde_json::to_string_pretty(&score)
+            .map_err(|e| OpError::new(ErrorCode::Error, e.to_string()))?;
+        std::fs::write(
+            path,
+            text + "
+",
+        )
+        .map_err(|e| crate::error::io_error(path, e))?;
+    }
     let registry = Registry::with_default_packs();
     let missing: Vec<Value> = score
         .layers
@@ -324,7 +339,19 @@ pub fn bench(req: &BenchRequest) -> Result<Value, OpError> {
         }
     }
     let report = &first.report;
+    // FNV-1a over the master's sample bits: equal hashes mean bit-identical renders, so a build
+    // can be compared with another on the same platform.
+    let master_hash = first
+        .master
+        .left
+        .iter()
+        .chain(&first.master.right)
+        .flat_map(|x| x.to_bits().to_le_bytes())
+        .fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+        });
     Ok(json!({
+        "master_hash": format!("{master_hash:016x}"),
         "per_layer": per_layer,
         "piece": piece,
         "layers": score.layers.iter().map(|l| json!({

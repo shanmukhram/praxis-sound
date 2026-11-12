@@ -38,7 +38,12 @@
     "category": "Music",
     "shortDescription": "Score-driven music and sound design",
     "longDescription": "Turns a text brief or a reference clip into editable, layered audio rendered from a score.",
-    "resources": { "../../packs/index.json": "packs/index.json" },
+    "resources": {
+      "../../packs/index.json": "packs/index.json",
+      "../../THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt",
+      "../../LICENSE-MIT": "LICENSE-MIT",
+      "../../LICENSE-APACHE": "LICENSE-APACHE"
+    },
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },
       "nsis": { "installMode": "currentUser", "compression": "bzip2" }

@@ -20,3 +20,5 @@ dialog.packs::backdrop { background: rgba(0, 0, 0, 0.6); }
 .crash-notice b { color: var(--negative); font-weight: 500; }
 .crash-notice p { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
 .crash-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+dialog.licences { width: min(760px, calc(100vw - 32px)); }
+.licences-text { max-height: 60vh; overflow: auto; margin: 0; padding: 12px; border-radius: 10px; background: var(--raised); color: var(--muted); font-size: 11px; line-height: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }

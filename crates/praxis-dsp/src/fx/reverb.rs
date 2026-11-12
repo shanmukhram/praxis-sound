@@ -103,6 +103,13 @@ pub struct FdnReverb {
     er_sign: [[f32; ER_TAPS]; 2],
     er_pos: [[f32; ER_TAPS]; 2],
     er_gain: [[f32; ER_TAPS]; 2],
+    /// `er_pos` split for [`DelayLine::hermite_at`] (integer delay, fraction), set in `update`.
+    er_i: [[usize; ER_TAPS]; 2],
+    er_t: [[f32; ER_TAPS]; 2],
+    /// Without modulation each line's read is fixed between updates: its integer delay and
+    /// allpass coefficient, set in `update`.
+    line_i: [usize; LINES],
+    line_eta: [f32; LINES],
 }
 
 fn hadamard8(v: &mut [f32; LINES]) {
@@ -160,6 +167,10 @@ impl FdnReverb {
             er_sign: [[1.0; ER_TAPS]; 2],
             er_pos: [[1.0; ER_TAPS]; 2],
             er_gain: [[0.0; ER_TAPS]; 2],
+            er_i: [[1; ER_TAPS]; 2],
+            er_t: [[0.0; ER_TAPS]; 2],
+            line_i: [0; LINES],
+            line_eta: [0.0; LINES],
         };
         r.prepare(sample_rate, max_block);
         r
@@ -181,6 +192,12 @@ impl FdnReverb {
             let r2 = g * g;
             let a = 1.0 - r2;
             let b = 1.0 - r2 * c;
+            // The per-sample read below with m = 0 (len + 0 - 1 is exactly len - 1).
+            let d = self.len[i] + 0.0 - 1.0;
+            let di = (d - 0.1).floor().max(0.0);
+            let f = d - di;
+            self.line_i[i] = di as usize;
+            self.line_eta[i] = (1.0 - f) / (1.0 + f);
             self.damp_p[i] = if a < 1e-12 {
                 0.0
             } else {
@@ -210,6 +227,11 @@ impl FdnReverb {
                 let decay = 10f32.powf(-3.0 * t / (rt60 * self.sr));
                 self.er_pos[c][j] = t;
                 self.er_gain[c][j] = k * rise * fade * decay * self.er_sign[c][j];
+                // Exactly the split `read_frac` -> `DelayLine::read` makes (t >= 1 here).
+                let d = t.clamp(1.0, (self.er[c].capacity() - 2) as f32);
+                let i = d.floor() as usize;
+                self.er_i[c][j] = i;
+                self.er_t[c][j] = d - i as f32;
             }
         }
     }
@@ -232,6 +254,57 @@ impl FdnReverb {
         self.lp = [OnePole::default(); LINES];
         self.ap = [0.0; LINES];
         self.mod_phase = self.mod_phase0;
+    }
+}
+
+impl FdnReverb {
+    /// The network for one chunk whose reads all predate it (see `process`): reads every
+    /// line's run first, then per sample exactly the per-sample path's arithmetic, then the
+    /// writes. `inputs` are the diffused inputs; `wl`, `wr` get the late field (times 0.5).
+    fn network_block(&mut self, inputs: &[(f32, f32)], wl: &mut [f32], wr: &mut [f32]) {
+        let len = inputs.len();
+        let mut x0 = [[0.0f32; CHUNK]; LINES];
+        let mut x1 = [[0.0f32; CHUNK]; LINES];
+        for k in 0..LINES {
+            // At sample o of the chunk, o samples were already written: delay d then is d - o
+            // from the chunk's start.
+            let i0 = self.line_i[k];
+            for o in 0..len {
+                x0[k][o] = self.lines[k].read_int(i0 - o);
+                x1[k][o] = self.lines[k].read_int(i0 + 1 - o);
+            }
+        }
+        let mut out = [[0.0f32; CHUNK]; LINES];
+        for o in 0..len {
+            let mut v = [0.0f32; LINES];
+            for k in 0..LINES {
+                let eta = self.line_eta[k];
+                let y = sanitize(eta * x0[k][o] + x1[k][o] - eta * self.ap[k]);
+                self.ap[k] = y;
+                v[k] = self.lp[k].lp(y, self.damp_p[k]) * self.gain[k];
+            }
+            let mut sl = 0.0;
+            let mut sr = 0.0;
+            for k in 0..LINES / 2 {
+                let s = if k % 2 == 0 { 1.0 } else { -1.0 };
+                sl += v[2 * k] * s;
+                sr += v[2 * k + 1] * s;
+            }
+            hadamard8(&mut v);
+            let (il, ir) = inputs[o];
+            for k in 0..LINES {
+                let s = if (k / 2) % 2 == 0 { 1.0 } else { -1.0 };
+                let inj = if k % 2 == 0 { il } else { ir };
+                out[k][o] = sanitize(v[k] + inj * s * 0.5);
+            }
+            wl[o] = sl * 0.5;
+            wr[o] = sr * 0.5;
+        }
+        for k in 0..LINES {
+            for &y in &out[k][..len] {
+                self.lines[k].push(y);
+            }
+        }
     }
 }
 
@@ -267,7 +340,8 @@ impl Processor for FdnReverb {
             self.mod_inc[i] = rate / sample_rate;
             self.mod_phase0[i] = rng.next_f32();
         }
-        let er_cap = (BASE_MS[LINES - 1] * ms).ceil() as usize + 8;
+        // + CHUNK: the taps are read once per chunk, after the whole chunk was pushed.
+        let er_cap = (BASE_MS[LINES - 1] * ms).ceil() as usize + 8 + CHUNK;
         self.er = [DelayLine::new(er_cap), DelayLine::new(er_cap)];
         for c in 0..2 {
             for j in 0..ER_TAPS {
@@ -293,15 +367,43 @@ impl Processor for FdnReverb {
                 self.damp.advance(len as u32);
                 self.update();
             }
-            for i in start..start + len {
+            // Per sample: the input, the diffusers and the network. The early-reflection taps
+            // are then added tap by tap over the whole chunk (contiguous reads), each sample's
+            // sum still in tap order, so the result is the same as adding them per sample.
+            let mut wl_c = [0.0f32; CHUNK];
+            let mut wr_c = [0.0f32; CHUNK];
+            let mut x_c = [(0.0f32, 0.0f32); CHUNK];
+            let mut wm_c = [(0.0f32, 0.0f32); CHUNK];
+            // A predelay that is not gliding reads at one fixed position for the whole chunk:
+            // split it once, exactly as `read_frac` -> `DelayLine::read` would.
+            let fixed_pd = (!self.predelay.moving() && self.predelay.value() >= 1.0).then(|| {
+                let d = self
+                    .predelay
+                    .value()
+                    .clamp(1.0, (self.pre[0].capacity() - 2) as f32);
+                let i = d.floor() as usize;
+                (i, d - i as f32)
+            });
+            // Without modulation, and with every line longer than a chunk (always, at any usual
+            // rate: the shortest is about 16 ms), no read in this chunk reaches a sample written
+            // in it: the network then runs as a block after the inputs (same operations, same
+            // order per sample).
+            let block = self.mod_depth == 0.0 && self.line_i.iter().all(|&i| i + 1 >= CHUNK);
+            let mut in_c = [(0.0f32, 0.0f32); CHUNK];
+            for (o, i) in (start..start + len).enumerate() {
                 let pd = self.predelay.next();
                 let width = self.width.next();
                 let mix = self.mix.next();
                 let (xl, xr) = (sanitize(left[i]), sanitize(right[i]));
                 self.pre[0].push(xl);
                 self.pre[1].push(xr);
-                let mut il = read_frac(&self.pre[0], pd);
-                let mut ir = read_frac(&self.pre[1], pd);
+                let (mut il, mut ir) = match fixed_pd {
+                    Some((pi, pt)) => (
+                        self.pre[0].hermite_at(pi, pt),
+                        self.pre[1].hermite_at(pi, pt),
+                    ),
+                    None => (read_frac(&self.pre[0], pd), read_frac(&self.pre[1], pd)),
+                };
                 for a in self.diff[0].iter_mut() {
                     il = a.tick(il);
                 }
@@ -310,11 +412,35 @@ impl Processor for FdnReverb {
                 }
                 self.er[0].push(il);
                 self.er[1].push(ir);
+                x_c[o] = (xl, xr);
+                wm_c[o] = (width, mix);
+                if block {
+                    in_c[o] = (il, ir);
+                    continue;
+                }
                 // read the lines
                 let mut v = [0.0f32; LINES];
+                let modulated = self.mod_depth != 0.0;
                 for k in 0..LINES {
+                    if !modulated {
+                        // Same read as below with m = 0, its delay split in `update`.
+                        let eta = self.line_eta[k];
+                        let i0 = self.line_i[k];
+                        let x0 = self.lines[k].read_int(i0);
+                        let x1 = self.lines[k].read_int(i0 + 1);
+                        let y = sanitize(eta * x0 + x1 - eta * self.ap[k]);
+                        self.ap[k] = y;
+                        v[k] = self.lp[k].lp(y, self.damp_p[k]) * self.gain[k];
+                        continue;
+                    }
                     let ph = self.mod_phase[k];
-                    let m = (ph * tau).sin() * self.mod_depth;
+                    // With no modulation (the default) skip the sine: it would be multiplied
+                    // by 0 and adding +-0 to the length changes nothing.
+                    let m = if self.mod_depth != 0.0 {
+                        (ph * tau).sin() * self.mod_depth
+                    } else {
+                        0.0
+                    };
                     let mut np = ph + self.mod_inc[k];
                     if np >= 1.0 {
                         np -= 1.0;
@@ -347,12 +473,29 @@ impl Processor for FdnReverb {
                     let inj = if k % 2 == 0 { il } else { ir };
                     self.lines[k].push(sanitize(v[k] + inj * s * 0.5));
                 }
-                wl *= 0.5;
-                wr *= 0.5;
-                for j in 0..ER_TAPS {
-                    wl += read_frac(&self.er[0], self.er_pos[0][j]) * self.er_gain[0][j];
-                    wr += read_frac(&self.er[1], self.er_pos[1][j]) * self.er_gain[1][j];
-                }
+                wl_c[o] = wl * 0.5;
+                wr_c[o] = wr * 0.5;
+            }
+            if block {
+                self.network_block(&in_c[..len], &mut wl_c[..len], &mut wr_c[..len]);
+            }
+            for j in 0..ER_TAPS {
+                self.er[0].add_hermite_run(
+                    self.er_i[0][j],
+                    self.er_t[0][j],
+                    self.er_gain[0][j],
+                    &mut wl_c[..len],
+                );
+                self.er[1].add_hermite_run(
+                    self.er_i[1][j],
+                    self.er_t[1][j],
+                    self.er_gain[1][j],
+                    &mut wr_c[..len],
+                );
+            }
+            for (o, i) in (start..start + len).enumerate() {
+                let (wl, wr) = (wl_c[o], wr_c[o]);
+                let ((xl, xr), (width, mix)) = (x_c[o], wm_c[o]);
                 let m = 0.5 * (wl + wr);
                 let s = 0.5 * (wl - wr) * width;
                 let (wl, wr) = (m + s, m - s);

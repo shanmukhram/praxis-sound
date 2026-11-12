@@ -1,6 +1,10 @@
 # Licence and supply-chain audit (WP-Z): `cargo deny check`.
-# Permissive licences only (ADR-0008, docs/NEEDS_OWNER.md); every component is listed with its
-# licence in THIRD_PARTY.md.
+# Praxis Sound is MIT OR Apache-2.0 (owner, 2026-11-12). Only permissive licences that keep the
+# whole app distributable under those terms are allowed; anything not listed is refused (GPL,
+# LGPL, AGPL, SSPL, BUSL, non-commercial or no-derivatives licences included). A dependency
+# offered under several licences passes when one allowed licence covers it (r-efi's "MIT OR
+# Apache-2.0 OR LGPL-2.1-or-later", for one). Every component is listed in THIRD_PARTY.md; the
+# licence texts shipped with the app are in THIRD-PARTY-NOTICES.txt (docs/release/notices.py).
 
 [graph]
 # Audit every platform the code builds for: Windows (release target), macOS and Linux (CI),
@@ -28,21 +32,24 @@ allow = [
     "ISC",
     "Zlib",
     "Unicode-3.0",
+    "Unicode-DFS-2016",
     "CC0-1.0",
     "Unlicense",
+    "BSL-1.0",
     # webpki-roots: the Mozilla CA list as data, CDLA-Permissive-2.0 (permissive, no copyleft).
     "CDLA-Permissive-2.0",
     # bzip2's own BSD-style licence (libbz2, through the 7z pack unpacker).
     "bzip2-1.0.6",
 ]
-# MPL-2.0 is refused (ADR-0008) except for these crates, which come only through the Tauri
-# desktop shell (praxis-app): tauri-utils' HTML handling (dom_query -> selectors, cssparser) and
-# tauri's home-folder lookup (dirs -> dirs-sys -> option-ext). All are used unmodified from
-# crates.io; MPL-2.0 is file-level copyleft, so it covers only these crates' own files. None is
+# MPL-2.0 is refused except for these crates, which come only through the Tauri desktop shell
+# (praxis-app): tauri-utils' HTML handling (dom_query -> selectors, cssparser; used by Tauri's
+# code generation at build time) and tauri's home-folder lookup (dirs -> dirs-sys -> option-ext).
+# All are used unmodified from crates.io, where their source is; MPL-2.0 is file-level copyleft,
+# so it covers only their own files and is compatible with an MIT OR Apache-2.0 app. None is
 # reachable from the core crates (score, dsp, engine, instruments, analyze, match, planner) or
-# praxis-wasm: checked with `cargo tree -i <crate>` per crate (docs/release/licences.md).
-# Provisionally approved by the orchestrator (2026-11-12); the owner's licence decision at
-# release covers it (docs/NEEDS_OWNER.md).
+# praxis-wasm (`cargo tree -i <crate>`, docs/release/licences.md). Approved with the owner's
+# licence decision (2026-11-12). The 0.38.0 / 0.41.0 entries are in Cargo.lock for targets this
+# audit does not build (cargo deny warns that they are not encountered).
 exceptions = [
     { crate = "cssparser@0.37.0", allow = ["MPL-2.0"] },
     { crate = "cssparser@0.38.0", allow = ["MPL-2.0"] },
@@ -54,7 +61,7 @@ exceptions = [
 ]
 
 [licenses.private]
-# The workspace's own crates (publish = false, licence pending the owner's decision).
+# The workspace's own crates (MIT OR Apache-2.0, publish = false).
 ignore = true
 
 [bans]

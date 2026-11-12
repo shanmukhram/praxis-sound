@@ -9,6 +9,7 @@ import { mountPlaybackLine } from './playbackLine';
 import { TauriEngine } from './TauriEngine';
 import { mountPacks } from '../../ui/packs';
 import { mountCrashNotice } from '../../ui/crashNotice';
+import { mountLicences } from '../../ui/licences';
 
 function entry(engine: TauriEngine, s: SoundInfo): SoundEntry {
   return {
@@ -36,6 +37,7 @@ export async function startDesktop(root: HTMLElement, bridge?: Bridge): Promise<
   mountPlaybackLine(root, engine);
   // The Instruments dialog (pack downloader) and the notice of a crash not shown yet (WP-Z).
   mountPacks(root, b);
+  mountLicences(root);
   void mountCrashNotice(root, b);
   // A new sound gets its folder with its first take: list it and switch to it (the shell keeps
   // the same array, so the new row shows on its next render).

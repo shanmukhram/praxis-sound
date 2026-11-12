@@ -307,6 +307,9 @@ enum Command {
         /// Also time each layer rendered alone.
         #[arg(long)]
         per_layer: bool,
+        /// Also write the benched score to this file.
+        #[arg(long)]
+        save_piece: Option<PathBuf>,
     },
     /// Store or clear the Anthropic API key in the OS keychain (read from stdin).
     Key {
@@ -736,12 +739,14 @@ fn run(command: Command) -> Result<Value, OpError> {
             runs,
             sample_rate,
             per_layer,
+            save_piece,
         } => ops::bench(&ops::BenchRequest {
             input,
             seconds,
             runs,
             sample_rate,
             per_layer,
+            save_piece,
         }),
         Command::Key { action } => {
             let action = match action {
