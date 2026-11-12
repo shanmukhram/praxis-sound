@@ -8,14 +8,14 @@ Only things the owner can give. Work continues on everything they do not block.
 | 2 | **Listening sign-off, Phase 2**: `demos/phase-2/acceptance1_mixed_loop.flac` (+ x3 seam file). | Phase 2 exit | **done 2026-11-11**: owner listened and said "its perfect" |
 | 3 | **Real-hardware check, Phase 3** (`docs/phase-3-hardware-check.md`). | Phase 3 sign-off | **done 2026-11-11**: owner built a sound by hand in the release app and tested play, loop, mute/solo, swaps, seek, loop range and export on their speakers: "everything is good" |
 | 4 | **Labelled reference clips** you own with known tempo/key (optional; we self-make the test set). | Nothing | optional |
-| 5 | **Licence, at release**: Tauri brings in seven MPL-2.0 crates (cssparser, cssparser-macros, dtoa-short, selectors, option-ext), unmodified, desktop shell only, none in the engine or browser crates. MPL is file-level copyleft and allows a closed-source app. Accepted provisionally (2026-11-11) as named exceptions in `deny.toml`; confirm with the final licence decision. | Nothing now | at release |
+| 5 | **Licence**: open source under MIT OR Apache-2.0 (ADR-0013, decided 2026-11-12). The repository was made **public** on 2026-11-12 at the owner's request. The prototype-conversation link was removed from PRD.md; the owner chose not to rewrite history, so the first commit still holds it. | Nothing | **done** |
 | 6 | **Listening review, Phase 7**: `demos/phase-7/cue_hits_2min.flac` (2-minute cue with three hits). | Phase 7 exit | **done 2026-11-12**: "Sounds right" |
 | 7 | **Blind listening review, Phase 6**: the 10 pairs in `demos/phase-6/`. | Phase 6 exit | **done 2026-11-12**: "i like them all sounds good" (sound quality judged; the match itself is measured) |
 
 ## Decided by the owner (2026-11-10)
 
 - Product name: Praxis Sound.
-- Licence: closed for now; owner decides later. Repo stays private; dependencies stay permissive.
+- Licence: open source, MIT OR Apache-2.0 (decided 2026-11-12, ADR-0013). Repo public since 2026-11-12. Never rewrite git history (owner: "no history rewrites"). Dependencies stay permissive.
 - Trademark check: later, not needed now.
 - Buy nothing. Everything is made through code: synthesis, procedural effects, and free CC0/CC-BY
   packs and impulse responses (approved, under 100 MB each). No paid packs.

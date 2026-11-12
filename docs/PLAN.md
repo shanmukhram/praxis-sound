@@ -266,6 +266,12 @@ Depends: WP-U6. Brief: `docs/briefs/WP-W-browser.md`.
 Profiling (20x real time for 2-min 8-layer piece; cold start < 1 s; idle < 200 MB), installers
 (Windows, macOS), pack downloader UI, CLI docs, crash reporting, licence audit.
 Last. Brief: `docs/briefs/WP-Z-performance-release.md` (Windows installer only; owner's platform decision).
+Merged; two criteria missed (render speed 18.4x, memory 260 MB with the piano open).
+### WP-Z2 speed, memory and CI (same session as WP-Z)
+Render layers on several cores in the desktop path (summed in fixed order, bit-identical; WASM
+single-threaded), sampler storage under 200 MB with the felt piano open, CI fixes (Linux GTK
+packages, macOS seek timing, `ask_reference` skips without the piano), SKILL.md lists
+`praxis_match` and `praxis_library`, success-criteria numbers updated.
 
 ## Success-criteria checks (PRD section 2) and where they are tested
 
