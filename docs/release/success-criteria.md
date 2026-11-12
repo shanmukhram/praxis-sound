@@ -14,7 +14,7 @@ not run; see Real-time preview).
 | Determinism | same project and seed render bit-identical | identical SHA-256 on repeat renders; identical master hash on every bench run, on both core types, before and after the speed work | **pass** |
 | Edit isolation | editing bars 13-16 of one layer leaves every other bar and layer sample-identical, effect tails aside | engine: bit-identical outside the edited bars and the wrapped tail; take level: other layers identical, other bars identical note for note, the edited layer's reverb leaves at most -138 dBFS of rounding | **pass** |
 | Loop seam | no discontinuity above the noise floor; tails wrap | seam jump 0.65x the local typical jump, excess -2.07 dB (limit 0 dB); tails wrap | **pass** |
-| Render speed | 2-minute, 8-layer piece at 20x real time or better on a mid-range laptop | **18.4x** on a performance core, **9.2x** on an efficiency core (was 6.3-6.8x) | **miss** (see below) |
+| Render speed | 2-minute, 8-layer piece at 20x real time or better on a mid-range laptop | **18.2-18.9x** on a performance core, **9.5x** on an efficiency core (was 6.3-6.8x) | **miss: known gap, accepted** (see below) |
 | Real-time preview | no dropouts at a 256-sample buffer | 0 xruns; 256-frame callbacks at most 0.48 ms of their 5.33 ms budget; real speakers: 0 xruns earlier (WP-R, WP-U4, owner's Phase 3 check) | **pass** (with the shared-mode note) |
 | Footprint | installer under 30 MB | 9,577,743 bytes (9.13 MiB) | **pass** |
 | | cold start under 1 s | UI ready in 0.34-0.38 s (window in 31-47 ms); 3.0 s on the first launch right after installing | **pass** |
@@ -23,8 +23,9 @@ not run; see Real-time preview).
 | Reference match | closer to its reference than to any other clip; passes originality | 10/10 closest to their own reference (0.731-0.951 vs nearest other 0.554-0.722); 10/10 pass originality | **pass** |
 | Loudness | target within 0.5 LU, never above the true-peak ceiling | acceptance 1 -16.00 LUFS, -2.72 dBTP; bench piece -16.01 LUFS, -1.02 dBTP (ceiling -1.0 dBTP, limiter tolerance 0.05 dB) | **pass** |
 
-Two misses, both explained below with what it would take: render speed on the efficiency cores
-and a mid-range laptop, and idle memory once a sampled instrument is loaded.
+Two misses, both explained below with what it would take: render speed (a known gap the
+orchestrator accepted: 18.9x at best on a performance core, 9.5x on an efficiency core), and idle
+memory once a sampled instrument is loaded.
 
 ## How each was measured
 
@@ -98,10 +99,14 @@ plus the master bus (loudness normalisation and the true-peak limiter). One warm
 affinity), because Windows places a single-threaded render on a performance core or an efficiency
 core unpredictably:
 
-| Build | Performance core (CPU 2) | Efficiency core (CPU 18) | Unpinned |
-| --- | --- | --- | --- |
-| before WP-Z | 19.24 s / 6.3x (another run 6.8x) | not measured | |
-| after WP-Z | **6.64 s / 18.4x** | **13.20 s / 9.2x** | 13.45 s / 9.1x (Windows chose an efficiency core) |
+| Build | Performance core CPU 2 | Performance core CPU 4 | Efficiency core CPU 18 | Unpinned |
+| --- | --- | --- | --- | --- |
+| before WP-Z | 19.24 s / 6.3x (another run 6.8x) | | not measured | |
+| DSP and engine work | 6.64 s / 18.4x | | 13.20 s / 9.2x | 13.45 s / 9.1x (Windows chose an efficiency core) |
+| final (plus instruments) | **6.72 s / 18.2x** | **6.46 s / 18.9x** | **12.83 s / 9.5x** | |
+
+Run-to-run spread on a performance core is about 3% (another session's builds were running during
+part of the instrument work; the final row was measured with nothing else building).
 
 Per layer, rendered alone (each includes about 0.35 s of master bus), performance core (the
 "before" runs were not pinned; their layers without a reverb match the pinned performance-core
@@ -110,7 +115,8 @@ times to within 5%, so they ran on a performance core):
 | | piano | keys | bass | pluck | texture | kick | hat | rim | whole piece |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | before | 4.87 | 4.77 | 1.29 | 0.93 | 4.16 | 1.03 | 0.76 | 3.71 | 19.24 s |
-| after | 2.07 | 1.92 | 1.25 | 0.91 | 1.39 | 0.99 | 0.71 | 1.06 | 6.64 s |
+| after DSP | 2.07 | 1.92 | 1.25 | 0.91 | 1.39 | 0.99 | 0.71 | 1.06 | 6.64 s |
+| final (CPU 4) | 2.02 | 1.87 | 1.29 | 0.93 | 1.38 | 1.02 | 0.70 | 0.96 | 6.46 s |
 
 What changed (all bit-identical; the engine golden, determinism, realtime-equivalence and
 allocation tests and the dsp, engine and instruments release suites pass; the render hashes above
@@ -126,24 +132,41 @@ did not change; wasm builds):
   about 3.0 s to 0.4 s of the 122 s piece.
 - EQ: no per-sample interpolation (and its division) while no cut is fading.
 - Ladder filter: no `tan()` when the cutoff did not change.
+- `praxis_dsp::util::sanitize` (f32) and the filters' f64 flush: the same test (finite and above
+  1e-30) as one unsigned range check on the bits instead of two branches; tested against the old
+  definition on every edge value and across the bit patterns. About 5% of the whole render.
+- Sampler (praxis-instruments, cleared by the orchestrator for bit-identical work): voices render
+  two at a time, interleaved sample by sample, so their per-voice filter recursions overlap; each
+  sample still adds the voices in index order. About 4% of the piano.
+- Tried and dropped: the same pairing for the synthesised instruments (FM keys, bass, texture)
+  made them about 2% slower.
 
-Where the remaining 6.6 s go (performance core, timed inside the engine): instruments 3.80 s
-(sampled piano about 1.4 s, FM keys about 1.0 s, warm bass 0.7 s, granular 0.6 s), effect chains
-2.6 s (four reverbs 1.7 s, three EQs 0.36 s, chorus, compressor, delay, width), master bus 0.35 s.
+Where the remaining 6.5 s go (performance core, timed inside the engine before the last
+instrument changes): instruments 3.8 s, effect chains 2.6 s, master bus 0.35 s.
 
-**Why it misses, and what it would take.** The target is 20x "on a mid-range laptop". A
-14600K performance core is faster than a typical laptop core, and it reaches 18.4x; an efficiency
-core (closer to a mid-range laptop core) reaches 9.2x. The rest is not reachable with bit-identical
-changes to praxis-dsp and praxis-engine (the scope agreed for WP-Z):
+- Sampled felt piano, about 1.3 s: about 12 overlapping voices, each with two Hermite reads and
+  its low-pass and shelf biquads per sample; the biquads are 0.6 s of it, a serial recursion.
+- FM keys, about 1.0 s: four f64 `sin()` calls per voice per sample (the operators).
+- Warm bass, about 0.7 s: a ladder filter whose envelope moves the cutoff every sample, so a
+  `tan()` and a `tanh()` per voice per sample.
+- Granular texture, about 0.6 s.
+- Four reverbs 1.7 s (0.43 s each: the 8-line network 0.19 s, the 48 early-reflection taps 0.12 s,
+  the diffusers 0.05 s), three EQs 0.36 s (f64 biquads), chorus, compressor, delay, width.
 
-1. Bit-identical work in praxis-instruments (the sampler voice loop, FM operators' f64 `sin`
-   calls kept but batched): estimated 10-20% more; not enough for 20x on an efficiency core.
-2. Rendering the layers on several cores (layers are independent until the mix; summing them in
+Each of these is now arithmetic that a bit-identical change cannot remove: the transcendental
+calls and the f64 recursions are what the sound is made of.
+
+**Known gap (accepted by the orchestrator, 2026-11-12).** The target is 20x "on a mid-range
+laptop". A 14600K performance core is faster than a typical laptop core and reaches 18.2-18.9x; an
+efficiency core (closer to a mid-range laptop core) reaches 9.5x. Bit-identical work in praxis-dsp,
+praxis-engine and praxis-instruments got from 6.3x to 18.9x and stops there. What would reach it:
+
+1. Rendering the layers on several cores (layers are independent until the mix; summing them in
    the same order keeps the output bit-identical): about 4-5x on this machine, well over 20x on any
    multi-core laptop. The engine must stay thread-free (WebAssembly), so this belongs in the
    desktop render path (praxis-cli or a native-only engine entry point); needs an owner/orchestrator
    decision.
-3. Not bit-identical (changes the sound slightly, needs a listening check): a table-based sine for
+2. Not bit-identical (changes the sound slightly, needs a listening check): a table-based sine for
    FM, f32 instead of f64 biquads in the EQ, fewer reverb early-reflection taps.
 
 ### Real-time preview

@@ -27,7 +27,12 @@ fn clamp_cutoff(hz: f32, sr: f64) -> f64 {
 
 #[inline]
 fn flush(x: f64) -> f64 {
-    if x.is_finite() && x.abs() > 1e-30 {
+    // `x` when finite and |x| > 1e-30, else 0, as one unsigned range check on the magnitude's
+    // bits (no branches in the filters' per-sample state updates; same result for every input).
+    const LO: u64 = 0x39b4_484b_feeb_c2a0; // 1e-30f64.to_bits()
+    const INF: u64 = 0x7ff0_0000_0000_0000;
+    let m = x.to_bits() & 0x7fff_ffff_ffff_ffff;
+    if m.wrapping_sub(LO + 1) < INF - LO - 1 {
         x
     } else {
         0.0
@@ -486,5 +491,48 @@ mod tests {
             y = d.tick(1.0);
         }
         assert!(y.abs() < 1e-3);
+    }
+}
+
+#[cfg(test)]
+mod flush_tests {
+    use super::flush;
+
+    #[test]
+    fn the_bit_range_check_matches_the_float_comparison() {
+        let reference = |x: f64| {
+            if x.is_finite() && x.abs() > 1e-30 {
+                x
+            } else {
+                0.0
+            }
+        };
+        assert_eq!(1e-30f64.to_bits(), 0x39b4_484b_feeb_c2a0);
+        let lo = 1e-30f64.to_bits();
+        let edges = [
+            0.0,
+            -0.0,
+            1e-30,
+            -1e-30,
+            f64::from_bits(lo + 1),
+            f64::from_bits(lo - 1),
+            1e-300,
+            f64::MIN_POSITIVE,
+            f64::MAX,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NAN,
+            2.5,
+            -7.0,
+        ];
+        for x in edges {
+            assert_eq!(flush(x).to_bits(), reference(x).to_bits(), "{x:e}");
+        }
+        let mut rng = crate::rng::Pcg32::new(11);
+        for _ in 0..200_000 {
+            let b = (u64::from(rng.next_u32()) << 32) | u64::from(rng.next_u32());
+            let x = f64::from_bits(b);
+            assert_eq!(flush(x).to_bits(), reference(x).to_bits(), "{b:#x}");
+        }
     }
 }

@@ -389,91 +389,177 @@ impl Voice {
         self.fade_step > 0.0
     }
 
+    /// One output sample of the voice: what to add, and whether the voice ends there.
+    #[inline(always)]
+    fn step(&mut self, sl: &[f32], sr: &[f32]) -> Step {
+        let loop_len = self.loop_end - self.loop_start;
+        let e = self.env.next();
+        if self.env.stage == Stage::Done {
+            return Step::Stop;
+        }
+        let mut g = e * self.fade;
+        if self.fade_step > 0.0 {
+            self.fade -= self.fade_step;
+            if self.fade <= 0.0 {
+                return Step::Stop;
+            }
+        }
+        if !self.looping {
+            let rem = self.end - self.pos;
+            if rem < self.end_fade {
+                g *= (rem / self.end_fade).max(0.0) as f32;
+            }
+        }
+        let ip = self.pos as usize;
+        let t = (self.pos - ip as f64) as f32;
+        let (a, b, c, d) = if self.looping
+            && (self.pos + 3.0 > self.loop_end
+                || (self.wrapped && self.pos < self.loop_start + 1.0))
+        {
+            let ls = self.loop_start as usize;
+            let le = self.loop_end as usize; // exclusive
+            let len = le - ls;
+            let wrap = |k: isize| -> usize {
+                let mut k = k;
+                if k >= le as isize {
+                    k -= len as isize;
+                } else if self.wrapped && k < ls as isize {
+                    k += len as isize;
+                }
+                (k + PAD_FRONT as isize).max(0) as usize
+            };
+            let ip = ip as isize;
+            (wrap(ip - 1), wrap(ip), wrap(ip + 1), wrap(ip + 2))
+        } else {
+            let base = ip + PAD_FRONT;
+            (base - 1, base, base + 1, base + 2)
+        };
+        let mut xl = hermite(sl[a], sl[b], sl[c], sl[d], t);
+        let mut xr = if self.stereo {
+            hermite(sr[a], sr[b], sr[c], sr[d], t)
+        } else {
+            xl
+        };
+        if self.stereo && self.width != 1.0 {
+            let m = 0.5 * (xl + xr);
+            let s = 0.5 * (xl - xr) * self.width;
+            xl = m + s;
+            xr = m - s;
+        }
+        if self.rf_on {
+            xl = self.rf[0].tick(xl);
+            xr = self.rf[1].tick(xr);
+        }
+        if self.lp_on {
+            xl = self.lp[0].tick(xl);
+            xr = self.lp[1].tick(xr);
+        }
+        if self.shelf_on {
+            xl = self.shelf[0].tick(xl);
+            xr = self.shelf[1].tick(xr);
+        }
+        let out = (xl * g * self.gain_l, xr * g * self.gain_r);
+
+        self.pos += self.step;
+        if self.looping {
+            if self.pos >= self.loop_end {
+                self.pos -= loop_len;
+                self.wrapped = true;
+            }
+        } else if self.pos >= self.end {
+            return Step::Last(out.0, out.1);
+        }
+        Step::Add(out.0, out.1)
+    }
+
     /// Renders and adds into `l`/`r`. Returns false when the voice has finished.
     fn render(&mut self, data: &super::sample::SampleData, l: &mut [f32], r: &mut [f32]) -> bool {
-        let sl = data.left_padded();
-        let sr = data.right_padded();
-        let loop_len = self.loop_end - self.loop_start;
-        for i in 0..l.len() {
-            let e = self.env.next();
-            if self.env.stage == Stage::Done {
-                return false;
-            }
-            let mut g = e * self.fade;
-            if self.fade_step > 0.0 {
-                self.fade -= self.fade_step;
-                if self.fade <= 0.0 {
+        self.render_from(data.left_padded(), data.right_padded(), l, r)
+    }
+
+    /// [`Voice::render`] from the sample's padded channels.
+    #[inline]
+    fn render_from(&mut self, sl: &[f32], sr: &[f32], l: &mut [f32], r: &mut [f32]) -> bool {
+        for (a, b) in l.iter_mut().zip(r.iter_mut()) {
+            match self.step(sl, sr) {
+                Step::Add(x, y) => {
+                    *a += x;
+                    *b += y;
+                }
+                Step::Last(x, y) => {
+                    *a += x;
+                    *b += y;
                     return false;
                 }
-            }
-            if !self.looping {
-                let rem = self.end - self.pos;
-                if rem < self.end_fade {
-                    g *= (rem / self.end_fade).max(0.0) as f32;
-                }
-            }
-            let ip = self.pos as usize;
-            let t = (self.pos - ip as f64) as f32;
-            let (a, b, c, d) = if self.looping
-                && (self.pos + 3.0 > self.loop_end
-                    || (self.wrapped && self.pos < self.loop_start + 1.0))
-            {
-                let ls = self.loop_start as usize;
-                let le = self.loop_end as usize; // exclusive
-                let len = le - ls;
-                let wrap = |k: isize| -> usize {
-                    let mut k = k;
-                    if k >= le as isize {
-                        k -= len as isize;
-                    } else if self.wrapped && k < ls as isize {
-                        k += len as isize;
-                    }
-                    (k + PAD_FRONT as isize).max(0) as usize
-                };
-                let ip = ip as isize;
-                (wrap(ip - 1), wrap(ip), wrap(ip + 1), wrap(ip + 2))
-            } else {
-                let base = ip + PAD_FRONT;
-                (base - 1, base, base + 1, base + 2)
-            };
-            let mut xl = hermite(sl[a], sl[b], sl[c], sl[d], t);
-            let mut xr = if self.stereo {
-                hermite(sr[a], sr[b], sr[c], sr[d], t)
-            } else {
-                xl
-            };
-            if self.stereo && self.width != 1.0 {
-                let m = 0.5 * (xl + xr);
-                let s = 0.5 * (xl - xr) * self.width;
-                xl = m + s;
-                xr = m - s;
-            }
-            if self.rf_on {
-                xl = self.rf[0].tick(xl);
-                xr = self.rf[1].tick(xr);
-            }
-            if self.lp_on {
-                xl = self.lp[0].tick(xl);
-                xr = self.lp[1].tick(xr);
-            }
-            if self.shelf_on {
-                xl = self.shelf[0].tick(xl);
-                xr = self.shelf[1].tick(xr);
-            }
-            l[i] += xl * g * self.gain_l;
-            r[i] += xr * g * self.gain_r;
-
-            self.pos += self.step;
-            if self.looping {
-                if self.pos >= self.loop_end {
-                    self.pos -= loop_len;
-                    self.wrapped = true;
-                }
-            } else if self.pos >= self.end {
-                return false;
+                Step::Stop => return false,
             }
         }
         true
+    }
+
+    /// [`Voice::render`] of two voices over the same block, interleaved sample by sample so the
+    /// CPU overlaps their filter recursions. Each sample still gets `a`'s contribution before
+    /// `b`'s, exactly as rendering `a` and then `b` would add them, so the output is
+    /// bit-identical. Returns whether each voice is still playing.
+    fn render_pair(
+        a: &mut Voice,
+        da: &super::sample::SampleData,
+        b: &mut Voice,
+        db: &super::sample::SampleData,
+        l: &mut [f32],
+        r: &mut [f32],
+    ) -> (bool, bool) {
+        let (al, ar) = (da.left_padded(), da.right_padded());
+        let (bl, br) = (db.left_padded(), db.right_padded());
+        let n = l.len().min(r.len());
+        for i in 0..n {
+            let a_ends = match a.step(al, ar) {
+                Step::Add(x, y) => {
+                    l[i] += x;
+                    r[i] += y;
+                    false
+                }
+                Step::Last(x, y) => {
+                    l[i] += x;
+                    r[i] += y;
+                    true
+                }
+                Step::Stop => {
+                    // `a` adds nothing from here: `b` carries on alone, from this sample.
+                    return (false, b.render_from(bl, br, &mut l[i..n], &mut r[i..n]));
+                }
+            };
+            let b_ends = match b.step(bl, br) {
+                Step::Add(x, y) => {
+                    l[i] += x;
+                    r[i] += y;
+                    false
+                }
+                Step::Last(x, y) => {
+                    l[i] += x;
+                    r[i] += y;
+                    true
+                }
+                Step::Stop => true,
+            };
+            match (a_ends, b_ends) {
+                (false, false) => {}
+                (true, true) => return (false, false),
+                (true, false) => {
+                    return (
+                        false,
+                        b.render_from(bl, br, &mut l[i + 1..n], &mut r[i + 1..n]),
+                    );
+                }
+                (false, true) => {
+                    return (
+                        a.render_from(al, ar, &mut l[i + 1..n], &mut r[i + 1..n]),
+                        false,
+                    );
+                }
+            }
+        }
+        (true, true)
     }
 
     fn enter_release(&mut self, sr: f32) {
@@ -489,6 +575,16 @@ impl Voice {
         }
         self.env.release(self.release_s, sr);
     }
+}
+
+/// One sample of a voice ([`Voice::step`]).
+enum Step {
+    /// Add this and keep playing.
+    Add(f32, f32),
+    /// Add this; the voice ends after it.
+    Last(f32, f32),
+    /// The voice ended before this sample (nothing to add).
+    Stop,
 }
 
 fn idle_biquad() -> Biquad {
@@ -1152,14 +1248,29 @@ impl Instrument for SamplerInstrument {
         left.fill(0.0);
         right.fill(0.0);
         let program = &self.program;
+        // Voices in index order, two at a time (interleaved; same sums, see `render_pair`).
+        let mut pending: Option<&mut Voice> = None;
         for v in self.voices.iter_mut() {
             if v.state == VState::Free {
                 continue;
             }
-            let data = &program.samples[v.sample];
-            if !v.render(data, &mut left[..n], &mut right[..n]) {
+            let Some(a) = pending.take() else {
+                pending = Some(v);
+                continue;
+            };
+            let (da, db) = (&program.samples[a.sample], &program.samples[v.sample]);
+            let (a_on, b_on) = Voice::render_pair(a, da, v, db, &mut left[..n], &mut right[..n]);
+            if !a_on {
+                *a = Voice::free();
+            }
+            if !b_on {
                 *v = Voice::free();
             }
+        }
+        if let Some(a) = pending
+            && !a.render(&program.samples[a.sample], &mut left[..n], &mut right[..n])
+        {
+            *a = Voice::free();
         }
         for x in left.iter_mut().chain(right.iter_mut()) {
             *x = sanitize(*x);
