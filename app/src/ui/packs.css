@@ -1,0 +1,24 @@
+/* Instruments dialog, the felt-piano offer and the crash notice (packs.ts, crashNotice.ts). */
+dialog.packs { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); padding: 20px 22px; border: 0; border-radius: var(--radius-card); background: var(--surface); color: var(--text); }
+dialog.packs::backdrop { background: rgba(0, 0, 0, 0.6); }
+.packs-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.packs-head h2 { margin: 0; font-size: var(--fs-section); font-weight: 500; }
+.packs-intro, .packs-note, .packs-empty { color: var(--faint); font-size: var(--fs-small); line-height: 18px; overflow-wrap: anywhere; }
+.packs-list { display: grid; gap: 10px; margin: 12px 0; }
+.pack { display: grid; gap: 8px; padding: 14px 16px; border-radius: 10px; background: var(--raised); }
+.pack b { display: block; font-weight: 500; }
+.pack small { display: block; color: var(--faint); font-size: var(--fs-small); line-height: 18px; }
+.pack-status { margin: 0; font-size: var(--fs-small); color: var(--muted); }
+.pack-status.bad { color: var(--negative); }
+.pack-bar { height: 4px; border-radius: 2px; background: var(--active); overflow: hidden; }
+.pack-bar span { display: block; height: 100%; background: var(--accent); transition: width 150ms linear; }
+.pack .primary { justify-self: start; }
+.packs-open { margin: 0 4px 12px; }
+.packs-offer, .crash-notice { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 20; max-width: 640px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 16px; border-radius: var(--radius-card); background: var(--raised); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); font-size: var(--fs-small); line-height: 18px; }
+.packs-offer span { flex: 1 1 260px; }
+.crash-notice { display: grid; border: 1px solid var(--negative); }
+.crash-notice b { color: var(--negative); font-weight: 500; }
+.crash-notice p { margin: 0; color: var(--muted); overflow-wrap: anywhere; }
+.crash-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+dialog.licences { width: min(760px, calc(100vw - 32px)); }
+.licences-text { max-height: 60vh; overflow: auto; margin: 0; padding: 12px; border-radius: 10px; background: var(--raised); color: var(--muted); font-size: 11px; line-height: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }

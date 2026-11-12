@@ -12,8 +12,10 @@ use serde_json::{Value, json};
 use std::path::Path;
 
 pub mod analyze;
+pub mod bench;
 pub mod changes;
 pub mod check;
+pub mod crash;
 pub mod edit;
 pub mod generate;
 pub mod history;
@@ -31,6 +33,7 @@ pub mod validate;
 pub mod variations;
 
 pub use analyze::{AnalyzeRequest, analyze};
+pub use bench::{BenchRequest, bench};
 pub use check::{CheckRequest, check};
 pub use edit::{EditRequest, edit};
 pub use generate::{GenerateRequest, ProviderChoice, generate};

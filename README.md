@@ -35,3 +35,18 @@ praxis --json ...        # one JSON object on stdout, see docs/contracts/cli.md
 | `schema/` | published JSON Schemas |
 | `fixtures/` | hand-written scores |
 | `demos/phase-N/` | rendered examples with listening notes |
+
+## Licence
+
+Praxis Sound is licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option. Unless you explicitly state otherwise, any contribution you submit for inclusion
+in the work, as defined in the Apache-2.0 license, is dual licensed as above, without any
+additional terms or conditions.
+
+Third-party components and their licences: `THIRD_PARTY.md` (the audit) and
+`THIRD-PARTY-NOTICES.txt` (the licence texts shipped with the app; regenerate with
+`python -I docs/release/notices.py`).

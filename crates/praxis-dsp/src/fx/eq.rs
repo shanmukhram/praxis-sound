@@ -186,19 +186,29 @@ impl Processor for Eq4 {
                 self.cut[0].advance(len as u32) as f64,
                 self.cut[1].advance(len as u32) as f64,
             ];
+            // While a cut is not fading, a0 + (a1 - a0) * t is exactly a0: skip the per-sample
+            // interpolation (and its division) then.
+            let fading = a0[0] != a1[0] || a0[1] != a1[1];
             for (ch, buf) in [&mut *left, &mut *right].into_iter().enumerate() {
                 let st = &mut self.st[ch];
                 for (k, x) in buf[start..start + len].iter_mut().enumerate() {
-                    let t = (k + 1) as f64 / len as f64;
                     let mut y = crate::util::sanitize(*x) as f64;
-                    for (s, b) in st.iter_mut().enumerate() {
-                        let f = b.tick64(y);
-                        y = if s < 2 {
-                            let a = a0[s] + (a1[s] - a0[s]) * t;
-                            y + (f - y) * a
-                        } else {
-                            f
-                        };
+                    if fading {
+                        let t = (k + 1) as f64 / len as f64;
+                        for (s, b) in st.iter_mut().enumerate() {
+                            let f = b.tick64(y);
+                            y = if s < 2 {
+                                let a = a0[s] + (a1[s] - a0[s]) * t;
+                                y + (f - y) * a
+                            } else {
+                                f
+                            };
+                        }
+                    } else {
+                        for (s, b) in st.iter_mut().enumerate() {
+                            let f = b.tick64(y);
+                            y = if s < 2 { y + (f - y) * a0[s] } else { f };
+                        }
                     }
                     *x = crate::util::sanitize(y as f32);
                 }

@@ -32,6 +32,21 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "publisher": "Praxis Sound",
+    "copyright": "Praxis Sound. All rights reserved.",
+    "category": "Music",
+    "shortDescription": "Score-driven music and sound design",
+    "longDescription": "Turns a text brief or a reference clip into editable, layered audio rendered from a score.",
+    "resources": {
+      "../../packs/index.json": "packs/index.json",
+      "../../THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt",
+      "../../LICENSE-MIT": "LICENSE-MIT",
+      "../../LICENSE-APACHE": "LICENSE-APACHE"
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "currentUser", "compression": "bzip2" }
+    }
   }
 }

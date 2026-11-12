@@ -413,6 +413,7 @@ pub fn writable_home(preferred: PathBuf, fallback: Option<PathBuf>) -> PathBuf {
 pub fn run() {
     let fallback = std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Praxis Sound"));
     let state = AppState::new(writable_home(sounds::home(), fallback));
+    crate::crash::install(state.home.clone());
     let result = tauri::Builder::default()
         .manage(state)
         .setup(move |app| {
@@ -457,6 +458,9 @@ pub fn run() {
             transport_set_loop,
             transport_layer,
             transport_status,
+            crate::packs::packs_list,
+            crate::packs::packs_install,
+            crate::crash::crash_reports,
             transport_compare,
             clip_analyze,
             library_list,

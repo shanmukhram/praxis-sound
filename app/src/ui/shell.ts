@@ -724,6 +724,8 @@ export class Shell {
       h('button', { class: 'new-sound', 'data-testid': 'new-sound', onclick: () => void this.openSound('new') }, h('span', { 'aria-hidden': 'true' }, '+'), ' New sound'),
       h('h2', {}, 'Sounds'),
       list,
+      this.engine.kind === 'tauri' ? h('button', { class: 'ghost packs-open', 'data-testid': 'open-packs', onclick: () => window.dispatchEvent(new Event('praxis:packs')) }, 'Instruments') : '',
+      this.engine.kind === 'tauri' ? h('button', { class: 'ghost packs-open', 'data-testid': 'open-licences', onclick: () => window.dispatchEvent(new Event('praxis:licences')) }, 'Licences') : '',
       h(
         'div',
         { class: 'agents', 'data-testid': 'agents' },

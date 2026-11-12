@@ -347,7 +347,13 @@ impl Ladder {
 
     /// Cutoff in Hz.
     pub fn set_cutoff(&mut self, hz: f32) {
-        self.cutoff = clamp_cutoff(hz, self.sr);
+        let cutoff = clamp_cutoff(hz, self.sr);
+        // Instruments with a filter envelope call this every sample: the same cutoff gives the
+        // same coefficients (`update` reads only the cutoff and the rate), so skip the tan().
+        if cutoff == self.cutoff {
+            return;
+        }
+        self.cutoff = cutoff;
         self.update();
     }
 
