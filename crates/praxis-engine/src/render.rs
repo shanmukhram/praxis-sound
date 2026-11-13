@@ -369,8 +369,6 @@ pub(crate) fn build_nodes(
     Ok((nodes, max_tail, notes_rendered))
 }
 
-/// Copies the part of block `[t, t + block.len())` that lies in `[start, end)` into `out`
-/// (indexed from `start`).
 /// Blocks per chunk of the parallel block loop (16384 samples at the default block size).
 #[cfg(not(target_arch = "wasm32"))]
 const PARALLEL_CHUNK_BLOCKS: usize = 128;
@@ -466,6 +464,8 @@ fn render_blocks_parallel(
     }
 }
 
+/// Copies the part of block `[t, t + block.len())` that lies in `[start, end)` into `out`
+/// (indexed from `start`).
 fn copy_window(block: (&[f32], &[f32]), t: u64, start: u64, end: u64, out: &mut StereoBuffer) {
     let (l, r) = block;
     let b_end = t + l.len() as u64;
