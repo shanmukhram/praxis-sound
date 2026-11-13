@@ -375,7 +375,8 @@ pub fn bench(req: &BenchRequest) -> Result<Value, OpError> {
         "passed": rtf(median) >= TARGET_REALTIME_FACTOR,
         "deterministic": deterministic,
         "build": if cfg!(debug_assertions) { "debug" } else { "release" },
-        "threads": 1,
+        // Worker threads the engine renders layers on (PRAXIS_RENDER_THREADS lowers it).
+        "threads": praxis_engine::render::render_threads(),
         "machine": {
             "os": std::env::consts::OS,
             "arch": std::env::consts::ARCH,

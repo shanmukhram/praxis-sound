@@ -1,4 +1,10 @@
-//! Decoded sample audio (f32, shared between voices through `Arc`) and WAV/FLAC decoding.
+//! Decoded sample audio (shared between voices through `Arc`) and WAV/FLAC decoding.
+//!
+//! Storage: a channel whose every value is a whole number of 2^-23 steps in [-1, 1) (all 8-, 16-
+//! and 24-bit PCM, as decoded here) is kept as packed 24-bit integers (3 bytes a sample instead
+//! of 4) and read back as `v as f32 * 2^-23`, which is exactly the f32 it was decoded to; any
+//! other channel (32-bit float WAV, SF2 tests, odd values) stays f32. Reads are bit-identical
+//! either way; the felt piano's 24-bit samples take 86 MB instead of 115 MB.
 
 /// Zero frames stored before the first and after the last real frame, so the 4-point
 /// interpolator can read one frame before and two after any playable position without
@@ -11,9 +17,9 @@ pub const PAD_BACK: usize = 3;
 pub struct SampleData {
     pub sample_rate: f32,
     frames: usize,
-    left: Vec<f32>,
+    left: Store,
     /// `None` for mono samples.
-    right: Option<Vec<f32>>,
+    right: Option<Store>,
     /// Frames of pre-roll before the audible attack, measured at load (see [`measure_onset`]).
     onset: usize,
 }
@@ -76,6 +82,90 @@ pub fn measure_onset(sample_rate: f32, left: &[f32], right: Option<&[f32]>) -> u
     onset.saturating_sub((ONSET_BACKOFF_S * sample_rate).round() as usize)
 }
 
+/// One padded channel: packed 24-bit (little-endian, 3 bytes a sample) when exact, else f32.
+#[derive(Clone, Debug, PartialEq)]
+enum Store {
+    I24(Vec<u8>),
+    F32(Vec<f32>),
+}
+
+/// 2^-23: one step of 24-bit PCM scaled to [-1, 1).
+const I24_STEP: f32 = 1.0 / 8_388_608.0;
+
+/// `x` as a 24-bit integer when `v as f32 * I24_STEP` gives back exactly `x` (bit for bit).
+fn as_i24(x: f32) -> Option<i32> {
+    let v = x * 8_388_608.0;
+    if !(-8_388_608.0..=8_388_607.0).contains(&v) || v.fract() != 0.0 {
+        return None;
+    }
+    let v = v as i32;
+    ((v as f32 * I24_STEP).to_bits() == x.to_bits()).then_some(v)
+}
+
+impl Store {
+    fn new(v: Vec<f32>) -> Store {
+        let packed: Option<Vec<u8>> =
+            v.iter()
+                .map(|&x| as_i24(x))
+                .try_fold(Vec::with_capacity(v.len() * 3), |mut out, i| {
+                    let b = i?.to_le_bytes();
+                    out.extend_from_slice(&b[..3]);
+                    Some(out)
+                });
+        match packed {
+            Some(bytes) => Store::I24(bytes),
+            None => Store::F32(v),
+        }
+    }
+
+    fn bytes(&self) -> usize {
+        match self {
+            Store::I24(b) => b.len(),
+            Store::F32(v) => v.len() * 4,
+        }
+    }
+
+    fn view(&self) -> Channel<'_> {
+        match self {
+            Store::I24(b) => Channel::I24(b),
+            Store::F32(v) => Channel::F32(v),
+        }
+    }
+}
+
+/// A read-only view of one padded channel ([`SampleData::left_padded`]).
+#[derive(Clone, Copy, Debug)]
+pub enum Channel<'a> {
+    I24(&'a [u8]),
+    F32(&'a [f32]),
+}
+
+impl Channel<'_> {
+    /// Sample `i` of the padded channel, exactly the f32 it was decoded to.
+    #[inline(always)]
+    pub fn at(self, i: usize) -> f32 {
+        match self {
+            Channel::I24(b) => {
+                let b = &b[3 * i..3 * i + 3];
+                // Sign-extend the 24-bit value through the top byte.
+                (i32::from_le_bytes([0, b[0], b[1], b[2]]) >> 8) as f32 * I24_STEP
+            }
+            Channel::F32(v) => v[i],
+        }
+    }
+
+    pub fn len(self) -> usize {
+        match self {
+            Channel::I24(b) => b.len() / 3,
+            Channel::F32(v) => v.len(),
+        }
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.len() == 0
+    }
+}
+
 fn padded(mut v: Vec<f32>) -> Vec<f32> {
     let mut out = Vec::with_capacity(v.len() + PAD_FRONT + PAD_BACK);
     out.resize(PAD_FRONT, 0.0);
@@ -96,8 +186,8 @@ impl SampleData {
         SampleData {
             sample_rate,
             frames,
-            left: padded(left),
-            right: right.map(padded),
+            left: Store::new(padded(left)),
+            right: right.map(|r| Store::new(padded(r))),
             onset,
         }
     }
@@ -117,24 +207,32 @@ impl SampleData {
 
     /// Padded left channel (frame `i` at `i + PAD_FRONT`).
     #[inline]
-    pub fn left_padded(&self) -> &[f32] {
-        &self.left
+    pub fn left_padded(&self) -> Channel<'_> {
+        self.left.view()
     }
 
     /// Padded right channel; the left channel for mono samples.
     #[inline]
-    pub fn right_padded(&self) -> &[f32] {
-        self.right.as_deref().unwrap_or(&self.left)
+    pub fn right_padded(&self) -> Channel<'_> {
+        self.right.as_ref().unwrap_or(&self.left).view()
     }
 
     /// Frame `i` (unpadded index), for tests and analysis.
     pub fn frame(&self, i: usize) -> (f32, f32) {
-        (self.left[i + PAD_FRONT], self.right_padded()[i + PAD_FRONT])
+        (
+            self.left_padded().at(i + PAD_FRONT),
+            self.right_padded().at(i + PAD_FRONT),
+        )
     }
 
-    /// Approximate memory use in bytes.
+    /// Whether the channels are held as packed 24-bit integers (see the module docs).
+    pub fn is_packed(&self) -> bool {
+        matches!(self.left, Store::I24(_))
+    }
+
+    /// Memory use of the audio in bytes.
     pub fn bytes(&self) -> usize {
-        (self.left.len() + self.right.as_ref().map_or(0, |r| r.len())) * 4
+        self.left.bytes() + self.right.as_ref().map_or(0, Store::bytes)
     }
 }
 
@@ -223,5 +321,62 @@ pub fn decode(bytes: &[u8], name: &str) -> Result<SampleData, String> {
         Err(format!(
             "`{name}`: unsupported sample format (WAV and FLAC are supported)"
         ))
+    }
+}
+
+#[cfg(test)]
+mod storage_tests {
+    use super::*;
+
+    fn pcm24(n: usize, seed: u32) -> Vec<f32> {
+        let mut x = seed;
+        (0..n)
+            .map(|_| {
+                x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let v = (x as i32) >> 8; // any 24-bit value
+                v as f32 * (1.0 / (1u64 << 23) as f32)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn pcm_is_packed_and_reads_back_bit_for_bit() {
+        let mut l = pcm24(5000, 1);
+        let r = pcm24(5000, 2);
+        l[0] = -1.0;
+        l[1] = 8_388_607.0 / 8_388_608.0;
+        l[2] = 0.0;
+        let s = SampleData::new(44_100.0, l.clone(), Some(r.clone()));
+        assert!(s.is_packed());
+        assert_eq!(s.bytes(), 2 * (5000 + PAD_FRONT + PAD_BACK) * 3);
+        for i in 0..5000 {
+            let (a, b) = s.frame(i);
+            assert_eq!(a.to_bits(), l[i].to_bits(), "left {i}");
+            assert_eq!(b.to_bits(), r[i].to_bits(), "right {i}");
+        }
+        // The padding reads as zeros.
+        assert_eq!(s.left_padded().at(0), 0.0);
+        assert_eq!(s.left_padded().at(5000 + PAD_FRONT + PAD_BACK - 1), 0.0);
+    }
+
+    #[test]
+    fn sixteen_bit_pcm_packs_too() {
+        let l: Vec<f32> = (-300i32..300)
+            .map(|v| (v * 97) as f32 * (1.0 / 32768.0))
+            .collect();
+        let s = SampleData::new(48_000.0, l.clone(), None);
+        assert!(s.is_packed());
+        for (i, x) in l.iter().enumerate() {
+            assert_eq!(s.frame(i).0.to_bits(), x.to_bits());
+        }
+    }
+
+    #[test]
+    fn anything_else_stays_float() {
+        for odd in [0.1f32, -0.0, 1.0, f32::MIN_POSITIVE, 1e-9] {
+            let s = SampleData::new(48_000.0, vec![0.25, odd, -0.5], None);
+            assert!(!s.is_packed(), "{odd:e}");
+            assert_eq!(s.frame(1).0.to_bits(), odd.to_bits());
+        }
     }
 }

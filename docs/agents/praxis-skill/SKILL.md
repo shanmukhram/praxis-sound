@@ -47,7 +47,9 @@ With the MCP server (`praxis-mcp`):
 | `praxis_generate` | A plain-language brief -> project (offline rule planner, or Claude with a key). |
 | `praxis_render` | Project or score -> WAV/FLAC (+ stems), with checks. |
 | `praxis_check` | Measure an existing render against its project. |
-| `praxis_analyze` | Measure any audio or video clip (tempo, key, loudness, onsets, seam). |
+| `praxis_analyze` | Measure any audio or video clip: its complete Sound Profile (kind, tempo, key, loudness, spectrum, rhythm, envelope, pitch). |
+| `praxis_match` | Make something like a reference clip: a new project with its character (never its melody), refined by rendering and measuring; returns `similarity`, `iterations[]` and the `originality` check. Optional `prompt` (mood), `key`, `bpm`, `bars`, and `timbre` (groove from `clip`, timbre from a second clip). Takes tens of seconds. |
+| `praxis_library` | The reference library: saved, tagged Sound Profiles (never audio). `action`: `add` (a clip or profile JSON, `name`, `tags`), `list`, `show` (`id`), `tag` (`id`, `add`, `remove`), `remove` (`id`). A library id can be the reference of `praxis_ask` (`reference.library_id`). |
 | `praxis_export` | WAV 16/24/32f, FLAC 16/24, stems, or MIDI. |
 | `praxis_validate` | Validate a `.score.json` or a `.praxis` project's score. |
 | `praxis_edit` | Scoped edit of a project: an instruction (`prompt`) or an EditPlan you wrote (`plan`). |
@@ -63,7 +65,10 @@ x.praxis --render x.wav --skip-missing --json`, `praxis check x.wav --score x.pr
 `praxis presets --json`, `praxis schema --json` (the `plan` field), `praxis export-midi`,
 `praxis edit x.praxis --prompt "..."`, `praxis variations x.praxis --bars 13-16 --layer piano`,
 `praxis ask <sound> "<text>" [--bars 13-16 --layer piano] [--who name]`, `praxis takes <sound>`,
-`praxis restore <sound> <n>`, `praxis keep-variation <sound> <i>`, `praxis open-view <sound> notes`.
+`praxis restore <sound> <n>`, `praxis keep-variation <sound> <i>`, `praxis open-view <sound> notes`,
+`praxis match clip.wav --prompt calm -o like.praxis --render like.wav`, `praxis library add clip.wav
+--name "calm piano" --tag piano`, `praxis library list`. Every command and its JSON:
+`docs/cli/commands.md`.
 
 Every response is the CLI's JSON: `{"ok": true, "command": ..., ...payload}` or
 `{"ok": false, "command": ..., "error": {"code", "message", "issues"?}}` (MCP sets `isError`).

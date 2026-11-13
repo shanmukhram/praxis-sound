@@ -70,6 +70,24 @@ pub fn render_offline_with(
     config: &RenderConfig<'_>,
 ) -> Result<RenderOutput, RenderError> {
     #[cfg(not(target_arch = "wasm32"))]
+    let threads = render_threads();
+    #[cfg(target_arch = "wasm32")]
+    let threads = 1;
+    render_offline_threads(score, factory, opts, config, threads)
+}
+
+/// [`render_offline_with`] on at most `threads` worker threads (1: on the calling thread only;
+/// always 1 on WebAssembly). The output is the same for every thread count; tests use this to
+/// show it.
+#[doc(hidden)]
+pub fn render_offline_threads(
+    score: &Score,
+    factory: &dyn InstrumentFactory,
+    opts: &RenderOptions,
+    config: &RenderConfig<'_>,
+    threads: usize,
+) -> Result<RenderOutput, RenderError> {
+    #[cfg(not(target_arch = "wasm32"))]
     let started = std::time::Instant::now();
 
     if opts.sample_rate == 0 {
@@ -153,7 +171,30 @@ pub fn render_offline_with(
     graph.preroll();
     let grid_end = plan.start + win + master_latency;
     let master_start = plan.start + master_latency;
-    let mut t = 0u64;
+    #[cfg(not(target_arch = "wasm32"))]
+    let threads = if graph.layers_independent() {
+        threads.min(graph.layers().len())
+    } else {
+        1
+    };
+    #[cfg(target_arch = "wasm32")]
+    let threads = {
+        let _ = threads;
+        1usize
+    };
+    let mut t = if threads > 1 { grid_end } else { 0u64 };
+    #[cfg(not(target_arch = "wasm32"))]
+    if threads > 1 {
+        render_blocks_parallel(
+            &mut graph,
+            threads,
+            grid_end,
+            bs,
+            (master_start, plan.start, win),
+            &mut bus,
+            opts.stems.then_some(&mut stems),
+        );
+    }
     while t < grid_end {
         let n = ((grid_end - t) as usize).min(bs);
         graph.process_block(t, n);
@@ -330,6 +371,101 @@ pub(crate) fn build_nodes(
 
 /// Copies the part of block `[t, t + block.len())` that lies in `[start, end)` into `out`
 /// (indexed from `start`).
+/// Blocks per chunk of the parallel block loop (16384 samples at the default block size).
+#[cfg(not(target_arch = "wasm32"))]
+const PARALLEL_CHUNK_BLOCKS: usize = 128;
+
+/// One layer's output over a chunk (left, right).
+#[cfg(not(target_arch = "wasm32"))]
+type Span = (Vec<f32>, Vec<f32>);
+
+/// Worker threads for offline renders: the available cores minus one, at most 8, and at least 1.
+/// `PRAXIS_RENDER_THREADS` lowers it (1 renders on the calling thread only). The output does not
+/// depend on it: every layer runs through the same blocks and the layers are summed in score order.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn render_threads() -> usize {
+    let auto = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .saturating_sub(1)
+        .clamp(1, 8);
+    match std::env::var("PRAXIS_RENDER_THREADS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+    {
+        Some(n) if n >= 1 => n.min(auto),
+        _ => auto,
+    }
+}
+
+/// The block loop with the layers rendered on `threads` worker threads, chunk by chunk; the mix,
+/// master chain and copies stay on this thread, block by block, in the sequential loop's order,
+/// so the output is bit-identical to it. Only for graphs whose layers are independent.
+#[cfg(not(target_arch = "wasm32"))]
+fn render_blocks_parallel(
+    graph: &mut Graph,
+    threads: usize,
+    grid_end: u64,
+    bs: usize,
+    (master_start, start, win): (u64, u64, u64),
+    bus: &mut StereoBuffer,
+    mut stems: Option<&mut Vec<StereoBuffer>>,
+) {
+    let chunk = PARALLEL_CHUNK_BLOCKS * bs;
+    let mut outs: Vec<Span> = (0..graph.layers.len())
+        .map(|_| (vec![0.0; chunk], vec![0.0; chunk]))
+        .collect();
+    let mut t0 = 0u64;
+    while t0 < grid_end {
+        let span = ((grid_end - t0) as usize).min(chunk);
+        let mut groups: Vec<Vec<(&mut LayerNode, &mut Span)>> =
+            (0..threads).map(|_| Vec::new()).collect();
+        for (i, pair) in graph.layers.iter_mut().zip(outs.iter_mut()).enumerate() {
+            groups[i % threads].push(pair);
+        }
+        std::thread::scope(|s| {
+            for group in groups.iter_mut().filter(|g| !g.is_empty()) {
+                s.spawn(move || {
+                    for (node, (ol, or)) in group.iter_mut() {
+                        node.render_span(t0, span, bs, ol, or);
+                    }
+                });
+            }
+        });
+        drop(groups);
+        let mut off = 0usize;
+        while off < span {
+            let n = (span - off).min(bs);
+            let t = t0 + off as u64;
+            graph.mix_block_from(&outs, off, n);
+            copy_window(
+                graph.master_output(),
+                t,
+                master_start,
+                master_start + win,
+                bus,
+            );
+            if let Some(stems) = stems.as_deref_mut() {
+                for ((node, stem), (ol, or)) in
+                    graph.layers().iter().zip(stems.iter_mut()).zip(&outs)
+                {
+                    if !node.is_key_only() {
+                        copy_window(
+                            (&ol[off..off + n], &or[off..off + n]),
+                            t,
+                            start,
+                            start + win,
+                            stem,
+                        );
+                    }
+                }
+            }
+            off += n;
+        }
+        t0 += span as u64;
+    }
+}
+
 fn copy_window(block: (&[f32], &[f32]), t: u64, start: u64, end: u64, out: &mut StereoBuffer) {
     let (l, r) = block;
     let b_end = t + l.len() as u64;

@@ -12,6 +12,8 @@ const METER_FLOOR = -60;
 /** The words for one playback state (exported for tests). */
 export function playbackText(p: PlaybackInfo): { text: string; trouble: boolean } {
   if (p.mode === 'audio') return { text: p.message ?? "Playing the take's own file.", trouble: !!p.message };
+  // The first Play of a sound loads its instruments (about a quarter of a second for the felt piano).
+  if (p.loading) return { text: 'Loading instruments…', trouble: false };
   const parts = ['Real-time engine'];
   if (p.device) parts.push(p.device);
   if (p.sampleRate) parts.push(`${p.sampleRate / 1000} kHz`);

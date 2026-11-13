@@ -350,6 +350,18 @@ fn seek_and_a_loop_range_keep_the_position_in_the_range() {
     r.service.seek(4.0 * 1.875); // bar 5
     r.service.play();
     r.wait_frames(SR as usize * 6); // three passes of the two-bar range
+    // Position events come about 30 times a second of wall-clock time, and the fake output runs
+    // 10x faster than real time, so a slow runner may have sent only a few by now: keep playing
+    // (still inside the loop range) until there are enough to check.
+    wait_for("more than 10 position events", 60.0, || {
+        r.events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| e.playing)
+            .count()
+            > 10
+    });
     r.service.stop();
     wait_for("stop", 10.0, || r.last_event().is_some_and(|e| !e.playing));
     let events = r.events.lock().unwrap().clone();
@@ -653,4 +665,117 @@ fn record_a_swap_for_listening() {
         swapped as f64 / SR as f64,
         current - 1
     );
+}
+
+/// The app's path (WP-Z2): an opened sound is built only on its first Play, and opening another
+/// sound or closing frees the graph (an empty one is swapped in).
+#[test]
+fn a_sound_is_built_on_its_first_play_and_freed_when_another_opens() {
+    let score = bell_score();
+    let (_, _, gain) = offline(&score);
+    let r = rig(10.0);
+    r.service.load_sound("sounds/a", score.clone(), Some(gain));
+    // Opened, not played: nothing is built.
+    std::thread::sleep(Duration::from_millis(300));
+    let s = r.service.status();
+    assert!(!s.loaded, "built before the first Play");
+    assert_eq!(s.prepare_ms, None);
+    assert_eq!(s.event.swaps, 0);
+    assert!(!s.event.loading);
+    // An edit of the same sound before any Play still builds nothing.
+    r.service.load_sound("sounds/a", score.clone(), Some(gain));
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(!r.service.status().loaded);
+
+    // The first Play builds it and the sound plays from the start.
+    let from = r.frames();
+    r.service.play();
+    r.loaded(1);
+    r.wait_frames(SR as usize);
+    let (l, _) = r.audio_from(from);
+    assert!(
+        l.iter().any(|x| x.abs() > 1e-3),
+        "silent after the first Play"
+    );
+    assert!(!r.service.status().event.loading);
+    r.service.stop();
+    wait_for("stop", 10.0, || r.last_event().is_some_and(|e| !e.playing));
+
+    // Once played, an edit of the same sound is built at once.
+    let mut edited = score.clone();
+    edited.tempo.bpm = 120.0;
+    r.service.load_sound("sounds/a", edited, Some(gain));
+    r.loaded(2);
+
+    // Another sound: the old graph is swapped out for an empty one, and nothing new is built.
+    r.service.load_sound("sounds/b", score.clone(), Some(gain));
+    wait_for("the empty graph", 10.0, || {
+        let s = r.service.status();
+        s.event.swaps >= 3 && !s.loaded
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(r.service.status().event.swaps, 3);
+
+    // Closing frees it too (no graph of the sound plays).
+    r.service.play();
+    r.loaded(4);
+    r.service.clear();
+    wait_for("the empty graph after closing", 10.0, || {
+        r.service.status().event.swaps >= 5
+    });
+    let s = r.service.status();
+    assert!(!s.loaded);
+}
+
+/// The first Play of a felt-piano sound loads its instruments (WP-Z2): ready in well under a
+/// second, with `loading` reported meanwhile. Prints the wait.
+#[test]
+fn the_first_play_of_a_felt_piano_sound_is_ready_within_a_second() {
+    if !have_piano("the_first_play_of_a_felt_piano_sound_is_ready_within_a_second") {
+        return;
+    }
+    let sound = real_sound("first-play");
+    let (score, gain) = praxis_app::commands::playback_score(&sound).expect("live score");
+    let tap: Tap = Arc::new(Mutex::new((Vec::new(), Vec::new())));
+    let events: Events = Arc::new(Mutex::new(Vec::new()));
+    let ev = events.clone();
+    let service = AudioService::start(
+        FakeOutput {
+            sample_rate: SR,
+            callback_frames: CALLBACK,
+            speed: 1.0,
+            tap: Some(tap.clone()),
+            xruns: None,
+        }
+        .opener(),
+        Arc::new(praxis_instruments::Registry::with_default_packs()),
+        Box::new(move |e| ev.lock().unwrap().push(e.clone())),
+    );
+    service.load_sound(&sound, score, gain);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(!service.status().loaded, "built before the first Play");
+    let t0 = Instant::now();
+    service.play();
+    let start = tap.lock().unwrap().0.len();
+    wait_for("the felt piano graph", 30.0, || service.status().loaded);
+    let built = t0.elapsed();
+    wait_for("sound", 30.0, || {
+        tap.lock().unwrap().0[start..]
+            .iter()
+            .any(|v| v.abs() > 1e-4)
+    });
+    let heard = t0.elapsed();
+    let s = service.status();
+    println!(
+        "first Play: graph built after {:.0} ms (prepare {:?} ms), first sound after {:.0} ms",
+        built.as_secs_f64() * 1000.0,
+        s.prepare_ms,
+        heard.as_secs_f64() * 1000.0
+    );
+    let saw_loading = events.lock().unwrap().iter().any(|e| e.loading);
+    if built > Duration::from_millis(150) {
+        assert!(saw_loading, "a wait over 150 ms must show `loading`");
+    }
+    assert!(heard < Duration::from_secs(1), "first Play took {heard:?}");
+    service.stop();
 }

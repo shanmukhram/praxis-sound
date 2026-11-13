@@ -23,7 +23,18 @@ fn scratch(test: &str) -> PathBuf {
     std::path::absolute(dir).unwrap()
 }
 
-/// A reference of the matcher's set rendered to a WAV (no pack needed for these presets).
+/// True when the Upright Piano KW pack is installed; otherwise prints why `test` is skipped (CI
+/// does not install packs), like the other pack-dependent tests.
+fn have_piano(test: &str) -> bool {
+    let ok = praxis_instruments::Packs::discover().has_pack("upright-piano-kw");
+    if !ok {
+        println!("SKIP {test}: the upright-piano-kw pack is not installed (set PRAXIS_PACKS)");
+    }
+    ok
+}
+
+/// A reference of the matcher's set rendered to a WAV (the felt-piano references need the
+/// Upright Piano KW pack; check [`have_piano`] first).
 fn reference_wav(dir: &Path, name: &str) -> PathBuf {
     let r = refset::references()
         .into_iter()
@@ -96,6 +107,10 @@ fn like_this_runs_the_match_loop_and_the_take_records_the_reference() {
 
 #[test]
 fn other_requests_give_the_planner_the_reference_numbers() {
+    // `lullaby_felt` is a felt-piano reference.
+    if !have_piano("other_requests_give_the_planner_the_reference_numbers") {
+        return;
+    }
     let dir = scratch("planner");
     // The felt-piano lullaby profiles as music at 72 BPM in D major.
     let wav = reference_wav(&dir, "lullaby_felt");

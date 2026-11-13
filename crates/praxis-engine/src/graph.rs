@@ -431,4 +431,67 @@ impl Graph {
     pub fn master_output(&self) -> (&[f32], &[f32]) {
         (&self.mix_l[..self.n], &self.mix_r[..self.n])
     }
+
+    /// True when the layers can be rendered on several threads: two or more layers and no
+    /// sidechain (no layer reads another's key tap), so each layer depends only on itself.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn layers_independent(&self) -> bool {
+        self.layers.len() >= 2
+            && self.taps.iter().all(Option::is_none)
+            && self
+                .layers
+                .iter()
+                .all(|l| l.feeds.is_empty() && !l.key_only)
+    }
+
+    /// The mix and master chain of one block from the layers' outputs rendered elsewhere
+    /// (`outs[i]` is layer `i`'s span; this block is `[off, off + n)` of it): exactly what
+    /// [`Self::process_block`] does after the layers, summing in the same (score) order.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn mix_block_from(&mut self, outs: &[(Vec<f32>, Vec<f32>)], off: usize, n: usize) {
+        let n = n.min(self.max_block);
+        self.n = n;
+        self.mix_l[..n].fill(0.0);
+        self.mix_r[..n].fill(0.0);
+        for (l, (ol, or)) in self.layers.iter().zip(outs) {
+            if l.key_only {
+                continue;
+            }
+            mixer::sum_into(
+                &mut self.mix_l[..n],
+                &mut self.mix_r[..n],
+                &ol[off..off + n],
+                &or[off..off + n],
+            );
+        }
+        self.process_master_chain();
+    }
+}
+
+impl LayerNode {
+    /// Renders this layer alone over `[t0, t0 + span)` in blocks of `block` samples (the same
+    /// block boundaries as the graph's block loop when `t0` is a multiple of `block`), writing
+    /// its post gain/pan output into `out_l`/`out_r`. Only for graphs whose layers are
+    /// independent ([`Graph::layers_independent`]): no sidechain taps are read or written.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn render_span(
+        &mut self,
+        t0: u64,
+        span: usize,
+        block: usize,
+        out_l: &mut [f32],
+        out_r: &mut [f32],
+    ) {
+        let mut off = 0;
+        while off < span {
+            let n = (span - off).min(block);
+            let t = t0 + off as u64;
+            self.front(t, n);
+            self.back(t, &[]);
+            let m = self.n;
+            out_l[off..off + m].copy_from_slice(&self.out_l[..m]);
+            out_r[off..off + m].copy_from_slice(&self.out_r[..m]);
+            off += n;
+        }
+    }
 }

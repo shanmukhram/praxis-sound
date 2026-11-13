@@ -37,9 +37,13 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Linux audio headers (cpal)
+      # cpal needs ALSA; praxis-app (Tauri 2, a workspace member that lint and tests build)
+      # needs WebKitGTK, GTK 3 and their companions on Linux.
+      - name: Linux system libraries (cpal, Tauri)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
       - name: Format
         run: cargo fmt --all --check
       - name: Lint

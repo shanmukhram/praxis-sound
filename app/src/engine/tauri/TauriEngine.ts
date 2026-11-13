@@ -85,6 +85,8 @@ export interface PlaybackInfo {
   /** Callback sizes the device used, in frames ([0, 0] before the first callback). */
   callbackFrames: [number, number];
   preparing: boolean;
+  /** The sound's instruments are being loaded for its first Play. */
+  loading?: boolean;
   stalled: boolean;
 }
 
@@ -630,6 +632,7 @@ export class TauriEngine implements EngineAdapter {
       deviceErrors: e?.device_errors ?? 0,
       callbackFrames: [e?.min_callback_frames ?? 0, e?.max_callback_frames ?? 0],
       preparing: e?.preparing ?? false,
+      loading: e?.loading ?? false,
       stalled: e?.stalled ?? false,
     };
   }

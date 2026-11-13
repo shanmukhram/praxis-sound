@@ -315,8 +315,10 @@ async fn transport_sync(
     match sound {
         None => audio.clear(),
         Some(sound) => {
+            let key = sound.clone();
             let (score, gain) = blocking(move || commands::playback_score(&sound)).await?;
-            audio.load(score, gain);
+            // Built on the first Play, so an open sound holds no samples until it is played.
+            audio.load_sound(&key, score, gain);
         }
     }
     Ok(audio.status())

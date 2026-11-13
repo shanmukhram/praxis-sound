@@ -118,8 +118,8 @@ praxis --json render fixtures/acceptance1.score.json -o a1.wav
   "notes_rendered": 160,
   "ok": true,
   "output": "<PRAXIS_HOME>\\work\\a1.wav",
-  "realtime_factor": 25.226,
-  "render_seconds": 1.189,
+  "realtime_factor": 15.696,
+  "render_seconds": 1.911,
   "sample_rate": 48000,
   "seed": 1,
   "skipped_layers": [],
@@ -451,8 +451,8 @@ praxis --json generate --provider offline --prompt a calm felt piano loop in A m
     "loudness_lufs": -16.0,
     "notes_rendered": 144,
     "output": "<PRAXIS_HOME>\\work\\calm.wav",
-    "realtime_factor": 26.726,
-    "render_seconds": 1.122,
+    "realtime_factor": 19.855,
+    "render_seconds": 1.511,
     "sample_rate": 48000,
     "seed": 1,
     "skipped_layers": [],
@@ -1131,7 +1131,7 @@ praxis --json ask calm make it softer --bars 13-16 --layer piano --provider offl
         "loudness_lufs": -16.57,
         "mock": false,
         "notes_rendered": 144,
-        "render_seconds": 1.109,
+        "render_seconds": 2.31,
         "sample_rate": 48000,
         "skipped_layers": [],
         "tail_samples": 0,
@@ -2573,8 +2573,8 @@ praxis --json bench --seconds 8 --runs 1
 {
   "audio_s": 9.5,
   "bars": 4,
-  "best_realtime_factor": 13.503,
-  "best_s": 0.704,
+  "best_realtime_factor": 2.801,
+  "best_s": 3.391,
   "bpm": 128.0,
   "build": "release",
   "command": "bench",
@@ -2607,21 +2607,21 @@ praxis --json bench --seconds 8 --runs 1
     "os": "windows"
   },
   "master_hash": "bd5c744696bd767f",
-  "median_s": 0.704,
+  "median_s": 3.391,
   "notes_rendered": 194,
   "ok": true,
   "passed": false,
   "per_layer": [],
   "piece": "built-in 8-layer piece",
-  "realtime_factor": 13.503,
+  "realtime_factor": 2.801,
   "runs": [
-    0.704
+    3.391
   ],
   "sample_rate": 48000,
   "target": 20.0,
-  "threads": 1,
+  "threads": 8,
   "true_peak_dbtp": -1.02,
-  "warmup_s": 0.705
+  "warmup_s": 2.587
 }
 ```
 
