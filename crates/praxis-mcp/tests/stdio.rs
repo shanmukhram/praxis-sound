@@ -323,7 +323,13 @@ fn every_tool_over_stdio() {
         "praxis_compose",
         json!({"plan": plan, "project": "rel/loop.praxis"}),
     );
-    assert_eq!(rel["project"], json!(s(&at(&dir, "rel/loop.praxis"))));
+    let rel_project = PathBuf::from(rel["project"].as_str().expect("project path"));
+    assert!(rel_project.is_absolute(), "{rel_project:?}");
+    // Same file, not same string: macOS temp folders sit under a symlink (/var -> /private/var).
+    assert_eq!(
+        std::fs::canonicalize(&rel_project).unwrap(),
+        std::fs::canonicalize(at(&dir, "rel/loop.praxis")).unwrap()
+    );
     // Error: an unrepairable plan; issues point into the plan.
     let mut bad = plan.clone();
     bad["key"]["tonic"] = json!("H");
