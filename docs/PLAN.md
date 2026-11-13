@@ -257,7 +257,7 @@ FR-14, FR-15, FR-17, FR-18. Owns: `crates/praxis-match/**`, `ops/match.rs`, MCP 
 FR-9, FR-10. Owns: planner arranger extensions (`arrange/**`), score chord helpers by request.
 Depends: WP-P2, WP-F2, WP-P4. Brief: `docs/briefs/WP-P3-scoring-depth.md`.
 
-## Phase 8: Performance and release (exit: every success criterion in PRD section 2 passes on release builds)
+## Phase 8: Performance and release (exit: every success criterion in PRD section 2 passes on release builds) - closed 2026-11-13
 
 ### WP-W wasm + browser build
 Owns: `crates/praxis-wasm/**`, browser AudioWorklet glue in `app/src/engine-wasm/**`, `app/src/main.ts`.
