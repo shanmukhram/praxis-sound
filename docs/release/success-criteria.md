@@ -1,7 +1,8 @@
-# PRD success criteria on release builds (WP-Z, 2026-11-12)
+# PRD success criteria on release builds (WP-Z 2026-11-12, WP-Z2 2026-11-13)
 
-Every criterion of PRD section 2, measured on release builds of `build/integration` + WP-Z
-(branch `claude/z-release-e36adc`). Machine: Intel Core i5-14600K (6 performance cores + 8
+Every criterion of PRD section 2, measured on release builds of `build/integration` + WP-Z and
+WP-Z2 (branch `claude/z-release-e36adc`). WP-Z2 closed the two misses of WP-Z: render speed (layers
+on several cores) and idle memory (packed 24-bit samples, instruments loaded on the first Play). Machine: Intel Core i5-14600K (6 performance cores + 8
 efficiency cores, 20 threads), Windows 11 Pro 10.0.26200, Rust stable, `PRAXIS_KEYCHAIN=off`, felt
 piano from the Upright Piano KW pack. No audio was played on speakers (the opt-in device test was
 not run; see Real-time preview).
@@ -14,18 +15,18 @@ not run; see Real-time preview).
 | Determinism | same project and seed render bit-identical | identical SHA-256 on repeat renders; identical master hash on every bench run, on both core types, before and after the speed work | **pass** |
 | Edit isolation | editing bars 13-16 of one layer leaves every other bar and layer sample-identical, effect tails aside | engine: bit-identical outside the edited bars and the wrapped tail; take level: other layers identical, other bars identical note for note, the edited layer's reverb leaves at most -138 dBFS of rounding | **pass** |
 | Loop seam | no discontinuity above the noise floor; tails wrap | seam jump 0.65x the local typical jump, excess -2.07 dB (limit 0 dB); tails wrap | **pass** |
-| Render speed | 2-minute, 8-layer piece at 20x real time or better on a mid-range laptop | **18.2-18.9x** on a performance core, **9.5x** on an efficiency core (was 6.3-6.8x) | **miss: known gap, accepted** (see below) |
+| Render speed | 2-minute, 8-layer piece at 20x real time or better on a mid-range laptop | **37.4x** on the performance cores, **25.2x** on the efficiency cores alone, **25.1x** unpinned (8 render threads; was 6.3x); one thread on one core: 15.7x / 8.8x | **pass** |
 | Real-time preview | no dropouts at a 256-sample buffer | 0 xruns; 256-frame callbacks at most 0.48 ms of their 5.33 ms budget; real speakers: 0 xruns earlier (WP-R, WP-U4, owner's Phase 3 check) | **pass** (with the shared-mode note) |
-| Footprint | installer under 30 MB | 9,577,743 bytes (9.13 MiB) | **pass** |
+| Footprint | installer under 30 MB | 9,586,538 bytes (9.14 MiB) | **pass** |
 | | cold start under 1 s | UI ready in 0.34-0.38 s (window in 31-47 ms); 3.0 s on the first launch right after installing | **pass** |
-| | idle memory under 200 MB | no sound open: 85 MB private working set (app + WebView2); a felt-piano sound open: **260 MB** | **miss with a sampled sound open** (see below) |
+| | idle memory under 200 MB ("idle": a sound open, not yet played) | felt-piano sound open: **134.5 MB** private working set (app + WebView2); after its first Play 222.8 MB; after closing it 97.6 MB | **pass** |
 | Reference analysis | tempo within 2 BPM and correct key on at least 90% of a labelled set | tempo 94.2% (49/52), key 97.9% (47/48), both 91.7% (44/48), kind 100% (81/81) | **pass** |
 | Reference match | closer to its reference than to any other clip; passes originality | 10/10 closest to their own reference (0.731-0.951 vs nearest other 0.554-0.722); 10/10 pass originality | **pass** |
 | Loudness | target within 0.5 LU, never above the true-peak ceiling | acceptance 1 -16.00 LUFS, -2.72 dBTP; bench piece -16.01 LUFS, -1.02 dBTP (ceiling -1.0 dBTP, limiter tolerance 0.05 dB) | **pass** |
 
-Two misses, both explained below with what it would take: render speed (a known gap the
-orchestrator accepted: 18.9x at best on a performance core, 9.5x on an efficiency core), and idle
-memory once a sampled instrument is loaded.
+Every criterion passes. Two notes: a single render thread on one efficiency core reaches 8.8x
+(the target is met by rendering the layers in parallel), and memory after a sound has been played
+is 222.8 MB until it is closed (idle, as defined above, is 134.5 MB).
 
 ## How each was measured
 
@@ -80,6 +81,33 @@ engine (`loopwrap`, warm-up cycles), checked by `praxis-engine` `loop_wrap` test
 loop golden.
 
 ### Render speed
+
+**WP-Z2: the layers render on several cores.** `render_offline` on desktop renders the timeline in
+chunks of 128 blocks; in each chunk worker threads advance every layer through the same blocks as
+before (each layer's state is its own), then this thread sums the layers' blocks in score order with
+the same additions and runs the master chain block by block. So the output is bit-identical for any
+thread count: the bench piece's master hash stays `1689b209cbb72fc2`, the six render hashes below
+are unchanged, and `crates/praxis-engine/tests/parallel_render.rs` checks master and every stem for
+1, 2, 3 and 8 threads, loop and one-shot. Threads: the available cores minus one, at most 8
+(`PRAXIS_RENDER_THREADS` lowers it; 1 renders on the calling thread). Graphs with a sidechain
+render on one thread (a keyed layer reads another layer's output inside each block). WebAssembly
+stays single-threaded. Final numbers (2026-11-13, median of 5 runs, process pinned with
+`docs/release/pinned-bench.ps1 -Cpus ...`; the piano now reads packed 24-bit samples, see Footprint):
+
+| CPUs | Render threads | Median | Real time |
+| --- | --- | --- | --- |
+| performance cores (0-11) | 8 | 3.27 s | **37.4x** |
+| efficiency cores (12-19) | 8 | 4.84 s | **25.2x** |
+| unpinned (Windows chose) | 8 | 4.86 s | **25.1x** |
+| one performance core (2) | 1 | 7.79 s | 15.7x |
+| one efficiency core (18) | 1 | 13.80 s | 8.8x |
+
+The single-thread rows are lower than WP-Z's (18.2-18.9x, 9.5x below) because reading packed
+24-bit samples costs the piano about 0.5 s; the parallel render keeps every multi-core case well
+above 20x. Every bench run's time includes decoding the felt piano (about 0.25 s; the sample
+cache holds weak references, so each render decodes again).
+
+WP-Z's single-thread work, for the record:
 
 `praxis bench` (new in WP-Z): a built-in 2-minute piece at 128 BPM (64 bars + 2 s tail = 122 s)
 with eight layers playing throughout, real instruments and effect chains, through the same
@@ -156,18 +184,9 @@ instrument changes): instruments 3.8 s, effect chains 2.6 s, master bus 0.35 s.
 Each of these is now arithmetic that a bit-identical change cannot remove: the transcendental
 calls and the f64 recursions are what the sound is made of.
 
-**Known gap (accepted by the orchestrator, 2026-11-12).** The target is 20x "on a mid-range
-laptop". A 14600K performance core is faster than a typical laptop core and reaches 18.2-18.9x; an
-efficiency core (closer to a mid-range laptop core) reaches 9.5x. Bit-identical work in praxis-dsp,
-praxis-engine and praxis-instruments got from 6.3x to 18.9x and stops there. What would reach it:
-
-1. Rendering the layers on several cores (layers are independent until the mix; summing them in
-   the same order keeps the output bit-identical): about 4-5x on this machine, well over 20x on any
-   multi-core laptop. The engine must stay thread-free (WebAssembly), so this belongs in the
-   desktop render path (praxis-cli or a native-only engine entry point); needs an owner/orchestrator
-   decision.
-2. Not bit-identical (changes the sound slightly, needs a listening check): a table-based sine for
-   FM, f32 instead of f64 biquads in the EQ, fewer reverb early-reflection taps.
+WP-Z stopped at 18.9x on one performance core (a known gap then); WP-Z2's parallel render above
+closes it without changing a sample. Not done, and not needed now: output-changing speed-ups (a
+table-based FM sine, f32 EQ biquads, fewer reverb taps), which would need a listening check.
 
 ### Real-time preview
 
@@ -186,7 +205,7 @@ praxis-engine and praxis-instruments got from 6.3x to 18.9x and stops there. Wha
 ### Footprint
 
 Installer: `npm run tauri -- build` in `app/` (Tauri 2.12 NSIS bundle, per-user install,
-bzip2 compression): `Praxis Sound_0.1.0_x64-setup.exe`, 9,577,743 bytes. It installs
+bzip2 compression): `Praxis Sound_0.1.0_x64-setup.exe`, 9,586,538 bytes (WP-Z2 build). It installs
 `praxis-app.exe` (27.3 MB), `packs/index.json`, `LICENSE-MIT`, `LICENSE-APACHE`,
 `THIRD-PARTY-NOTICES.txt` and the uninstaller into `%LOCALAPPDATA%\Praxis Sound`; no instrument
 pack (the felt piano is installed from the app's Instruments dialog, 33.3 MB, blake3-checked).
@@ -200,20 +219,44 @@ in the WebView's accessibility tree (UI Automation): window after 31-47 ms, UI r
 342-381 ms on runs 2-5 (and 241-363 ms in an earlier run of 6). The first launch after a fresh
 install took 3.0 s to the UI, most likely Windows Defender scanning the new unsigned exe.
 
-Idle memory after 30 s idle, the app plus its six WebView2 processes (matched by
-`--webview-exe-name=praxis-app.exe`):
+**Idle memory (WP-Z2).** "Idle" means a sound open and not yet played. Measured with
+`docs/release/memory-stages.ps1` on the installed WP-Z2 build: the app opens a sound whose take
+plays the felt piano (`PRAXIS_AUDIO_OUTPUT=fake`, so nothing is heard), waits 20 s, measures, presses
+"Play take 1" and "Stop take 1" through UI Automation, waits 20 s, measures, presses "New sound"
+(closes it), waits 20 s, measures. Private working set of the app plus its WebView2 processes:
+
+| Stage | App process | All processes (app + WebView2) | Private bytes, all |
+| --- | --- | --- | --- |
+| sound open, not yet played (**idle**) | 4.6 MB | **134.5 MB** | 234.8 MB |
+| after its first Play (stopped) | 88.1 MB | 222.8 MB | 317.2 MB |
+| after closing it (New sound) | 5.1 MB | 97.6 MB | 200.3 MB |
+
+What changed:
+
+- **Packed 24-bit samples (praxis-instruments, exact).** A decoded channel whose every value is a
+  whole number of 2^-23 steps (all 8/16/24-bit PCM) is kept as 3-byte integers and read back as
+  `v as f32 * 2^-23`, the same f32 it was decoded to; anything else stays f32. The felt piano
+  (66 stereo FLACs, 24-bit, 28.7 M samples) takes 86 MB instead of 115 MB. Every render hash and
+  the bench hash are unchanged; tests compare every read with the decoded value.
+- **Instruments load on the first Play (praxis-app).** Opening a sound no longer builds its
+  playback graph; the first Play does, and the transport shows "Loading instruments…" meanwhile
+  (the `loading` flag). Measured with the felt piano
+  (`cargo test -p praxis-app --release --test audio first_play`): graph built in 353-360 ms,
+  first sound after 363-365 ms (3 runs), under the 1 s limit. Once played, a sound's edits swap in
+  as before. Opening another sound or closing it swaps in an empty graph and the old graph (and its
+  samples) is dropped: 88 MB back. Rendering, export and takes use the offline command layer and
+  never this graph.
+
+WebView2 itself holds 80-130 MB of the totals (more with a sound's waveform and views shown).
+
+Before WP-Z2 (WP-Z, 2026-11-12), the app plus its six WebView2 processes after 30 s:
 
 | State | App private working set | All 7 processes: private working set | private bytes | working set (shared pages counted 7 times) |
 | --- | --- | --- | --- | --- |
 | no sound open | 6.7 MB (28 MB working set) | **85 MB** | 177 MB | 361 MB |
 | a felt-piano sound open | 118 MB | **260 MB** | 351 MB | 544 MB |
 
-The 200 MB target holds until a sampled instrument is loaded. The felt piano's samples are
-decoded to 32-bit float in memory (about 110 MB) when the real-time engine prepares the sound;
-WebView2 itself takes about 80 MB. To fit under 200 MB with the piano loaded: keep decoded
-samples as 16- or 24-bit integers (half or three quarters of the memory; the sampler converts
-per read), or load only the zones the score uses. Both are praxis-instruments changes (not in
-WP-Z's scope); a follow-up.
+Then the app built the playback graph as soon as a sound opened, with the samples as f32.
 
 ### Reference analysis
 
@@ -268,6 +311,21 @@ clippy, `cargo test --workspace --release` (749 passed, 0 failed, 9 ignored opt-
 `cargo test -p praxis-app --release` (31 passed), wasm32 release build, tsc, Vitest (210 passed,
 7 skipped) and `cargo deny check` all pass.
 
+**WP-Z2 fixes for the three failures** (the next hand run of the workflow, by the orchestrator after
+merging, is the check):
+
+- `.github/workflows/ci.yml`: the Linux step installs `libasound2-dev libwebkit2gtk-4.1-dev
+  libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev`. Expected: the
+  Linux job's Lint step passes (`glib-sys` and `webkit2gtk-sys` build scripts find their
+  pkg-config files) and its debug and release test steps build and run praxis-app.
+- `crates/praxis-app/tests/audio.rs` seek test: after its 6 s of audio it keeps playing (inside
+  the loop range) until more than 10 position events arrived, waiting up to 60 s; every check is
+  kept (positions within bars 5-6, a wrap back to bar 5). Expected: passes on the macOS debug job.
+- `crates/praxis-cli/tests/ask_reference.rs`: the felt-piano reference test starts with
+  `have_piano(...)` and returns after printing `SKIP other_requests_give_the_planner_the_reference_numbers:
+  the upright-piano-kw pack is not installed` when the pack is missing (CI). Expected: passes
+  (as a skip) on all three test jobs; the log shows that SKIP line with `--nocapture`.
+
 ## Commands to reproduce
 
 ```bash
@@ -276,8 +334,10 @@ praxis bench --runs 5 --per-layer                 # render speed (pin the proces
 cargo test -p praxis-cli --release --test acceptance1 -- --nocapture
 cargo test -p praxis-cli --release --test labelled_set labelled_set_accuracy -- --nocapture
 cargo test -p praxis-match --release --test refset_match -- --nocapture --test-threads 1
-cargo test -p praxis-engine --release --test isolation --test determinism --test realtime_soak -- --nocapture
+cargo test -p praxis-engine --release --test isolation --test determinism --test realtime_soak --test parallel_render -- --nocapture
+cargo test -p praxis-app --release --test audio first_play -- --nocapture   # the first-Play wait
 cargo test -p praxis-audio-io --release --test device_sim_soak -- --nocapture
 cd app && npm run tauri -- build                   # target/release/bundle/nsis/*-setup.exe
+docs/release/memory-stages.ps1 -Exe <installed praxis-app.exe> -PraxisHome <home with a sound>
 cargo deny check                                   # licences (docs/release/licences.md)
 ```

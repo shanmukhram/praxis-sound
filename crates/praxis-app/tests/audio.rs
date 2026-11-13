@@ -726,3 +726,56 @@ fn a_sound_is_built_on_its_first_play_and_freed_when_another_opens() {
     let s = r.service.status();
     assert!(!s.loaded);
 }
+
+/// The first Play of a felt-piano sound loads its instruments (WP-Z2): ready in well under a
+/// second, with `loading` reported meanwhile. Prints the wait.
+#[test]
+fn the_first_play_of_a_felt_piano_sound_is_ready_within_a_second() {
+    if !have_piano("the_first_play_of_a_felt_piano_sound_is_ready_within_a_second") {
+        return;
+    }
+    let sound = real_sound("first-play");
+    let (score, gain) = praxis_app::commands::playback_score(&sound).expect("live score");
+    let tap: Tap = Arc::new(Mutex::new((Vec::new(), Vec::new())));
+    let events: Events = Arc::new(Mutex::new(Vec::new()));
+    let ev = events.clone();
+    let service = AudioService::start(
+        FakeOutput {
+            sample_rate: SR,
+            callback_frames: CALLBACK,
+            speed: 1.0,
+            tap: Some(tap.clone()),
+            xruns: None,
+        }
+        .opener(),
+        Arc::new(praxis_instruments::Registry::with_default_packs()),
+        Box::new(move |e| ev.lock().unwrap().push(e.clone())),
+    );
+    service.load_sound(&sound, score, gain);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(!service.status().loaded, "built before the first Play");
+    let t0 = Instant::now();
+    service.play();
+    let start = tap.lock().unwrap().0.len();
+    wait_for("the felt piano graph", 30.0, || service.status().loaded);
+    let built = t0.elapsed();
+    wait_for("sound", 30.0, || {
+        tap.lock().unwrap().0[start..]
+            .iter()
+            .any(|v| v.abs() > 1e-4)
+    });
+    let heard = t0.elapsed();
+    let s = service.status();
+    println!(
+        "first Play: graph built after {:.0} ms (prepare {:?} ms), first sound after {:.0} ms",
+        built.as_secs_f64() * 1000.0,
+        s.prepare_ms,
+        heard.as_secs_f64() * 1000.0
+    );
+    let saw_loading = events.lock().unwrap().iter().any(|e| e.loading);
+    if built > Duration::from_millis(150) {
+        assert!(saw_loading, "a wait over 150 ms must show `loading`");
+    }
+    assert!(heard < Duration::from_secs(1), "first Play took {heard:?}");
+    service.stop();
+}
