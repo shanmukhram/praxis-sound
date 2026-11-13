@@ -420,11 +420,17 @@ fn every_tool_over_stdio() {
             "SKIP render steps: the Upright Piano KW pack was not found (set PRAXIS_PACKS to a \
              folder containing upright-piano-kw)"
         );
-        // Without any renderable instrument, a render fails with a coded error.
-        c.err(
+        // Without the pack, `skip_missing` renders the other layers and names the piano layer
+        // it left out.
+        let (is_error, body) = c.call(
             "praxis_render",
             json!({"input": s(&project), "out": s(&at(&dir, "r.wav")), "skip_missing": true}),
-            "render_failed",
+        );
+        assert!(!is_error, "{body:#}");
+        let skipped = body["skipped_layers"].as_array().expect("skipped_layers");
+        assert!(
+            skipped.iter().any(|l| l["preset"] == json!("felt_piano")),
+            "{body:#}"
         );
         return;
     };

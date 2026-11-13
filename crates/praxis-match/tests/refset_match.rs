@@ -31,6 +31,17 @@ fn render(score: &Score) -> StereoBuffer {
         .master
 }
 
+/// True when the Upright Piano KW pack is installed (the set's felt-piano lullaby needs it);
+/// otherwise prints why `test` is skipped (CI does not install packs), like the other
+/// pack-dependent tests.
+fn have_piano(test: &str) -> bool {
+    let ok = praxis_instruments::Packs::discover().has_pack("upright-piano-kw");
+    if !ok {
+        println!("SKIP {test}: the upright-piano-kw pack is not installed (set PRAXIS_PACKS)");
+    }
+    ok
+}
+
 /// The set, rendered and measured once.
 fn set() -> &'static Vec<(Reference, SoundProfile)> {
     static S: OnceLock<Vec<(Reference, SoundProfile)>> = OnceLock::new();
@@ -55,6 +66,9 @@ fn matched(i: usize) -> MatchOutcome {
 
 #[test]
 fn every_result_is_closest_to_its_own_reference_and_original() {
+    if !have_piano("every_result_is_closest_to_its_own_reference_and_original") {
+        return;
+    }
     let set = set();
     println!("classification:");
     for (r, p) in set {
@@ -175,6 +189,9 @@ fn every_result_is_closest_to_its_own_reference_and_original() {
 
 #[test]
 fn the_loop_shows_similarity_rising() {
+    if !have_piano("the_loop_shows_similarity_rising") {
+        return;
+    }
     // The heavy impact: a short render, so the whole loop is quick.
     let i = set()
         .iter()
@@ -206,6 +223,9 @@ fn the_loop_shows_similarity_rising() {
 
 #[test]
 fn mix_and_match_takes_groove_timbre_and_mood() {
+    if !have_piano("mix_and_match_takes_groove_timbre_and_mood") {
+        return;
+    }
     let set = set();
     let idx = |name: &str| set.iter().position(|(r, _)| r.name == name).unwrap();
     let (groove_i, timbre_i) = (idx("night_groove"), idx("bell_arp"));
@@ -242,6 +262,9 @@ fn mix_and_match_takes_groove_timbre_and_mood() {
 
 #[test]
 fn requested_key_tempo_and_length_are_kept() {
+    if !have_piano("requested_key_tempo_and_length_are_kept") {
+        return;
+    }
     let set = set();
     let i = set
         .iter()
@@ -277,6 +300,9 @@ fn requested_key_tempo_and_length_are_kept() {
 #[test]
 #[ignore = "investigation aid"]
 fn group_distances_of_first_candidates() {
+    if !have_piano("group_distances_of_first_candidates") {
+        return;
+    }
     use praxis_analyze::similarity::group_distances;
     use praxis_match::character::Character;
     use praxis_match::music::{self, Palette, Setup};
